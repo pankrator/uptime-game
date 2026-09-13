@@ -1,11 +1,10 @@
 # Datacenter Manager — Project Instructions
 
-## Current phase: planning
+## Validation
 
-This project has no code yet. The immediate goal is to **plan the implementation** of a
-browser-based game (JavaScript + TypeScript, rendered via Canvas) — not to start building it.
-Do not scaffold, install dependencies, or write game code until the user asks to move from
-planning into implementation.
+Do not use Playwright or any browser-automation tool to validate the game after changes. Do not use any other CLI or tool to start the project and validate it. Let me validate it manually later.
+
+## Current phase: implementation
 
 ## Role
 
