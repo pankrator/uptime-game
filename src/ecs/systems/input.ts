@@ -12,6 +12,8 @@ import {
   rackSlots,
   installedIns,
   installTasks,
+  powerCapacities,
+  coolingCapacities,
   type BuildableDef,
 } from '../components';
 import {
@@ -21,11 +23,16 @@ import {
   findNearestWalkableNeighbor,
   simplifyPathToPixels,
 } from '../pathfinding';
-import { MACHINE_TIERS, type MachineTierId } from '../game-data';
+import {
+  MACHINE_TIERS,
+  POWER_UPGRADE_KW,
+  COOLING_UPGRADE_KW,
+  type MachineTierId,
+} from '../game-data';
 import { type InputState } from '../../input';
 import { spawnRack } from '../../entities';
 import { type Renderer } from '../../rendering';
-import { getBuildPanelEntryRect, pointerInRect } from '../../ui/layout';
+import { getBuildPanelEntryRect, pointerInRect, pointerInHud } from '../../ui/layout';
 import { type System } from './system';
 
 function hitTestPanel(point: { x: number; y: number }, canvasHeight: number): number | null {
@@ -36,11 +43,6 @@ function hitTestPanel(point: { x: number; y: number }, canvasHeight: number): nu
     }
   }
   return null;
-}
-
-// Stub until plan 3 defines the HUD rects.
-function pointerInHud(): boolean {
-  return false;
 }
 
 function isGridCellOccupied(world: World, gridX: number, gridY: number): boolean {
@@ -161,7 +163,28 @@ function applyPurchase(world: World, facility: EntityId, buildable: BuildableDef
   if (!canAfford(world, facility, buildable.cost)) return;
   const wallet = world.getComponent(wallets, facility)!;
   wallet.money -= buildable.cost;
-  // Power/cooling upgrades have no spatial placement — plan 2 wires the capacity effect.
+
+  if (buildable.id === 'power-upgrade') {
+    const powerCapacity = world.getComponent(powerCapacities, facility)!;
+    powerCapacity.kw += POWER_UPGRADE_KW;
+  } else if (buildable.id === 'cooling-upgrade') {
+    const coolingCapacity = world.getComponent(coolingCapacities, facility)!;
+    coolingCapacity.kw += COOLING_UPGRADE_KW;
+  }
+}
+
+function selectBuildable(world: World, facility: EntityId, controlled: EntityId, selected: BuildableDef): void {
+  if (selected.placement === 'purchase') {
+    applyPurchase(world, facility, selected);
+    return;
+  }
+
+  const buildMode = world.getComponent(buildModes, controlled);
+  if (buildMode?.buildableId === selected.id) {
+    world.removeComponent(buildModes, controlled);
+  } else {
+    world.addComponent(buildModes, controlled, { buildableId: selected.id });
+  }
 }
 
 export function createInputSystem(
@@ -177,6 +200,14 @@ export function createInputSystem(
     }
   });
 
+  BUILDABLES.forEach((buildable, index) => {
+    const key = String(index + 1);
+    input.onKeyDown(key, () => {
+      if (world.getComponent(installTasks, controlled)) return;
+      selectBuildable(world, facility, controlled, buildable);
+    });
+  });
+
   return {
     update() {
       if (!input.wasClicked()) return;
@@ -184,7 +215,7 @@ export function createInputSystem(
       const pointer = input.getPointerPosition();
       if (!pointer) return;
 
-      if (pointerInHud()) return;
+      if (pointerInHud(pointer, renderer.canvas)) return;
 
       // 1. Install in progress → any click cancels and refunds.
       if (world.getComponent(installTasks, controlled)) {
@@ -197,18 +228,7 @@ export function createInputSystem(
 
       // 2. Panel hit.
       if (panelIndex !== null) {
-        const selected = BUILDABLES[panelIndex];
-
-        if (selected.placement === 'purchase') {
-          applyPurchase(world, facility, selected);
-          return;
-        }
-
-        if (buildMode?.buildableId === selected.id) {
-          world.removeComponent(buildModes, controlled);
-        } else {
-          world.addComponent(buildModes, controlled, { buildableId: selected.id });
-        }
+        selectBuildable(world, facility, controlled, BUILDABLES[panelIndex]);
         return;
       }
 

@@ -7,7 +7,8 @@ export interface GameLoopDeps {
   renderer: Renderer;
   input: InputState;
   state: GameState;
-  systems: System[];
+  updateSystems: System[];
+  renderSystems: System[];
 }
 
 export interface GameLoop {
@@ -15,35 +16,55 @@ export interface GameLoop {
   stop(): void;
 }
 
-export function createGameLoop({ renderer, systems }: GameLoopDeps): GameLoop {
-  let running = false;
-  let lastTimestamp = 0;
-  let frameHandle = 0;
+const UPDATE_HZ = 30;
+const UPDATE_INTERVAL_MS = 1000 / UPDATE_HZ;
+const MAX_DELTA_SECONDS = 0.1;
 
-  function tick(timestamp: number): void {
+export function createGameLoop({ renderer, updateSystems, renderSystems }: GameLoopDeps): GameLoop {
+  let running = false;
+  let lastUpdateTime = 0;
+  let updateHandle: ReturnType<typeof setInterval> | undefined;
+  let renderHandle = 0;
+
+  // setInterval keeps running on background/unfocused tabs (browsers only throttle it to
+  // once/sec at worst); requestAnimationFrame is paused entirely by most browsers when the
+  // tab isn't visible, so it's only used for rendering, which doesn't matter while unseen.
+  function update(): void {
     if (!running) return;
 
-    const deltaSeconds = lastTimestamp ? (timestamp - lastTimestamp) / 1000 : 0;
-    lastTimestamp = timestamp;
+    const now = performance.now();
+    const rawDelta = lastUpdateTime ? (now - lastUpdateTime) / 1000 : 0;
+    const deltaSeconds = Math.min(rawDelta, MAX_DELTA_SECONDS);
+    lastUpdateTime = now;
 
-    renderer.clear();
-    for (const system of systems) {
+    for (const system of updateSystems) {
       system.update(deltaSeconds);
     }
+  }
 
-    frameHandle = requestAnimationFrame(tick);
+  function render(): void {
+    if (!running) return;
+
+    renderer.clear();
+    for (const system of renderSystems) {
+      system.update(0);
+    }
+
+    renderHandle = requestAnimationFrame(render);
   }
 
   return {
     start() {
       if (running) return;
       running = true;
-      lastTimestamp = 0;
-      frameHandle = requestAnimationFrame(tick);
+      lastUpdateTime = 0;
+      updateHandle = setInterval(update, UPDATE_INTERVAL_MS);
+      renderHandle = requestAnimationFrame(render);
     },
     stop() {
       running = false;
-      cancelAnimationFrame(frameHandle);
+      clearInterval(updateHandle);
+      cancelAnimationFrame(renderHandle);
     },
   };
 }

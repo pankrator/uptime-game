@@ -12,6 +12,9 @@ import {
   reputations,
   powerCapacities,
   coolingCapacities,
+  utilizations,
+  demandClocks,
+  workloads,
 } from '../ecs/components';
 import {
   RACK_SLOT_CAPACITY,
@@ -19,8 +22,12 @@ import {
   STARTING_POWER_KW,
   STARTING_COOLING_KW,
   STARTING_REPUTATION,
+  WORKLOAD_ARCHETYPES,
   type MachineTierId,
+  type WorkloadArchetypeId,
 } from '../ecs/game-data';
+
+const FIRST_ARRIVAL_SECONDS = 15;
 
 const PLAYER_SPEED = 200;
 
@@ -59,5 +66,37 @@ export function spawnFacility(world: World): EntityId {
   world.addComponent(reputations, id, { value: STARTING_REPUTATION });
   world.addComponent(powerCapacities, id, { kw: STARTING_POWER_KW });
   world.addComponent(coolingCapacities, id, { kw: STARTING_COOLING_KW });
+  world.addComponent(utilizations, id, {
+    powerDrawKw: 0,
+    coolingDrawKw: 0,
+    computeTotal: 0,
+    computeFree: 0,
+  });
+  world.addComponent(demandClocks, id, {
+    elapsedSeconds: 0,
+    nextArrivalInSeconds: FIRST_ARRIVAL_SECONDS,
+    contractsServed: 0,
+    peakComputeServed: 0,
+  });
+  return id;
+}
+
+export function spawnWorkload(
+  world: World,
+  archetypeId: WorkloadArchetypeId,
+  scale: number,
+): EntityId {
+  const archetype = WORKLOAD_ARCHETYPES[archetypeId];
+  const appliedScale = archetype.scales ? scale : 1;
+  const id = world.createEntity();
+  world.addComponent(workloads, id, {
+    archetypeId,
+    computeRequired: Math.round(archetype.computeRequired * appliedScale),
+    durationSeconds: archetype.durationSeconds,
+    elapsedSeconds: 0,
+    payPerSecond: archetype.payPerSecond * appliedScale,
+    graceRemainingSeconds: archetype.graceSeconds,
+    state: 'pending',
+  });
   return id;
 }

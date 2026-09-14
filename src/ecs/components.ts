@@ -5,6 +5,7 @@ import {
   POWER_UPGRADE_COST,
   COOLING_UPGRADE_COST,
   type MachineTierId,
+  type WorkloadArchetypeId,
 } from './game-data';
 
 export const GRID_CELL_SIZE = 40;
@@ -129,6 +130,40 @@ export interface InstallTask {
   arrived: boolean;
 }
 
+// Facility singleton — derived cache, fully recomputed every frame
+export interface Utilization {
+  powerDrawKw: number;
+  coolingDrawKw: number;
+  computeTotal: number;
+  computeFree: number;
+}
+
+export interface DemandClock {
+  elapsedSeconds: number;
+  nextArrivalInSeconds: number;
+  contractsServed: number;
+  peakComputeServed: number; // the score
+}
+
+// Machines
+export interface Assignment {
+  workloadId: EntityId;
+  compute: number;
+}
+
+// Workloads — their own entities, with no Position and no Renderable
+export type WorkloadState = 'pending' | 'running';
+
+export interface Workload {
+  archetypeId: WorkloadArchetypeId;
+  computeRequired: number;
+  durationSeconds: number;
+  elapsedSeconds: number;
+  payPerSecond: number;
+  graceRemainingSeconds: number;
+  state: WorkloadState;
+}
+
 export const positions = createComponentStore<Position>();
 export const moveTargets = createComponentStore<MoveTarget>();
 export const speeds = createComponentStore<Speed>();
@@ -146,3 +181,8 @@ export const machines = createComponentStore<Machine>();
 export const installedIns = createComponentStore<InstalledIn>();
 export const powereds = createComponentStore<Powered>();
 export const installTasks = createComponentStore<InstallTask>();
+
+export const utilizations = createComponentStore<Utilization>();
+export const demandClocks = createComponentStore<DemandClock>();
+export const assignments = createComponentStore<Assignment>();
+export const workloads = createComponentStore<Workload>();

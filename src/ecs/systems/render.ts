@@ -14,6 +14,8 @@ import {
   powereds,
   installTasks,
   wallets,
+  assignments,
+  workloads,
 } from '../components';
 import { RACK_SLOT_CAPACITY } from '../game-data';
 import { type Renderer } from '../../rendering';
@@ -189,18 +191,27 @@ function drawManager(renderer: Renderer, x: number, y: number): void {
   ctx.stroke();
 }
 
-const MONEY_READOUT_MARGIN = 12;
+function drawPendingBorder(world: World, renderer: Renderer): void {
+  let lowestGrace = Infinity;
+  for (const id of world.query(workloads)) {
+    const workload = world.getComponent(workloads, id)!;
+    if (workload.state !== 'pending') continue;
+    lowestGrace = Math.min(lowestGrace, workload.graceRemainingSeconds);
+  }
+  if (lowestGrace === Infinity) return;
 
-function drawMoneyReadout(world: World, renderer: Renderer, facility: EntityId): void {
-  const wallet = world.getComponent(wallets, facility);
-  const money = wallet ? Math.floor(wallet.money) : 0;
-
+  const { width, height } = renderer.canvas;
   const ctx = renderer.context;
-  ctx.font = 'bold 16px sans-serif';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  ctx.fillStyle = '#3ddc84';
-  ctx.fillText(`$${money}`, MONEY_READOUT_MARGIN, MONEY_READOUT_MARGIN);
+  const pulse = (Math.sin(performance.now() / 300) + 1) / 2;
+  const escalated = lowestGrace < 5;
+  const color = escalated ? '229, 72, 77' : '247, 183, 49';
+
+  ctx.save();
+  ctx.strokeStyle = `rgba(${color}, ${0.4 + pulse * 0.5})`;
+  ctx.lineWidth = 3;
+  const inset = BUILDING_MARGIN + 2;
+  ctx.strokeRect(inset, inset, width - inset * 2, height - inset * 2);
+  ctx.restore();
 }
 
 function drawBuildPanel(
@@ -235,6 +246,12 @@ function drawBuildPanel(
       rect.x + rect.width / 2,
       rect.y + rect.height / 2,
     );
+
+    renderer.context.textAlign = 'left';
+    renderer.context.fillStyle = '#aaa';
+    renderer.context.fillText(`${index + 1}`, rect.x + 4, rect.y + rect.height / 2);
+    renderer.context.textAlign = 'center';
+
     renderer.context.globalAlpha = 1;
   });
 }
@@ -315,7 +332,12 @@ export function createRenderSystem(
         for (const machineId of installedMachines) {
           const installedIn = world.getComponent(installedIns, machineId)!;
           const powered = world.getComponent(powereds, machineId);
-          slots[installedIn.slotIndex] = powered?.online ? 'online-idle' : 'offline';
+          if (!powered?.online) {
+            slots[installedIn.slotIndex] = 'offline';
+          } else {
+            const busy = world.getComponent(assignments, machineId) !== undefined;
+            slots[installedIn.slotIndex] = busy ? 'online-busy' : 'online-idle';
+          }
         }
 
         drawRack(renderer, grid.gridX, grid.gridY, slots);
@@ -331,8 +353,8 @@ export function createRenderSystem(
         drawManager(renderer, position.x, position.y);
       }
 
+      drawPendingBorder(world, renderer);
       drawBuildPanel(world, renderer, controlled, facility);
-      drawMoneyReadout(world, renderer, facility);
     },
   };
 }
