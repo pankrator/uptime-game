@@ -11,6 +11,10 @@ export interface InputState {
   wasPressed(): boolean;
   wasReleased(): boolean;
   isPointerDown(): boolean;
+  // Right-click, used as the "view a rack" affordance (D4 — inspect without committing to
+  // walk there). The browser's context menu is suppressed on the canvas so right-click is
+  // free to mean something in-game.
+  wasRightClicked(): boolean;
 }
 
 export function createInput(canvas: HTMLCanvasElement, target: Window = window): InputState {
@@ -18,6 +22,7 @@ export function createInput(canvas: HTMLCanvasElement, target: Window = window):
   const keyDownHandlers = new Map<string, Set<() => void>>();
   let pointerPosition: { x: number; y: number } | null = null;
   let clicked = false;
+  let rightClicked = false;
   let pointerDown = false;
   let pressed = false;
   let released = false;
@@ -37,6 +42,13 @@ export function createInput(canvas: HTMLCanvasElement, target: Window = window):
 
   canvas.addEventListener('click', () => {
     clicked = true;
+  });
+
+  // Suppress the browser's context menu so right-click is free to mean "view this rack"
+  // in-game instead of opening a native menu.
+  canvas.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+    rightClicked = true;
   });
 
   canvas.addEventListener('mousedown', () => {
@@ -72,6 +84,11 @@ export function createInput(canvas: HTMLCanvasElement, target: Window = window):
     wasClicked() {
       if (!clicked) return false;
       clicked = false;
+      return true;
+    },
+    wasRightClicked() {
+      if (!rightClicked) return false;
+      rightClicked = false;
       return true;
     },
     wasPressed() {

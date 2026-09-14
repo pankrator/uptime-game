@@ -7,6 +7,7 @@ import { createInputSystem } from './ecs/systems/input';
 import { createInstallProgressSystem } from './ecs/systems/install-progress';
 import { createPathFollowSystem } from './ecs/systems/path-follow';
 import { createMovementSystem } from './ecs/systems/movement';
+import { createRackPanelSystem } from './ecs/systems/rack-panel';
 import { createResourceSystem } from './ecs/systems/resource';
 import { createCapacitySystem } from './ecs/systems/capacity';
 import { createWorkloadSpawnSystem, createOfferExpirySystem } from './ecs/systems/workload-spawn';
@@ -37,6 +38,9 @@ const player = spawnPlayer(world, { x: canvas.width / 2, y: canvas.height / 2 })
 //   about to go dark; running workload-run first would pay out for browned-out machines and
 //   the capacity wall would be cosmetic.
 // - resource runs after movement so a machine installed this frame is budgeted the same frame.
+// - rack-panel runs after movement (arrival detection needs this frame's position) and before
+//   capacity: it commits any PendingDrop on arrival via placeWorkload, which capacity.ts must
+//   see this same frame.
 // - capacity runs AFTER resource (needs Powered.online) and BEFORE the workload-* systems:
 //   running workload-run against stale free-capacity would pay out for placements a brownout
 //   already invalidated this frame.
@@ -48,6 +52,7 @@ const updateSystems = [
   createInstallProgressSystem(world, player, facility),
   createPathFollowSystem(world),
   createMovementSystem(world),
+  createRackPanelSystem(world, input, player),
   createResourceSystem(world, facility),
   createCapacitySystem(world, facility),
   createWorkloadSpawnSystem(world, facility),

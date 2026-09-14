@@ -184,6 +184,29 @@ export interface PlacedOn {
   serverId: EntityId;
 }
 
+// Which rack's panel is open. Attached to the player. A panel can be opened purely to view
+// (mode: 'viewing', no travel) or opened to dispatch (mode: 'dispatching', which kicks off a
+// walk to the rack). Only 'dispatching' ever accepts drags — see D4.
+export interface OpenRackPanel {
+  rackId: EntityId;
+  mode: 'viewing' | 'dispatching';
+  arrived: boolean; // dispatching only; false while walking, drops held until true
+}
+
+// A drop the player made while still walking to a dispatching-mode rack — committed on
+// arrival, in order. See OpenRackPanel.arrived and rack-panel.ts.
+export interface PendingDrop {
+  workloadId: EntityId;
+  serverId: EntityId;
+}
+
+// Transient drag state. Attached to the player; exists only between mousedown and mouseup.
+export interface DragState {
+  workloadId: EntityId;
+  pointer: { x: number; y: number };
+  origin: 'tray' | { serverId: EntityId }; // where it came from, for cancel/revert
+}
+
 // An offered contract awaiting accept/decline. Its own entity; no Position, no Renderable.
 // Turning this down costs nothing (see REPUTATION_ON_DECLINE) — the accept/decline choice is
 // the actual difficulty dial now, not passive demand escalation. See
@@ -241,3 +264,6 @@ export const demandClocks = createComponentStore<DemandClock>();
 export const placedOns = createComponentStore<PlacedOn>();
 export const workloads = createComponentStore<Workload>();
 export const offers = createComponentStore<Offer>();
+export const openRackPanels = createComponentStore<OpenRackPanel>();
+export const pendingDrops = createComponentStore<PendingDrop>();
+export const dragStates = createComponentStore<DragState>();

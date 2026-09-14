@@ -15,6 +15,7 @@ import {
   powerCapacities,
   coolingCapacities,
   offers,
+  openRackPanels,
   type BuildableDef,
 } from '../components';
 import { acceptOffer, declineOffer } from '../dispatch';
@@ -38,8 +39,11 @@ import {
   getBuildPanelEntryRect,
   pointerInRect,
   pointerInHud,
+  pointerInRackPanel,
   getOfferButtonRect,
+  getRackPanelCloseButtonRect,
 } from '../../ui/layout';
+import { findRackAt, serversOn, trayWorkloadIds, openOrPromoteRackPanel, closeRackPanel } from './rack-panel';
 import { type System } from './system';
 
 interface OfferButtonHit {
@@ -80,14 +84,6 @@ function isGridCellOccupied(world: World, gridX: number, gridY: number): boolean
   });
 }
 
-function findRackAt(world: World, gridX: number, gridY: number): EntityId | null {
-  for (const id of world.query(rackSlots, gridPositions)) {
-    const grid = world.getComponent(gridPositions, id)!;
-    if (grid.gridX === gridX && grid.gridY === gridY) return id;
-  }
-  return null;
-}
-
 function findLowestFreeSlot(world: World, rackId: EntityId, capacity: number): number | null {
   const occupied = new Set<number>();
   for (const id of world.query(installedIns)) {
@@ -106,7 +102,10 @@ function canAfford(world: World, facility: EntityId, cost: number): boolean {
   return Math.floor(wallet.money) >= cost;
 }
 
-function moveControlledTo(
+// Exported for rack-panel.ts: walking to a clicked rack (an obstacle — see D4's dispatching
+// open path) needs the identical obstacle-fallback pathfinding as walking to any other point,
+// so it reuses this rather than a second, likely-diverging implementation.
+export function moveControlledTo(
   world: World,
   renderer: Renderer,
   controlled: EntityId,
@@ -264,6 +263,28 @@ export function createInputSystem(
         return;
       }
 
+      // 1.5. Open rack panel: its close button, or any other click inside it (server rows/tray
+      // are read-only until step 8's drag lands, so for now any non-close click inside just
+      // gets absorbed rather than falling through to movement or build placement).
+      const openPanel = world.getComponent(openRackPanels, controlled);
+      if (openPanel) {
+        const serverCount = serversOn(world, openPanel.rackId).length;
+        const trayCount = trayWorkloadIds(world).length;
+        const closeRect = getRackPanelCloseButtonRect(
+          renderer.canvas.width,
+          renderer.canvas.height,
+          serverCount,
+          trayCount,
+        );
+        if (pointerInRect(pointer, closeRect)) {
+          closeRackPanel(world, controlled);
+          return;
+        }
+        if (pointerInRackPanel(pointer, renderer.canvas, serverCount, trayCount)) {
+          return;
+        }
+      }
+
       const panelIndex = hitTestPanel(pointer, renderer.canvas.height);
       const buildMode = world.getComponent(buildModes, controlled);
 
@@ -302,7 +323,19 @@ export function createInputSystem(
         return;
       }
 
-      // 4. No build mode.
+      // 4. Rack click (no build mode): dispatch — open/promote its panel and walk there. See
+      // rack-panel.ts's openOrPromoteRackPanel and D4.
+      const { gridX, gridY } = worldToGrid(pointer.x, pointer.y);
+      const rackId = findRackAt(world, gridX, gridY);
+      if (rackId !== null) {
+        const shouldWalk = openOrPromoteRackPanel(world, controlled, rackId);
+        if (shouldWalk) {
+          moveControlledTo(world, renderer, controlled, gridToWorld(gridX, gridY));
+        }
+        return;
+      }
+
+      // 5. Plain floor click: just move.
       moveControlledTo(world, renderer, controlled, pointer);
     },
   };

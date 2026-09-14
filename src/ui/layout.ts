@@ -1,4 +1,5 @@
 import { BUILDABLES } from '../ecs/components';
+import { TRAIT_KEYS } from '../ecs/game-data';
 
 export const BUILD_PANEL_MARGIN = 12;
 export const BUILD_PANEL_ENTRY_WIDTH = 120;
@@ -113,6 +114,155 @@ function getOffersPanelRect(offerCount: number): Rect {
   };
 }
 
+// Rack panel — opened by clicking a rack (D3/D4: per-rack, not per-server, so moving a
+// workload between servers is a single drag; viewable without travel, drags gated on arrival).
+// Centered overlay rather than pinned to a HUD edge: it needs room for up to RACK_SLOT_CAPACITY
+// server rows, each with TRAIT_KEYS.length trait bars, plus a tray strip — more content than
+// any existing HUD panel. See .plans/workload-dispatch.md step 7.
+export const RACK_PANEL_WIDTH = 420;
+export const RACK_PANEL_PADDING = 14;
+export const RACK_PANEL_HEADER_HEIGHT = 28;
+export const RACK_SERVER_ROW_HEIGHT = 54;
+export const RACK_SERVER_ROW_GAP = 8;
+export const RACK_TRAIT_BAR_HEIGHT = 6;
+export const RACK_TRAIT_BAR_GAP = 4;
+export const RACK_CHIP_HEIGHT = 16;
+export const RACK_CHIP_GAP = 3;
+export const RACK_TRAY_HEADER_HEIGHT = 18;
+export const RACK_TRAY_CARD_HEIGHT = 34;
+export const RACK_TRAY_CARD_GAP = 6;
+export const RACK_CLOSE_BUTTON_SIZE = 20;
+
+export function getRackPanelRect(
+  canvasWidth: number,
+  canvasHeight: number,
+  serverCount: number,
+  trayCount: number,
+): Rect {
+  const serversHeight =
+    serverCount > 0 ? serverCount * RACK_SERVER_ROW_HEIGHT + (serverCount - 1) * RACK_SERVER_ROW_GAP : 0;
+  const trayHeight =
+    RACK_TRAY_HEADER_HEIGHT +
+    (trayCount > 0 ? trayCount * RACK_TRAY_CARD_HEIGHT + (trayCount - 1) * RACK_TRAY_CARD_GAP : RACK_TRAY_CARD_HEIGHT);
+
+  const width = Math.min(RACK_PANEL_WIDTH, canvasWidth - RACK_PANEL_PADDING * 2);
+  const height = Math.min(
+    RACK_PANEL_HEADER_HEIGHT + RACK_PANEL_PADDING * 3 + serversHeight + trayHeight,
+    canvasHeight - RACK_PANEL_PADDING * 2,
+  );
+
+  return {
+    x: (canvasWidth - width) / 2,
+    y: (canvasHeight - height) / 2,
+    width,
+    height,
+  };
+}
+
+export function getRackPanelCloseButtonRect(
+  canvasWidth: number,
+  canvasHeight: number,
+  serverCount: number,
+  trayCount: number,
+): Rect {
+  const panel = getRackPanelRect(canvasWidth, canvasHeight, serverCount, trayCount);
+  return {
+    x: panel.x + panel.width - RACK_PANEL_PADDING - RACK_CLOSE_BUTTON_SIZE,
+    y: panel.y + (RACK_PANEL_HEADER_HEIGHT - RACK_CLOSE_BUTTON_SIZE) / 2 + RACK_PANEL_PADDING / 2,
+    width: RACK_CLOSE_BUTTON_SIZE,
+    height: RACK_CLOSE_BUTTON_SIZE,
+  };
+}
+
+export function getServerRowRect(
+  index: number,
+  canvasWidth: number,
+  canvasHeight: number,
+  serverCount: number,
+  trayCount: number,
+): Rect {
+  const panel = getRackPanelRect(canvasWidth, canvasHeight, serverCount, trayCount);
+  const top = panel.y + RACK_PANEL_PADDING + RACK_PANEL_HEADER_HEIGHT + RACK_PANEL_PADDING;
+  return {
+    x: panel.x + RACK_PANEL_PADDING,
+    y: top + index * (RACK_SERVER_ROW_HEIGHT + RACK_SERVER_ROW_GAP),
+    width: panel.width - RACK_PANEL_PADDING * 2,
+    height: RACK_SERVER_ROW_HEIGHT,
+  };
+}
+
+// One bar per TRAIT_KEYS entry, stacked in the lower half of the server row.
+export function getServerTraitBarRect(
+  serverIndex: number,
+  traitIndex: number,
+  canvasWidth: number,
+  canvasHeight: number,
+  serverCount: number,
+  trayCount: number,
+): Rect {
+  const row = getServerRowRect(serverIndex, canvasWidth, canvasHeight, serverCount, trayCount);
+  const barsTop = row.y + 20;
+  const barWidth = (row.width - 8 * (TRAIT_KEYS.length - 1)) / TRAIT_KEYS.length;
+  return {
+    x: row.x + traitIndex * (barWidth + 8),
+    y: barsTop,
+    width: barWidth,
+    height: RACK_TRAIT_BAR_HEIGHT,
+  };
+}
+
+// Small chips along the top-right of a server row, one per workload placed on it.
+export function getPlacedChipRect(
+  serverIndex: number,
+  chipIndex: number,
+  canvasWidth: number,
+  canvasHeight: number,
+  serverCount: number,
+  trayCount: number,
+): Rect {
+  const row = getServerRowRect(serverIndex, canvasWidth, canvasHeight, serverCount, trayCount);
+  const chipWidth = 70;
+  return {
+    x: row.x + row.width - chipWidth,
+    y: row.y + 2 + chipIndex * (RACK_CHIP_HEIGHT + RACK_CHIP_GAP),
+    width: chipWidth,
+    height: RACK_CHIP_HEIGHT,
+  };
+}
+
+// Tray strip along the panel's bottom edge — accepted-but-unplaced workloads (D3).
+export function getTrayCardRect(
+  index: number,
+  canvasWidth: number,
+  canvasHeight: number,
+  serverCount: number,
+  trayCount: number,
+): Rect {
+  const panel = getRackPanelRect(canvasWidth, canvasHeight, serverCount, trayCount);
+  return {
+    x: panel.x + RACK_PANEL_PADDING + index * (RACK_TRAY_CARD_HEIGHT * 2.4 + RACK_TRAY_CARD_GAP),
+    y: getTrayTopY(canvasWidth, canvasHeight, serverCount, trayCount) + RACK_TRAY_HEADER_HEIGHT,
+    width: RACK_TRAY_CARD_HEIGHT * 2.4,
+    height: RACK_TRAY_CARD_HEIGHT,
+  };
+}
+
+// Y coordinate of the tray section's header text baseline — shared by getTrayCardRect and by
+// render.ts (which draws the "TRAY" header itself, above the cards this function positions).
+export function getTrayTopY(
+  canvasWidth: number,
+  canvasHeight: number,
+  serverCount: number,
+  trayCount: number,
+): number {
+  const panel = getRackPanelRect(canvasWidth, canvasHeight, serverCount, trayCount);
+  const serversHeight =
+    serverCount > 0 ? serverCount * RACK_SERVER_ROW_HEIGHT + (serverCount - 1) * RACK_SERVER_ROW_GAP : 0;
+  return (
+    panel.y + RACK_PANEL_PADDING + RACK_PANEL_HEADER_HEIGHT + RACK_PANEL_PADDING + serversHeight + RACK_PANEL_PADDING
+  );
+}
+
 export function pointerInHud(
   point: { x: number; y: number },
   canvas: HTMLCanvasElement,
@@ -131,4 +281,16 @@ export function pointerInHud(
   }
 
   return false;
+}
+
+// A click anywhere inside the open rack panel must never fall through to "walk here" — same
+// reasoning as pointerInHud for the build/offers/workload panels.
+export function pointerInRackPanel(
+  point: { x: number; y: number },
+  canvas: HTMLCanvasElement,
+  serverCount: number,
+  trayCount: number,
+): boolean {
+  const panel = getRackPanelRect(canvas.width, canvas.height, serverCount, trayCount);
+  return pointerInRect(point, panel);
 }

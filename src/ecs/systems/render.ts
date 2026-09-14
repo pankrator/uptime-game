@@ -16,14 +16,27 @@ import {
   installTasks,
   wallets,
   workloads,
+  placedOns,
   serverCapacities,
   utilizations,
   powerCapacities,
   coolingCapacities,
+  openRackPanels,
 } from '../components';
-import { RACK_SLOT_CAPACITY } from '../game-data';
+import { RACK_SLOT_CAPACITY, MACHINE_TIERS, TRAIT_KEYS, TRAIT_LABELS, WORKLOAD_ARCHETYPES } from '../game-data';
 import { type Renderer } from '../../rendering';
-import { getBuildPanelEntryRect } from '../../ui/layout';
+import {
+  getBuildPanelEntryRect,
+  getRackPanelRect,
+  getRackPanelCloseButtonRect,
+  getServerRowRect,
+  getServerTraitBarRect,
+  getPlacedChipRect,
+  getTrayCardRect,
+  getTrayTopY,
+  RACK_PANEL_PADDING,
+} from '../../ui/layout';
+import { serversOn, trayWorkloadIds } from './rack-panel';
 import { type System } from './system';
 
 const PLAYER_RADIUS = 12;
@@ -336,6 +349,156 @@ function drawInstallIndicator(world: World, renderer: Renderer, controlled: Enti
   ctx.restore();
 }
 
+const RACK_PANEL_TEXT = '#e6e8eb';
+const RACK_PANEL_DIM = '#9aa0a6';
+const RACK_PANEL_GREEN = '#3ddc84';
+const RACK_PANEL_AMBER = '#f7b731';
+const RACK_PANEL_RED = '#e5484d';
+
+// Read-only as of step 7 — every server row and tray card draws but does not yet accept drops
+// or drags; that lands in step 8. Viewing-mode panels draw identically to dispatching-mode
+// ones (D4: "the panel draws every server's trait bars and placed-workload chips exactly as in
+// dispatching mode"), so this function takes no mode-dependent branch for its own drawing —
+// only the header text differs, to tell the player which mode they're in.
+function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): void {
+  const panel = world.getComponent(openRackPanels, controlled);
+  if (!panel) return;
+
+  const ctx = renderer.context;
+  const { width: canvasWidth, height: canvasHeight } = renderer.canvas;
+
+  const serverIds = serversOn(world, panel.rackId);
+  const trayIds = trayWorkloadIds(world);
+  const rect = getRackPanelRect(canvasWidth, canvasHeight, serverIds.length, trayIds.length);
+
+  // Dim the floor behind the panel so it reads as a modal overlay.
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+  ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+  ctx.fillStyle = 'rgba(24, 27, 31, 0.97)';
+  ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+  ctx.strokeStyle = '#3a3f47';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+
+  // Header: mode tells the player whether drops will commit immediately or wait for arrival.
+  ctx.font = 'bold 13px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = RACK_PANEL_TEXT;
+  const headerY = rect.y + RACK_PANEL_PADDING + 8;
+  const modeLabel =
+    panel.mode === 'viewing' ? 'VIEWING (walk there to dispatch)' : panel.arrived ? 'DISPATCHING' : 'WALKING…';
+  ctx.fillText(`Rack — ${modeLabel}`, rect.x + 14, headerY);
+
+  // Close button ("×").
+  const closeRect = getRackPanelCloseButtonRect(canvasWidth, canvasHeight, serverIds.length, trayIds.length);
+  ctx.strokeStyle = '#666';
+  ctx.strokeRect(closeRect.x, closeRect.y, closeRect.width, closeRect.height);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = RACK_PANEL_DIM;
+  ctx.fillText('×', closeRect.x + closeRect.width / 2, closeRect.y + closeRect.height / 2);
+
+  // Server rows.
+  serverIds.forEach((serverId, index) => {
+    const row = getServerRowRect(index, canvasWidth, canvasHeight, serverIds.length, trayIds.length);
+    const capacity = world.getComponent(serverCapacities, serverId);
+    const machine = world.getComponent(machines, serverId)!;
+    const online = world.getComponent(powereds, serverId)?.online ?? false;
+    const tier = MACHINE_TIERS[machine.tierId];
+
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
+    ctx.fillRect(row.x, row.y, row.width, row.height);
+    ctx.strokeStyle = '#2f333a';
+    ctx.strokeRect(row.x, row.y, row.width, row.height);
+
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = online ? RACK_PANEL_TEXT : RACK_PANEL_RED;
+    ctx.fillText(online ? tier.label : `${tier.label} (offline)`, row.x + 6, row.y + 8);
+
+    // One bar per trait: label, then a thin usage bar beneath it.
+    TRAIT_KEYS.forEach((key, traitIndex) => {
+      const barRect = getServerTraitBarRect(index, traitIndex, canvasWidth, canvasHeight, serverIds.length, trayIds.length);
+      const total = capacity?.total[key] ?? tier.traits[key];
+      const free = capacity?.free[key] ?? tier.traits[key];
+      const used = total - free;
+      const fraction = total > 0 ? used / total : 0;
+      const exhausted = free <= 0;
+
+      ctx.font = '9px sans-serif';
+      ctx.fillStyle = RACK_PANEL_DIM;
+      ctx.fillText(`${TRAIT_LABELS[key]} ${used}/${total}`, barRect.x, barRect.y - 5);
+
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+      ctx.fillRect(barRect.x, barRect.y, barRect.width, barRect.height);
+      ctx.fillStyle = exhausted ? RACK_PANEL_RED : RACK_PANEL_GREEN;
+      ctx.fillRect(barRect.x, barRect.y, barRect.width * Math.min(1, fraction), barRect.height);
+    });
+
+    // Placed-workload chips, top-right of the row.
+    const placedIds = world
+      .query(placedOns, workloads)
+      .filter((id) => world.getComponent(placedOns, id)!.serverId === serverId);
+    placedIds.forEach((workloadId, chipIndex) => {
+      const chip = getPlacedChipRect(index, chipIndex, canvasWidth, canvasHeight, serverIds.length, trayIds.length);
+      const workload = world.getComponent(workloads, workloadId)!;
+      const archetype = WORKLOAD_ARCHETYPES[workload.archetypeId];
+
+      ctx.fillStyle = '#2e343b';
+      ctx.fillRect(chip.x, chip.y, chip.width, chip.height);
+      ctx.strokeStyle = '#4dabf7';
+      ctx.strokeRect(chip.x, chip.y, chip.width, chip.height);
+      ctx.font = '9px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = RACK_PANEL_TEXT;
+      ctx.fillText(archetype.label, chip.x + 3, chip.y + chip.height / 2, chip.width - 6);
+    });
+  });
+
+  // Tray: accepted-but-unplaced workloads. Header first, then one card per workload.
+  const trayHeaderY =
+    getTrayTopY(canvasWidth, canvasHeight, serverIds.length, trayIds.length) + 9;
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = RACK_PANEL_DIM;
+  ctx.fillText('TRAY — accepted, not yet placed', rect.x + 14, trayHeaderY);
+
+  if (trayIds.length === 0) {
+    ctx.font = '10px sans-serif';
+    ctx.fillStyle = RACK_PANEL_DIM;
+    ctx.fillText('(empty)', rect.x + 14, trayHeaderY + 16);
+  } else {
+    trayIds.forEach((workloadId, index) => {
+      const card = getTrayCardRect(index, canvasWidth, canvasHeight, serverIds.length, trayIds.length);
+      const workload = world.getComponent(workloads, workloadId)!;
+      const archetype = WORKLOAD_ARCHETYPES[workload.archetypeId];
+      const urgent = workload.deadlineRemainingSeconds < 10;
+
+      ctx.fillStyle = '#2e343b';
+      ctx.fillRect(card.x, card.y, card.width, card.height);
+      ctx.strokeStyle = urgent ? RACK_PANEL_RED : '#4a4f57';
+      ctx.strokeRect(card.x, card.y, card.width, card.height);
+
+      ctx.font = '10px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = RACK_PANEL_TEXT;
+      ctx.fillText(archetype.label, card.x + 6, card.y + card.height * 0.35);
+
+      ctx.font = '9px sans-serif';
+      ctx.fillStyle = urgent ? RACK_PANEL_AMBER : RACK_PANEL_DIM;
+      ctx.fillText(
+        `${Math.max(0, Math.ceil(workload.deadlineRemainingSeconds))}s left`,
+        card.x + 6,
+        card.y + card.height * 0.72,
+      );
+    });
+  }
+}
+
 export function createRenderSystem(
   world: World,
   renderer: Renderer,
@@ -426,7 +589,15 @@ export function createRenderSystem(
       }
 
       drawPendingBorder(world, renderer);
-      drawBuildPanel(world, renderer, controlled, facility);
+
+      // The rack panel is a modal overlay: while open, it replaces the build panel rather than
+      // drawing over/under it — the two are separate concerns (dispatch vs. construction) and
+      // input.ts's click chain already treats the rack panel as consuming clicks first.
+      if (world.getComponent(openRackPanels, controlled)) {
+        drawRackPanel(world, renderer, controlled);
+      } else {
+        drawBuildPanel(world, renderer, controlled, facility);
+      }
     },
   };
 }
