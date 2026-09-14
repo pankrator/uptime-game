@@ -1,30 +1,13 @@
+// Temporary one-workload-one-server auto-placer — keeps the game running while the manual
+// drag-and-drop rack panel doesn't exist yet (that lands in step 8). This system, and the
+// auto-placement behavior entirely, is DELETED in step 8 once dispatch becomes a player action.
+// See .plans/workload-dispatch.md D1 and step 3/8.
 import { type World, type EntityId } from '../world';
-import { machines, powereds, assignments, workloads, installedIns } from '../components';
-import { MACHINE_TIERS } from '../game-data';
+import { machines, powereds, workloads, installedIns, serverCapacities } from '../components';
+import { type Traits } from '../game-data';
+import { fits, subtractTraits } from '../traits';
+import { placeWorkload } from '../dispatch';
 import { type System } from './system';
-
-/**
- * Greedy smallest-first selection: pick machines in ascending compute order until their
- * combined compute meets `required`. Minimizes stranded compute on the remaining machines.
- * Returns null if the candidates can't cover the requirement.
- */
-export function selectMachinesForWorkload(
-  candidates: { id: EntityId; compute: number }[],
-  required: number,
-): EntityId[] | null {
-  const total = candidates.reduce((sum, c) => sum + c.compute, 0);
-  if (total < required) return null;
-
-  const sorted = [...candidates].sort((a, b) => a.compute - b.compute);
-  const selected: EntityId[] = [];
-  let sum = 0;
-  for (const candidate of sorted) {
-    if (sum >= required) break;
-    selected.push(candidate.id);
-    sum += candidate.compute;
-  }
-  return selected;
-}
 
 export function createWorkloadAssignSystem(world: World): System {
   return {
@@ -36,28 +19,34 @@ export function createWorkloadAssignSystem(world: World): System {
 
       if (pendingWorkloadIds.length === 0) return;
 
+      const serverIds = world
+        .query(machines, installedIns, powereds, serverCapacities)
+        .filter((id) => world.getComponent(powereds, id)!.online);
+
+      // ServerCapacity.free is only recomputed once per tick by capacity.ts, so placing two
+      // workloads on the same server within this same loop needs a local running tally —
+      // otherwise both could be checked against the same stale `free` and double-book it.
+      const remainingFree = new Map<EntityId, Traits>();
+      for (const serverId of serverIds) {
+        remainingFree.set(serverId, world.getComponent(serverCapacities, serverId)!.free);
+      }
+
       for (const workloadId of pendingWorkloadIds) {
         const workload = world.getComponent(workloads, workloadId)!;
 
-        const candidates = world
-          .query(machines, installedIns, powereds)
-          .filter((id) => {
-            const powered = world.getComponent(powereds, id)!;
-            return powered.online && !world.getComponent(assignments, id);
-          })
-          .map((id) => ({
-            id,
-            compute: MACHINE_TIERS[world.getComponent(machines, id)!.tierId].traits.cpu,
-          }));
+        // Smallest-fit-first: prefer the server with the least free CPU that still fits the
+        // workload, so a big workload doesn't get wedged onto (and waste) a large empty server
+        // when a smaller one would do — an approximation of the old greedy packing, now that a
+        // workload must fit a single server whole (D1) rather than spanning several.
+        const candidates = serverIds
+          .filter((serverId) => fits(workload.demands, remainingFree.get(serverId)!))
+          .sort((a, b) => remainingFree.get(a)!.cpu - remainingFree.get(b)!.cpu);
 
-        const selected = selectMachinesForWorkload(candidates, workload.demands.cpu);
-        if (!selected) continue;
+        const bestServerId = candidates[0];
+        if (bestServerId === undefined) continue;
 
-        for (const machineId of selected) {
-          const compute = MACHINE_TIERS[world.getComponent(machines, machineId)!.tierId].traits.cpu;
-          world.addComponent(assignments, machineId, { workloadId, compute });
-        }
-        workload.state = 'running';
+        placeWorkload(world, workloadId, bestServerId);
+        remainingFree.set(bestServerId, subtractTraits(remainingFree.get(bestServerId)!, workload.demands));
       }
     },
   };

@@ -1,15 +1,7 @@
 import { type World, type EntityId } from '../world';
-import {
-  machines,
-  installedIns,
-  powereds,
-  assignments,
-  workloads,
-  utilizations,
-  powerCapacities,
-  coolingCapacities,
-} from '../components';
+import { machines, installedIns, powereds, placedOns, workloads, utilizations, powerCapacities, coolingCapacities } from '../components';
 import { MACHINE_TIERS, WORKLOAD_ARCHETYPES, BROWNOUT_COOLDOWN_SECONDS } from '../game-data';
+import { unplaceWorkload } from '../dispatch';
 import { type System } from './system';
 
 export interface MachineDraw {
@@ -44,22 +36,21 @@ export function selectMachinesToBrownOut(
   return offline;
 }
 
-function unassign(world: World, machineId: EntityId): void {
-  const assignment = world.getComponent(assignments, machineId);
-  if (!assignment) return;
+// Workload ids placed on a given server. A server can host several workloads at once (D1: one
+// workload per server, not one server per workload), so this is a plural lookup — the inverse
+// of the old Assignment, which lived on the machine and was 1:1.
+function workloadsOn(world: World, serverId: EntityId): EntityId[] {
+  return world
+    .query(placedOns)
+    .filter((workloadId) => world.getComponent(placedOns, workloadId)!.serverId === serverId);
+}
 
-  world.removeComponent(assignments, machineId);
-
-  const workload = world.getComponent(workloads, assignment.workloadId);
-  if (!workload || workload.state !== 'running') return;
-
-  const remainingCompute = world
-    .query(assignments)
-    .filter((id) => world.getComponent(assignments, id)!.workloadId === assignment.workloadId)
-    .reduce((sum, id) => sum + world.getComponent(assignments, id)!.compute, 0);
-
-  if (remainingCompute < workload.demands.cpu) {
-    workload.state = 'pending';
+// Losing a server to a brownout unplaces every workload on it — they return to the tray still
+// holding their deadline, a visible/recoverable setback rather than silent progress loss (see
+// .plans/workload-dispatch.md, "Changed: resource.ts").
+function unplaceAllOn(world: World, serverId: EntityId): void {
+  for (const workloadId of workloadsOn(world, serverId)) {
+    unplaceWorkload(world, workloadId);
   }
 }
 
@@ -68,10 +59,9 @@ function drawFor(world: World, machineId: EntityId): MachineDraw {
   const tier = MACHINE_TIERS[machine.tierId];
   let coolingKw = tier.coolingKw;
 
-  const assignment = world.getComponent(assignments, machineId);
-  if (assignment) {
-    const workload = world.getComponent(workloads, assignment.workloadId);
-    if (workload && workload.state === 'running') {
+  for (const workloadId of workloadsOn(world, machineId)) {
+    const workload = world.getComponent(workloads, workloadId);
+    if (workload) {
       coolingKw += WORKLOAD_ARCHETYPES[workload.archetypeId].coolingBonusKw;
     }
   }
@@ -123,7 +113,7 @@ export function createResourceSystem(world: World, facility: EntityId): System {
         } else if (!shouldBeOnline && powered.online) {
           powered.online = false;
           powered.offlineCooldown = BROWNOUT_COOLDOWN_SECONDS;
-          unassign(world, id);
+          unplaceAllOn(world, id);
         }
 
         if (!powered.online) continue;
@@ -135,9 +125,11 @@ export function createResourceSystem(world: World, facility: EntityId): System {
         const machine = world.getComponent(machines, id)!;
         const tier = MACHINE_TIERS[machine.tierId];
         computeTotal += tier.traits.cpu;
-        if (!world.getComponent(assignments, id)) {
-          computeFree += tier.traits.cpu;
-        }
+        const used = workloadsOn(world, id).reduce(
+          (sum, workloadId) => sum + (world.getComponent(workloads, workloadId)?.demands.cpu ?? 0),
+          0,
+        );
+        computeFree += Math.max(0, tier.traits.cpu - used);
       }
 
       utilization.powerDrawKw = powerDrawKw;

@@ -3,7 +3,8 @@ import {
   machines,
   installedIns,
   powereds,
-  assignments,
+  placedOns,
+  workloads,
   rackSlots,
   gridPositions,
   serverCapacities,
@@ -18,10 +19,8 @@ import { type System } from './system';
 // ServerCapacity.free per machine, RackLoad (power/heat/server count) per rack, and the
 // facility's Utilization.traitsTotal/traitsFree.
 //
-// Step 2 of .plans/workload-dispatch.md: still reads placement off `Assignment` (today's
-// one-workload-many-machines model). Step 3 switches this to `PlacedOn` once one-workload-
-// one-server placement lands; the shape of this system does not change, only what it reads
-// to find "what's using this server".
+// Reads placement off `PlacedOn` (on the workload — see D1, one workload per server, a server
+// can host several workloads until its traits exhaust).
 //
 // Runs AFTER resource.ts (which decides Powered.online) and BEFORE workload-run.ts — running
 // workload-run against stale free-capacity would pay out for placements a brownout already
@@ -38,6 +37,17 @@ export function createCapacitySystem(world: World, facility: EntityId): System {
       let traitsTotal = zeroTraits();
       let traitsFree = zeroTraits();
 
+      // Sum of demands for every workload PlacedOn a given server — a server can host several
+      // workloads at once (D1), so this is a fold, not a single lookup.
+      const usedByServer = new Map<EntityId, ReturnType<typeof zeroTraits>>();
+      for (const workloadId of world.query(placedOns)) {
+        const serverId = world.getComponent(placedOns, workloadId)!.serverId;
+        const workload = world.getComponent(workloads, workloadId);
+        if (!workload) continue;
+        const current = usedByServer.get(serverId) ?? zeroTraits();
+        usedByServer.set(serverId, addTraits(current, workload.demands));
+      }
+
       for (const machineId of world.query(machines, installedIns, powereds)) {
         const machine = world.getComponent(machines, machineId)!;
         const installedIn = world.getComponent(installedIns, machineId)!;
@@ -46,8 +56,7 @@ export function createCapacitySystem(world: World, facility: EntityId): System {
 
         // Offline servers report their own `total` (so the panel shows "this box is dark",
         // not "this box vanished") but contribute zero to facility totals and zero rack draw.
-        const assignment = world.getComponent(assignments, machineId);
-        const used = assignment ? { cpu: assignment.compute, ramGb: 0, storageGb: 0 } : zeroTraits();
+        const used = usedByServer.get(machineId) ?? zeroTraits();
         const free = subtractTraits(tier.traits, used);
 
         world.addComponent(serverCapacities, machineId, { total: tier.traits, free });

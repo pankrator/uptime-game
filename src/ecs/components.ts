@@ -177,10 +177,11 @@ export interface DemandClock {
   peakComputeServed: number; // the score
 }
 
-// Machines
-export interface Assignment {
-  workloadId: EntityId;
-  compute: number;
+// Placement of a workload onto a server. Lives on the WORKLOAD entity (see D1: one workload
+// occupies exactly one server), the inverse of the old Assignment (which lived on the
+// machine). Replaces Assignment as of step 3.
+export interface PlacedOn {
+  serverId: EntityId;
 }
 
 // Workloads — their own entities, with no Position and no Renderable
@@ -218,5 +219,5 @@ export const serverCapacities = createComponentStore<ServerCapacity>();
 
 export const utilizations = createComponentStore<Utilization>();
 export const demandClocks = createComponentStore<DemandClock>();
-export const assignments = createComponentStore<Assignment>();
+export const placedOns = createComponentStore<PlacedOn>();
 export const workloads = createComponentStore<Workload>();

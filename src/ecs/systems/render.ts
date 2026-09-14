@@ -15,7 +15,6 @@ import {
   powereds,
   installTasks,
   wallets,
-  assignments,
   workloads,
   serverCapacities,
   utilizations,
@@ -377,8 +376,8 @@ export function createRenderSystem(
 
           // Partial vs. full: any trait in ServerCapacity.free at zero means full — a server
           // can be maxed on CPU while still having free RAM/storage, which is exactly the
-          // situation traits exist to surface. Falls back to the old busy/idle-by-Assignment
-          // check if capacity.ts hasn't run yet (e.g. very first frame).
+          // situation traits exist to surface. capacity.ts populates this every frame after
+          // the first, so the `?? online-idle` fallback only ever applies momentarily.
           const capacityState = world.getComponent(serverCapacities, machineId);
           if (capacityState) {
             const anyTraitExhausted =
@@ -395,8 +394,7 @@ export function createRenderSystem(
                 ? 'partial'
                 : 'online-idle';
           } else {
-            const busy = world.getComponent(assignments, machineId) !== undefined;
-            slots[installedIn.slotIndex] = busy ? 'partial' : 'online-idle';
+            slots[installedIn.slotIndex] = 'online-idle';
           }
         }
 
