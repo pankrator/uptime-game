@@ -152,7 +152,12 @@ export const WORKLOAD_ARCHETYPES: Record<WorkloadArchetypeId, WorkloadArchetypeD
   render: {
     id: 'render',
     label: 'Render Farm',
-    demands: { cpu: 16, ramGb: 32, storageGb: 800 },
+    // Step 9 tuning fix: cpu/ramGb were 16/32, which fit on `dense` only — no other tier's
+    // combined CPU+RAM+storage covered them, silently defeating D6's point that `storage`
+    // should be a genuine, cheaper alternative for a storage-heavy workload. Trimmed to 6/20
+    // (still comfortably above `budget`) so `storage` (cpu 6, ram 24) actually qualifies,
+    // verified against every tier's trait triple, not just storageGb.
+    demands: { cpu: 6, ramGb: 20, storageGb: 800 },
     workSeconds: 40,
     deadlineSeconds: 70,
     payPerSecond: 5.2,
@@ -164,7 +169,10 @@ export const WORKLOAD_ARCHETYPES: Record<WorkloadArchetypeId, WorkloadArchetypeD
   training: {
     id: 'training',
     label: 'ML Training',
-    demands: { cpu: 24, ramGb: 96, storageGb: 400 },
+    // Step 9 tuning fix: cpu was 24, above every tier but `dense` (whose cpu is 32; `memory`'s
+    // is only 12) — same silent-`dense`-monopoly bug as render above. Trimmed to 12 so `memory`
+    // (cpu 12, ram 256) qualifies, making it the intended RAM-hungry specialist choice.
+    demands: { cpu: 12, ramGb: 96, storageGb: 400 },
     workSeconds: 60,
     deadlineSeconds: 85,
     payPerSecond: 11.0,
