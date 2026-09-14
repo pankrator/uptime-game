@@ -21,10 +21,15 @@ export const TRAIT_UNITS: Record<TraitKey, string> = {
   storageGb: 'GB',
 };
 
-// Step 1 of .plans/workload-dispatch.md: only `basic`/`dense` for now, converted from the old
-// scalar `compute` to `traits.cpu` with a 1:1 mapping so nothing else changes behavior yet.
-// Step 1a adds `storage` | `memory` | `budget`.
-export type MachineTierId = 'basic' | 'dense';
+// Fixed, hand-authored catalog of server tiers — no custom builds. See
+// .plans/workload-dispatch.md D6. Each tier is deliberately lopsided toward a different trait
+// so the catalog itself teaches that server choice is a decision: `dense` is 4x `basic`'s
+// CPU/RAM but only 2x its storage; `storage` beats `dense` on disk at half the cost but a
+// fifth of the CPU; `memory` has more RAM than `dense` for less money but a third of the CPU.
+// `budget` is cheap and weak everywhere — an always-affordable early option, never the best
+// choice for any archetype. Adding a tier later is one more row here; BUILDABLES
+// (components.ts) and the build panel/hotkeys derive from MACHINE_TIERS automatically.
+export type MachineTierId = 'basic' | 'dense' | 'storage' | 'memory' | 'budget';
 
 export interface MachineTierDef {
   id: MachineTierId;
@@ -37,11 +42,20 @@ export interface MachineTierDef {
 }
 
 export const MACHINE_TIERS: Record<MachineTierId, MachineTierDef> = {
+  budget: {
+    id: 'budget',
+    label: 'Budget Box',
+    cost: 120,
+    traits: { cpu: 4, ramGb: 8, storageGb: 250 },
+    powerKw: 0.2,
+    coolingKw: 0.15,
+    installSeconds: 2.0,
+  },
   basic: {
     id: 'basic',
     label: 'Server',
     cost: 250,
-    traits: { cpu: 10, ramGb: 999, storageGb: 999 },
+    traits: { cpu: 8, ramGb: 32, storageGb: 1000 },
     powerKw: 0.4,
     coolingKw: 0.3,
     installSeconds: 3.0,
@@ -50,10 +64,28 @@ export const MACHINE_TIERS: Record<MachineTierId, MachineTierDef> = {
     id: 'dense',
     label: 'Blade Chassis',
     cost: 900,
-    traits: { cpu: 45, ramGb: 999, storageGb: 999 },
+    traits: { cpu: 32, ramGb: 128, storageGb: 2000 },
     powerKw: 1.6,
     coolingKw: 1.4,
     installSeconds: 4.5,
+  },
+  storage: {
+    id: 'storage',
+    label: 'Storage Array',
+    cost: 500,
+    traits: { cpu: 6, ramGb: 24, storageGb: 6000 },
+    powerKw: 0.5,
+    coolingKw: 0.4,
+    installSeconds: 4.0,
+  },
+  memory: {
+    id: 'memory',
+    label: 'Memory Node',
+    cost: 700,
+    traits: { cpu: 12, ramGb: 256, storageGb: 800 },
+    powerKw: 0.9,
+    coolingKw: 0.8,
+    installSeconds: 4.0,
   },
 };
 
