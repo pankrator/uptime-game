@@ -16,6 +16,7 @@ import {
   coolingCapacities,
   offers,
   openRackPanels,
+  dragStates,
   type BuildableDef,
 } from '../components';
 import { acceptOffer, declineOffer } from '../dispatch';
@@ -43,7 +44,16 @@ import {
   getOfferButtonRect,
   getRackPanelCloseButtonRect,
 } from '../../ui/layout';
-import { findRackAt, serversOn, trayWorkloadIds, openOrPromoteRackPanel, closeRackPanel } from './rack-panel';
+import {
+  findRackAt,
+  serversOn,
+  trayWorkloadIds,
+  openOrPromoteRackPanel,
+  closeRackPanel,
+  tryStartDrag,
+  updateDrag,
+  resolveDrop,
+} from './rack-panel';
 import { type System } from './system';
 
 interface OfferButtonHit {
@@ -237,6 +247,41 @@ export function createInputSystem(
 
   return {
     update() {
+      // --- Drag lifecycle (step 8) — runs every frame, independent of wasClicked(), since a
+      // drag spans multiple frames between mousedown and mouseup. Owned here (not in
+      // rack-panel.ts) for the same single-consumer reason as the click chain below: a drag's
+      // mouseup also fires the browser's synthetic `click` event (no built-in drag threshold),
+      // so whichever system decides "was this a drag-release or a plain click" must be the one
+      // place both wasReleased() and wasClicked() are read, or the two could disagree.
+      if (input.wasPressed()) {
+        const pressPoint = input.getPointerPosition();
+        if (pressPoint) {
+          tryStartDrag(world, renderer, controlled, pressPoint);
+        }
+      }
+
+      // Re-read after the press check above: a press and release can land in the same frame
+      // (a fast click), and tryStartDrag may have just created this — reading dragStates
+      // before the press check would miss that and leave the drag stuck forever (started, but
+      // never resolved since wasReleased() only fires once).
+      if (world.getComponent(dragStates, controlled)) {
+        const movePoint = input.getPointerPosition();
+        if (movePoint) updateDrag(world, controlled, movePoint);
+      }
+
+      if (input.wasReleased()) {
+        // wasClicked() is also pending on this same release — consume it now so the click
+        // chain below never sees it, whether or not a drag was actually in progress. Dragging
+        // a chip a few pixels and releasing should never also walk the player to that spot.
+        input.wasClicked();
+
+        const releasePoint = input.getPointerPosition();
+        if (releasePoint) {
+          resolveDrop(world, renderer, controlled, releasePoint);
+        }
+        return;
+      }
+
       if (!input.wasClicked()) return;
 
       const pointer = input.getPointerPosition();
@@ -264,8 +309,8 @@ export function createInputSystem(
       }
 
       // 1.5. Open rack panel: its close button, or any other click inside it (server rows/tray
-      // are read-only until step 8's drag lands, so for now any non-close click inside just
-      // gets absorbed rather than falling through to movement or build placement).
+      // are read-only for viewing-mode panels and for clicks that aren't drags — dragging a
+      // tray card or chip is handled above, before this click chain runs at all).
       const openPanel = world.getComponent(openRackPanels, controlled);
       if (openPanel) {
         const serverCount = serversOn(world, openPanel.rackId).length;

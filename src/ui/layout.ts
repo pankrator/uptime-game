@@ -263,6 +263,24 @@ export function getTrayTopY(
   );
 }
 
+// The tray strip's full-width hit area (header + cards), used to detect "dropped on the tray"
+// during a drag — the complement of getServerRowRect for drag targets.
+export function getTrayDropRect(
+  canvasWidth: number,
+  canvasHeight: number,
+  serverCount: number,
+  trayCount: number,
+): Rect {
+  const panel = getRackPanelRect(canvasWidth, canvasHeight, serverCount, trayCount);
+  const top = getTrayTopY(canvasWidth, canvasHeight, serverCount, trayCount);
+  return {
+    x: panel.x + RACK_PANEL_PADDING,
+    y: top,
+    width: panel.width - RACK_PANEL_PADDING * 2,
+    height: panel.y + panel.height - RACK_PANEL_PADDING - top,
+  };
+}
+
 export function pointerInHud(
   point: { x: number; y: number },
   canvas: HTMLCanvasElement,

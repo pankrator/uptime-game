@@ -16,12 +16,13 @@ import {
   installTasks,
   wallets,
   workloads,
-  placedOns,
   serverCapacities,
   utilizations,
   powerCapacities,
   coolingCapacities,
   openRackPanels,
+  dragStates,
+  rejectedDrops,
 } from '../components';
 import { RACK_SLOT_CAPACITY, MACHINE_TIERS, TRAIT_KEYS, TRAIT_LABELS, WORKLOAD_ARCHETYPES } from '../game-data';
 import { type Renderer } from '../../rendering';
@@ -36,7 +37,7 @@ import {
   getTrayTopY,
   RACK_PANEL_PADDING,
 } from '../../ui/layout';
-import { serversOn, trayWorkloadIds } from './rack-panel';
+import { serversOn, trayWorkloadIds, placedWorkloadIds } from './rack-panel';
 import { type System } from './system';
 
 const PLAYER_RADIUS = 12;
@@ -371,6 +372,13 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
   const trayIds = trayWorkloadIds(world);
   const rect = getRackPanelRect(canvasWidth, canvasHeight, serverIds.length, trayIds.length);
 
+  // Interactive == dispatching mode (D4: viewing renders identically but nothing responds to
+  // drag). Used below to skip drawing hover/drag-only chrome in viewing mode, and by the drag
+  // and rejection sections at the end of this function, which are meaningless while viewing.
+  const interactive = panel.mode === 'dispatching';
+  const drag = interactive ? world.getComponent(dragStates, controlled) : undefined;
+  const rejection = interactive ? world.getComponent(rejectedDrops, controlled) : undefined;
+
   // Dim the floor behind the panel so it reads as a modal overlay.
   ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
   ctx.fillRect(0, 0, canvasWidth, canvasHeight);
@@ -418,6 +426,11 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
     ctx.fillStyle = online ? RACK_PANEL_TEXT : RACK_PANEL_RED;
     ctx.fillText(online ? tier.label : `${tier.label} (offline)`, row.x + 6, row.y + 8);
 
+    // Pulse rejected trait bars red for a moment after a failed drop onto this server —
+    // "flash the blocking trait bars red" (step 8).
+    const rejectionHere = rejection?.serverId === serverId ? rejection : undefined;
+    const flashPulse = rejectionHere ? (Math.sin(performance.now() / 90) + 1) / 2 : 0;
+
     // One bar per trait: label, then a thin usage bar beneath it.
     TRAIT_KEYS.forEach((key, traitIndex) => {
       const barRect = getServerTraitBarRect(index, traitIndex, canvasWidth, canvasHeight, serverIds.length, trayIds.length);
@@ -426,29 +439,37 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
       const used = total - free;
       const fraction = total > 0 ? used / total : 0;
       const exhausted = free <= 0;
+      const flashing = rejectionHere?.blocking.includes(key) ?? false;
 
       ctx.font = '9px sans-serif';
-      ctx.fillStyle = RACK_PANEL_DIM;
+      ctx.fillStyle = flashing ? RACK_PANEL_RED : RACK_PANEL_DIM;
       ctx.fillText(`${TRAIT_LABELS[key]} ${used}/${total}`, barRect.x, barRect.y - 5);
 
       ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
       ctx.fillRect(barRect.x, barRect.y, barRect.width, barRect.height);
       ctx.fillStyle = exhausted ? RACK_PANEL_RED : RACK_PANEL_GREEN;
       ctx.fillRect(barRect.x, barRect.y, barRect.width * Math.min(1, fraction), barRect.height);
+
+      if (flashing) {
+        ctx.strokeStyle = `rgba(229, 72, 77, ${0.5 + flashPulse * 0.5})`;
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(barRect.x - 1, barRect.y - 9, barRect.width + 2, barRect.height + 10);
+      }
     });
 
-    // Placed-workload chips, top-right of the row.
-    const placedIds = world
-      .query(placedOns, workloads)
-      .filter((id) => world.getComponent(placedOns, id)!.serverId === serverId);
+    // Placed-workload chips, top-right of the row. The one currently being dragged is skipped
+    // here — it's drawn once, following the cursor, at the end of this function instead.
+    const placedIds = placedWorkloadIds(world, serverId);
     placedIds.forEach((workloadId, chipIndex) => {
+      if (drag && drag.workloadId === workloadId) return;
+
       const chip = getPlacedChipRect(index, chipIndex, canvasWidth, canvasHeight, serverIds.length, trayIds.length);
       const workload = world.getComponent(workloads, workloadId)!;
       const archetype = WORKLOAD_ARCHETYPES[workload.archetypeId];
 
       ctx.fillStyle = '#2e343b';
       ctx.fillRect(chip.x, chip.y, chip.width, chip.height);
-      ctx.strokeStyle = '#4dabf7';
+      ctx.strokeStyle = interactive ? '#4dabf7' : '#555';
       ctx.strokeRect(chip.x, chip.y, chip.width, chip.height);
       ctx.font = '9px sans-serif';
       ctx.textAlign = 'left';
@@ -472,6 +493,8 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
     ctx.fillText('(empty)', rect.x + 14, trayHeaderY + 16);
   } else {
     trayIds.forEach((workloadId, index) => {
+      if (drag && drag.origin === 'tray' && drag.workloadId === workloadId) return;
+
       const card = getTrayCardRect(index, canvasWidth, canvasHeight, serverIds.length, trayIds.length);
       const workload = world.getComponent(workloads, workloadId)!;
       const archetype = WORKLOAD_ARCHETYPES[workload.archetypeId];
@@ -496,6 +519,32 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
         card.y + card.height * 0.72,
       );
     });
+  }
+
+  // The dragged card itself, following the cursor, drawn last so it's always on top.
+  if (drag) {
+    const workload = world.getComponent(workloads, drag.workloadId);
+    if (workload) {
+      const archetype = WORKLOAD_ARCHETYPES[workload.archetypeId];
+      const cardWidth = 120;
+      const cardHeight = 30;
+      const x = drag.pointer.x - cardWidth / 2;
+      const y = drag.pointer.y - cardHeight / 2;
+
+      ctx.save();
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = '#3a4048';
+      ctx.fillRect(x, y, cardWidth, cardHeight);
+      ctx.strokeStyle = RACK_PANEL_GREEN;
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(x, y, cardWidth, cardHeight);
+      ctx.font = '10px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = RACK_PANEL_TEXT;
+      ctx.fillText(archetype.label, x + cardWidth / 2, y + cardHeight / 2);
+      ctx.restore();
+    }
   }
 }
 

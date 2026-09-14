@@ -7,6 +7,7 @@ import {
   type MachineTierId,
   type WorkloadArchetypeId,
   type Traits,
+  type TraitKey,
 } from './game-data';
 
 export const GRID_CELL_SIZE = 40;
@@ -207,6 +208,16 @@ export interface DragState {
   origin: 'tray' | { serverId: EntityId }; // where it came from, for cancel/revert
 }
 
+// A drop just got rejected (didn't fit) — attached to the player for a short window so
+// render.ts can flash the blocking trait bars red. Cleared by rack-panel.ts once it expires.
+// See .plans/workload-dispatch.md step 8: "Doesn't fit → reject, flash the blocking trait bars
+// red, card returns to origin."
+export interface RejectedDrop {
+  serverId: EntityId;
+  blocking: TraitKey[];
+  expiresAtMs: number;
+}
+
 // An offered contract awaiting accept/decline. Its own entity; no Position, no Renderable.
 // Turning this down costs nothing (see REPUTATION_ON_DECLINE) — the accept/decline choice is
 // the actual difficulty dial now, not passive demand escalation. See
@@ -267,3 +278,4 @@ export const offers = createComponentStore<Offer>();
 export const openRackPanels = createComponentStore<OpenRackPanel>();
 export const pendingDrops = createComponentStore<PendingDrop>();
 export const dragStates = createComponentStore<DragState>();
+export const rejectedDrops = createComponentStore<RejectedDrop>();
