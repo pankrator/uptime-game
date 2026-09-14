@@ -1,5 +1,4 @@
 import { BUILDABLES } from '../ecs/components';
-import { TRAIT_KEYS } from '../ecs/game-data';
 
 export const BUILD_PANEL_MARGIN = 12;
 export const BUILD_PANEL_ENTRY_WIDTH = 120;
@@ -119,19 +118,25 @@ function getOffersPanelRect(offerCount: number): Rect {
 // Centered overlay rather than pinned to a HUD edge: it needs room for up to RACK_SLOT_CAPACITY
 // server rows, each with TRAIT_KEYS.length trait bars, plus a tray strip — more content than
 // any existing HUD panel. See .plans/workload-dispatch.md step 7.
-export const RACK_PANEL_WIDTH = 420;
-export const RACK_PANEL_PADDING = 14;
-export const RACK_PANEL_HEADER_HEIGHT = 28;
-export const RACK_SERVER_ROW_HEIGHT = 54;
-export const RACK_SERVER_ROW_GAP = 8;
+export const RACK_PANEL_WIDTH = 460;
+export const RACK_PANEL_PADDING = 16;
+export const RACK_PANEL_HEADER_HEIGHT = 30;
+// Was 54 — too tight for a label line plus three trait-bar-and-label pairs beneath it (they
+// visually overlapped). Layout, top to bottom: 16px to the server-name label, 18px gap, then
+// three stacked trait rows (each a label line + a 6px bar, 20px apart), 8px bottom margin. See
+// getServerRowLabelY / getServerTraitBarRect below for the exact offsets this height is sized
+// against — keep them in sync if this changes.
+export const RACK_SERVER_ROW_HEIGHT = 100;
+export const RACK_SERVER_ROW_GAP = 10;
 export const RACK_TRAIT_BAR_HEIGHT = 6;
 export const RACK_TRAIT_BAR_GAP = 4;
 export const RACK_CHIP_HEIGHT = 16;
 export const RACK_CHIP_GAP = 3;
-export const RACK_TRAY_HEADER_HEIGHT = 18;
-export const RACK_TRAY_CARD_HEIGHT = 34;
-export const RACK_TRAY_CARD_GAP = 6;
-export const RACK_CLOSE_BUTTON_SIZE = 20;
+export const RACK_TRAY_HEADER_HEIGHT = 20;
+export const RACK_TRAY_CARD_WIDTH = 110;
+export const RACK_TRAY_CARD_HEIGHT = 38;
+export const RACK_TRAY_CARD_GAP = 8;
+export const RACK_CLOSE_BUTTON_SIZE = 24;
 
 export function getRackPanelRect(
   canvasWidth: number,
@@ -191,7 +196,25 @@ export function getServerRowRect(
   };
 }
 
-// One bar per TRAIT_KEYS entry, stacked in the lower half of the server row.
+// Row-internal vertical rhythm, top to bottom: RACK_ROW_LABEL_OFFSET_Y to the server-name
+// label, then RACK_ROW_BARS_TOP_OFFSET_Y before the first trait bar's own label, then one
+// RACK_TRAIT_ROW_HEIGHT per trait (label line + gap + bar). Kept as named constants (not
+// inlined into each function) so the label and the bars it describes can never silently drift
+// apart the way they did before this fix — RACK_SERVER_ROW_HEIGHT's comment is sized against
+// exactly these numbers, so change them together.
+const RACK_ROW_LABEL_OFFSET_Y = 16;
+const RACK_ROW_BARS_TOP_OFFSET_Y = 34;
+const RACK_TRAIT_ROW_HEIGHT = 20; // 10px label line + RACK_TRAIT_BAR_GAP + RACK_TRAIT_BAR_HEIGHT
+
+// Baseline Y for the server's own name/status label, top-left of the row.
+export function getServerRowLabelY(row: Rect): number {
+  return row.y + RACK_ROW_LABEL_OFFSET_Y;
+}
+
+// One bar per TRAIT_KEYS entry, stacked vertically (not side by side — three short horizontal
+// bars in a row read worse than three full-width bars stacked, and stacking leaves room for
+// each bar's own label without crowding). See RACK_SERVER_ROW_HEIGHT's comment for the budget
+// this geometry is sized against.
 export function getServerTraitBarRect(
   serverIndex: number,
   traitIndex: number,
@@ -201,12 +224,17 @@ export function getServerTraitBarRect(
   trayCount: number,
 ): Rect {
   const row = getServerRowRect(serverIndex, canvasWidth, canvasHeight, serverCount, trayCount);
-  const barsTop = row.y + 20;
-  const barWidth = (row.width - 8 * (TRAIT_KEYS.length - 1)) / TRAIT_KEYS.length;
+  const barsTop = row.y + RACK_ROW_BARS_TOP_OFFSET_Y;
+  // Chips sit at the row's top-right (see getPlacedChipRect); trait bars stop short of that
+  // column so a long trait label/bar never runs under a chip.
+  const chipColumnWidth = 76;
+  // Each trait gets a RACK_TRAIT_ROW_HEIGHT-tall block; the bar sits at the block's bottom so
+  // its own label (drawn above it by render.ts) has the full block's top to sit in without
+  // colliding with the previous trait's bar.
   return {
-    x: row.x + traitIndex * (barWidth + 8),
-    y: barsTop,
-    width: barWidth,
+    x: row.x,
+    y: barsTop + traitIndex * RACK_TRAIT_ROW_HEIGHT + (RACK_TRAIT_ROW_HEIGHT - RACK_TRAIT_BAR_HEIGHT),
+    width: row.width - chipColumnWidth,
     height: RACK_TRAIT_BAR_HEIGHT,
   };
 }
@@ -240,9 +268,9 @@ export function getTrayCardRect(
 ): Rect {
   const panel = getRackPanelRect(canvasWidth, canvasHeight, serverCount, trayCount);
   return {
-    x: panel.x + RACK_PANEL_PADDING + index * (RACK_TRAY_CARD_HEIGHT * 2.4 + RACK_TRAY_CARD_GAP),
+    x: panel.x + RACK_PANEL_PADDING + index * (RACK_TRAY_CARD_WIDTH + RACK_TRAY_CARD_GAP),
     y: getTrayTopY(canvasWidth, canvasHeight, serverCount, trayCount) + RACK_TRAY_HEADER_HEIGHT,
-    width: RACK_TRAY_CARD_HEIGHT * 2.4,
+    width: RACK_TRAY_CARD_WIDTH,
     height: RACK_TRAY_CARD_HEIGHT,
   };
 }
@@ -301,14 +329,3 @@ export function pointerInHud(
   return false;
 }
 
-// A click anywhere inside the open rack panel must never fall through to "walk here" — same
-// reasoning as pointerInHud for the build/offers/workload panels.
-export function pointerInRackPanel(
-  point: { x: number; y: number },
-  canvas: HTMLCanvasElement,
-  serverCount: number,
-  trayCount: number,
-): boolean {
-  const panel = getRackPanelRect(canvas.width, canvas.height, serverCount, trayCount);
-  return pointerInRect(point, panel);
-}

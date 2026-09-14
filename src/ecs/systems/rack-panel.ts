@@ -127,7 +127,9 @@ export function tryStartDrag(
   pointer: { x: number; y: number },
 ): boolean {
   const panel = world.getComponent(openRackPanels, controlled);
-  if (!panel || panel.mode !== 'dispatching') return false;
+  // Dispatching-mode panels are invisible until arrived (render.ts's early return) — refuse to
+  // start a drag against geometry that isn't actually on screen.
+  if (!panel || panel.mode !== 'dispatching' || !panel.arrived) return false;
 
   const canvasWidth = renderer.canvas.width;
   const canvasHeight = renderer.canvas.height;

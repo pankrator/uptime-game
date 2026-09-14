@@ -40,7 +40,6 @@ import {
   getBuildPanelEntryRect,
   pointerInRect,
   pointerInHud,
-  pointerInRackPanel,
   getOfferButtonRect,
   getRackPanelCloseButtonRect,
 } from '../../ui/layout';
@@ -313,11 +312,14 @@ export function createInputSystem(
         return;
       }
 
-      // 1.5. Open rack panel: its close button, or any other click inside it (server rows/tray
-      // are read-only for viewing-mode panels and for clicks that aren't drags — dragging a
-      // tray card or chip is handled above, before this click chain runs at all).
+      // 1.5. Open rack panel. A dispatching-mode panel stays hidden (and non-interactive)
+      // until the player arrives — see rack-panel.ts's arrival check and render.ts's early
+      // return — so while still walking there, a click falls through to plain movement below
+      // (redirecting the walk, same as clicking anywhere else always does) rather than being
+      // absorbed by a panel that isn't even on screen yet.
       const openPanel = world.getComponent(openRackPanels, controlled);
-      if (openPanel) {
+      const panelVisible = openPanel && (openPanel.mode === 'viewing' || openPanel.arrived);
+      if (panelVisible) {
         const serverCount = serversOn(world, openPanel.rackId).length;
         const trayCount = trayWorkloadIds(world).length;
         const closeRect = getRackPanelCloseButtonRect(
@@ -326,13 +328,13 @@ export function createInputSystem(
           serverCount,
           trayCount,
         );
+        // The panel is a full-screen modal (the floor behind it is dimmed), so every click
+        // while it's visible is absorbed here — not just clicks landing inside its own rect —
+        // except the close button.
         if (pointerInRect(pointer, closeRect)) {
           closeRackPanel(world, controlled);
-          return;
         }
-        if (pointerInRackPanel(pointer, renderer.canvas, serverCount, trayCount)) {
-          return;
-        }
+        return;
       }
 
       const panelIndex = hitTestPanel(pointer, renderer.canvas.height);
@@ -385,7 +387,14 @@ export function createInputSystem(
         return;
       }
 
-      // 5. Plain floor click: just move.
+      // 5. Plain floor click: just move. Cancels any not-yet-arrived dispatching panel — the
+      // player just redirected away from that rack, and leaving it pending would let the panel
+      // pop open unexpectedly if they later happened to walk near that rack for some other
+      // reason (openPanel here is guaranteed not-yet-arrived: the arrived/viewing case already
+      // returned above at the panelVisible check).
+      if (openPanel) {
+        world.removeComponent(openRackPanels, controlled);
+      }
       moveControlledTo(world, renderer, controlled, pointer);
     },
   };

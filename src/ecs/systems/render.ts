@@ -31,6 +31,7 @@ import {
   getRackPanelRect,
   getRackPanelCloseButtonRect,
   getServerRowRect,
+  getServerRowLabelY,
   getServerTraitBarRect,
   getPlacedChipRect,
   getTrayCardRect,
@@ -364,6 +365,11 @@ const RACK_PANEL_RED = '#e5484d';
 function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): void {
   const panel = world.getComponent(openRackPanels, controlled);
   if (!panel) return;
+  // Dispatching-mode panels stay hidden while the player is still walking there — only
+  // right-click's viewing mode is a true "peek from anywhere". Left-clicking a rack starts the
+  // walk (see input.ts) but the panel itself doesn't appear until rack-panel.ts flips
+  // `arrived` to true.
+  if (panel.mode === 'dispatching' && !panel.arrived) return;
 
   const ctx = renderer.context;
   const { width: canvasWidth, height: canvasHeight } = renderer.canvas;
@@ -389,14 +395,15 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
   ctx.lineWidth = 1;
   ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
 
-  // Header: mode tells the player whether drops will commit immediately or wait for arrival.
+  // Header. The "WALKING…" state never reaches this function (see the early return above —
+  // dispatching-mode panels are hidden until arrived), so panel.mode === 'dispatching' here
+  // always means arrived.
   ctx.font = 'bold 13px sans-serif';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = RACK_PANEL_TEXT;
   const headerY = rect.y + RACK_PANEL_PADDING + 8;
-  const modeLabel =
-    panel.mode === 'viewing' ? 'VIEWING (walk there to dispatch)' : panel.arrived ? 'DISPATCHING' : 'WALKING…';
+  const modeLabel = panel.mode === 'viewing' ? 'VIEWING (walk there to dispatch)' : 'DISPATCHING';
   ctx.fillText(`Rack — ${modeLabel}`, rect.x + 14, headerY);
 
   // Close button ("×").
@@ -420,11 +427,11 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
     ctx.strokeStyle = '#2f333a';
     ctx.strokeRect(row.x, row.y, row.width, row.height);
 
-    ctx.font = '11px sans-serif';
+    ctx.font = 'bold 12px sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = online ? RACK_PANEL_TEXT : RACK_PANEL_RED;
-    ctx.fillText(online ? tier.label : `${tier.label} (offline)`, row.x + 6, row.y + 8);
+    ctx.fillText(online ? tier.label : `${tier.label} (offline)`, row.x + 6, getServerRowLabelY(row));
 
     // Pulse rejected trait bars red for a moment after a failed drop onto this server —
     // "flash the blocking trait bars red" (step 8).
@@ -443,7 +450,7 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
 
       ctx.font = '9px sans-serif';
       ctx.fillStyle = flashing ? RACK_PANEL_RED : RACK_PANEL_DIM;
-      ctx.fillText(`${TRAIT_LABELS[key]} ${used}/${total}`, barRect.x, barRect.y - 5);
+      ctx.fillText(`${TRAIT_LABELS[key]} ${used}/${total}`, barRect.x, barRect.y - 6);
 
       ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
       ctx.fillRect(barRect.x, barRect.y, barRect.width, barRect.height);
