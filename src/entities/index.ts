@@ -95,10 +95,10 @@ export function spawnWorkload(
   world.addComponent(workloads, id, {
     archetypeId,
     demands: scaleTraits(archetype.demands, appliedScale),
-    durationSeconds: archetype.durationSeconds,
-    elapsedSeconds: 0,
+    workSeconds: archetype.workSeconds,
+    workRemainingSeconds: archetype.workSeconds,
     payPerSecond: archetype.payPerSecond * appliedScale,
-    graceRemainingSeconds: archetype.graceSeconds,
+    deadlineRemainingSeconds: archetype.deadlineSeconds,
     state: 'pending',
   });
   return id;

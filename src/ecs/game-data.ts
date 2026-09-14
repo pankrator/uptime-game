@@ -108,64 +108,67 @@ export interface WorkloadArchetypeDef {
   id: WorkloadArchetypeId;
   label: string;
   demands: Traits;
-  durationSeconds: number;
+  workSeconds: number; // time ON a server to finish, once placed — replaces durationSeconds
+  deadlineSeconds: number; // total wall-clock from acceptance — replaces graceSeconds (D2)
   payPerSecond: number;
   coolingBonusKw: number; // per assigned machine, while running
-  graceSeconds: number;
   minReputation: number;
   scales: boolean; // false: demands/payPerSecond stay flat, ignoring getComputeScale
 }
 
-// Step 1: demands.ramGb/storageGb are set to 0 (no old scalar to map from) so they never block
-// the still-CPU-only auto-assign logic in workload-assign.ts. Step 4/9 gives these real shapes.
+// Each archetype leans on a different trait — that's the whole reason traits exist (see
+// .plans/workload-dispatch.md): `render` is storage-heavy, `training` is RAM-hungry, `batch`
+// is CPU-leaning, `web` is small and balanced. deadlineSeconds budgets workSeconds + enough
+// slack to walk across the floor and dispatch (~+30s early archetypes, tightening to ~+15s
+// late-game so efficient dispatch starts to matter).
 export const WORKLOAD_ARCHETYPES: Record<WorkloadArchetypeId, WorkloadArchetypeDef> = {
   web: {
     id: 'web',
     label: 'Web Hosting',
-    demands: { cpu: 10, ramGb: 0, storageGb: 0 },
-    durationSeconds: 45,
+    demands: { cpu: 2, ramGb: 8, storageGb: 100 },
+    workSeconds: 45,
+    deadlineSeconds: 80,
     payPerSecond: 0.9,
     coolingBonusKw: 0,
-    graceSeconds: 25,
     minReputation: 0,
     scales: false,
   },
   batch: {
     id: 'batch',
     label: 'Batch Job',
-    demands: { cpu: 25, ramGb: 0, storageGb: 0 },
-    durationSeconds: 30,
+    demands: { cpu: 8, ramGb: 16, storageGb: 200 },
+    workSeconds: 30,
+    deadlineSeconds: 60,
     payPerSecond: 2.6,
     coolingBonusKw: 0,
-    graceSeconds: 20,
     minReputation: 20,
     scales: true,
   },
   render: {
     id: 'render',
     label: 'Render Farm',
-    demands: { cpu: 45, ramGb: 0, storageGb: 0 },
-    durationSeconds: 40,
+    demands: { cpu: 16, ramGb: 32, storageGb: 800 },
+    workSeconds: 40,
+    deadlineSeconds: 70,
     payPerSecond: 5.2,
     coolingBonusKw: 0.8,
-    graceSeconds: 18,
     minReputation: 40,
     scales: true,
   },
   training: {
     id: 'training',
     label: 'ML Training',
-    demands: { cpu: 90, ramGb: 0, storageGb: 0 },
-    durationSeconds: 60,
+    demands: { cpu: 24, ramGb: 96, storageGb: 400 },
+    workSeconds: 60,
+    deadlineSeconds: 85,
     payPerSecond: 11.0,
     coolingBonusKw: 2.2,
-    graceSeconds: 15,
     minReputation: 60,
     scales: true,
   },
 };
 
-export const REPUTATION_ON_EXPIRY = -8;
+export const REPUTATION_ON_MISSED_DEADLINE = -8; // renamed from REPUTATION_ON_EXPIRY (D2)
 export const REPUTATION_ON_COMPLETION = 3;
 export const BROWNOUT_COOLDOWN_SECONDS = 1.0;
 

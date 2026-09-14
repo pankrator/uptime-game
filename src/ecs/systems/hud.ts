@@ -166,7 +166,7 @@ function drawWorkloadPanel(world: World, renderer: Renderer, facility: EntityId)
   pending.sort((a, b) => a.id - b.id);
 
   // Section headers count as rows for layout purposes. Pending jobs are always shown in
-  // full (they're grace-timed and self-expire, so the list can't grow unbounded) — only
+  // full (they're deadline-timed and self-expire, so the list can't grow unbounded) — only
   // ACTIVE rows are capped/truncated to keep the panel from overflowing the canvas.
   const pendingLines: { kind: 'header' | 'pending'; row?: WorkloadRow; label?: string }[] = [];
   if (pending.length > 0) {
@@ -236,8 +236,8 @@ function drawWorkloadPanel(world: World, renderer: Renderer, facility: EntityId)
     const archetype = WORKLOAD_ARCHETYPES[workload.archetypeId];
 
     if (line.kind === 'active') {
-      const fraction = workload.elapsedSeconds / workload.durationSeconds;
-      const remaining = Math.max(0, Math.ceil(workload.durationSeconds - workload.elapsedSeconds));
+      const fraction = 1 - workload.workRemainingSeconds / workload.workSeconds;
+      const remaining = Math.max(0, Math.ceil(workload.workRemainingSeconds));
       const labelY = rect.y + rect.height * 0.32;
       const statsY = rect.y + rect.height * 1.0;
 
@@ -272,7 +272,7 @@ function drawWorkloadPanel(world: World, renderer: Renderer, facility: EntityId)
     // line, shortfall on the second.
     const labelY = rect.y + rect.height * 0.32;
     const shortfallY = rect.y + rect.height * 1.0;
-    const escalated = workload.graceRemainingSeconds < 5;
+    const escalated = workload.deadlineRemainingSeconds < 5;
 
     ctx.font = '12px sans-serif';
     ctx.textAlign = 'left';
@@ -281,7 +281,11 @@ function drawWorkloadPanel(world: World, renderer: Renderer, facility: EntityId)
     ctx.fillText(`⚠ ${archetype.label}`, rect.x + padX, labelY);
 
     ctx.textAlign = 'right';
-    ctx.fillText(`${Math.max(0, Math.ceil(workload.graceRemainingSeconds))}s`, rect.x + rect.width - padX, labelY);
+    ctx.fillText(
+      `${Math.max(0, Math.ceil(workload.deadlineRemainingSeconds))}s`,
+      rect.x + rect.width - padX,
+      labelY,
+    );
 
     ctx.font = '11px sans-serif';
     ctx.textAlign = 'left';

@@ -184,16 +184,22 @@ export interface PlacedOn {
   serverId: EntityId;
 }
 
-// Workloads — their own entities, with no Position and no Renderable
+// Workloads — their own entities, with no Position and no Renderable. `state` keeps its step-1
+// 'pending' value for now ('pending' == "accepted, not yet placed") — step 5 renames it to
+// 'accepted' once Offer exists and 'pending' would otherwise be ambiguous with an offer.
 export type WorkloadState = 'pending' | 'running';
 
+// D2: a single finish deadline, not separate start/finish deadlines. deadlineRemainingSeconds
+// ticks ALWAYS from acceptance (whether sitting unplaced or running); workRemainingSeconds only
+// ticks while running. Sitting unplaced burns the player's own deadline margin, with no
+// separate start-deadline penalty to track. See .plans/workload-dispatch.md D2.
 export interface Workload {
   archetypeId: WorkloadArchetypeId;
-  demands: Traits; // step 1: replaces computeRequired; step 4 adds deadline/work-remaining split
-  durationSeconds: number;
-  elapsedSeconds: number;
+  demands: Traits;
+  workSeconds: number; // total time ON a server needed to finish, once placed
+  workRemainingSeconds: number;
   payPerSecond: number;
-  graceRemainingSeconds: number;
+  deadlineRemainingSeconds: number;
   state: WorkloadState;
 }
 

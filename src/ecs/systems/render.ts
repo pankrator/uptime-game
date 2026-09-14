@@ -229,18 +229,18 @@ function drawManager(renderer: Renderer, x: number, y: number): void {
 }
 
 function drawPendingBorder(world: World, renderer: Renderer): void {
-  let lowestGrace = Infinity;
+  let lowestDeadline = Infinity;
   for (const id of world.query(workloads)) {
     const workload = world.getComponent(workloads, id)!;
     if (workload.state !== 'pending') continue;
-    lowestGrace = Math.min(lowestGrace, workload.graceRemainingSeconds);
+    lowestDeadline = Math.min(lowestDeadline, workload.deadlineRemainingSeconds);
   }
-  if (lowestGrace === Infinity) return;
+  if (lowestDeadline === Infinity) return;
 
   const { width, height } = renderer.canvas;
   const ctx = renderer.context;
   const pulse = (Math.sin(performance.now() / 300) + 1) / 2;
-  const escalated = lowestGrace < 5;
+  const escalated = lowestDeadline < 5;
   const color = escalated ? '229, 72, 77' : '247, 183, 49';
 
   ctx.save();
