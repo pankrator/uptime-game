@@ -1,12 +1,13 @@
 import { type World, type EntityId } from '../world';
-import { demandClocks, reputations } from '../components';
+import { demandClocks, reputations, offers } from '../components';
 import {
   WORKLOAD_ARCHETYPES,
   getArrivalInterval,
   getComputeScale,
+  MAX_OFFERS,
   type WorkloadArchetypeId,
 } from '../game-data';
-import { spawnWorkload } from '../../entities';
+import { spawnOffer } from '../../entities';
 import { type System } from './system';
 
 function pickArchetype(reputation: number): WorkloadArchetypeId {
@@ -25,6 +26,9 @@ function pickArchetype(reputation: number): WorkloadArchetypeId {
   return eligible[eligible.length - 1].id;
 }
 
+// Spawns Offer entities (accept/decline, not yet live workloads), capped at MAX_OFFERS
+// concurrent. Each offer ticks its own secondsRemaining independently (see
+// createOfferExpirySystem below); this system only decides when a NEW offer arrives.
 export function createWorkloadSpawnSystem(world: World, facility: EntityId): System {
   return {
     update(deltaSeconds: number) {
@@ -37,11 +41,34 @@ export function createWorkloadSpawnSystem(world: World, facility: EntityId): Sys
 
       if (clock.nextArrivalInSeconds > 0) return;
 
+      // At cap: the clock keeps running but spawning is suppressed, so a player who ignores
+      // everything does not accumulate a backlog beyond MAX_OFFERS.
+      if (world.query(offers).length >= MAX_OFFERS) {
+        clock.nextArrivalInSeconds = getArrivalInterval(clock.elapsedSeconds, reputation.value);
+        return;
+      }
+
       const archetypeId = pickArchetype(reputation.value);
       const scale = getComputeScale(clock.elapsedSeconds, clock.peakComputeServed);
-      spawnWorkload(world, archetypeId, scale);
+      spawnOffer(world, archetypeId, scale);
 
       clock.nextArrivalInSeconds = getArrivalInterval(clock.elapsedSeconds, reputation.value);
+    },
+  };
+}
+
+// Ticks every open offer's countdown; at zero it auto-declines — destroyed with NO reputation
+// penalty (an ignored offer is a silent decline, same as REPUTATION_ON_DECLINE = 0).
+export function createOfferExpirySystem(world: World): System {
+  return {
+    update(deltaSeconds: number) {
+      for (const offerId of world.query(offers)) {
+        const offer = world.getComponent(offers, offerId)!;
+        offer.secondsRemaining -= deltaSeconds;
+        if (offer.secondsRemaining <= 0) {
+          world.destroyEntity(offerId);
+        }
+      }
     },
   };
 }

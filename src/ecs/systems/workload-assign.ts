@@ -14,7 +14,7 @@ export function createWorkloadAssignSystem(world: World): System {
     update() {
       const pendingWorkloadIds = world
         .query(workloads)
-        .filter((id) => world.getComponent(workloads, id)!.state === 'pending')
+        .filter((id) => world.getComponent(workloads, id)!.state === 'accepted')
         .sort((a, b) => a - b);
 
       if (pendingWorkloadIds.length === 0) return;

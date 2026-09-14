@@ -114,13 +114,16 @@ export interface WorkloadArchetypeDef {
   coolingBonusKw: number; // per assigned machine, while running
   minReputation: number;
   scales: boolean; // false: demands/payPerSecond stay flat, ignoring getComputeScale
+  offerSeconds: number; // how long the OFFER sits before auto-declining (no penalty)
 }
 
 // Each archetype leans on a different trait — that's the whole reason traits exist (see
 // .plans/workload-dispatch.md): `render` is storage-heavy, `training` is RAM-hungry, `batch`
 // is CPU-leaning, `web` is small and balanced. deadlineSeconds budgets workSeconds + enough
 // slack to walk across the floor and dispatch (~+30s early archetypes, tightening to ~+15s
-// late-game so efficient dispatch starts to matter).
+// late-game so efficient dispatch starts to matter). offerSeconds is a separate, shorter
+// window purely for the accept/decline decision — it does not touch deadlineRemainingSeconds,
+// which only starts counting once the offer is accepted.
 export const WORKLOAD_ARCHETYPES: Record<WorkloadArchetypeId, WorkloadArchetypeDef> = {
   web: {
     id: 'web',
@@ -132,6 +135,7 @@ export const WORKLOAD_ARCHETYPES: Record<WorkloadArchetypeId, WorkloadArchetypeD
     coolingBonusKw: 0,
     minReputation: 0,
     scales: false,
+    offerSeconds: 20,
   },
   batch: {
     id: 'batch',
@@ -143,6 +147,7 @@ export const WORKLOAD_ARCHETYPES: Record<WorkloadArchetypeId, WorkloadArchetypeD
     coolingBonusKw: 0,
     minReputation: 20,
     scales: true,
+    offerSeconds: 18,
   },
   render: {
     id: 'render',
@@ -154,6 +159,7 @@ export const WORKLOAD_ARCHETYPES: Record<WorkloadArchetypeId, WorkloadArchetypeD
     coolingBonusKw: 0.8,
     minReputation: 40,
     scales: true,
+    offerSeconds: 16,
   },
   training: {
     id: 'training',
@@ -165,11 +171,14 @@ export const WORKLOAD_ARCHETYPES: Record<WorkloadArchetypeId, WorkloadArchetypeD
     coolingBonusKw: 2.2,
     minReputation: 60,
     scales: true,
+    offerSeconds: 15,
   },
 };
 
 export const REPUTATION_ON_MISSED_DEADLINE = -8; // renamed from REPUTATION_ON_EXPIRY (D2)
 export const REPUTATION_ON_COMPLETION = 3;
+export const REPUTATION_ON_DECLINE = 0; // declining is free — see the D-note in the plan
+export const MAX_OFFERS = 3; // concurrent offers on screen
 export const BROWNOUT_COOLDOWN_SECONDS = 1.0;
 
 export function getArrivalInterval(elapsedSeconds: number, reputation: number): number {

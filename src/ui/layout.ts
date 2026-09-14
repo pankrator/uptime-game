@@ -70,12 +70,65 @@ export function getWorkloadRowRect(index: number, canvasWidth: number, rowCount:
   };
 }
 
-export function pointerInHud(point: { x: number; y: number }, canvas: HTMLCanvasElement): boolean {
+// Offers panel — up to MAX_OFFERS cards, stacked below the top HUD bar on the LEFT (the
+// workload panel above occupies the right), each with its own Accept/Decline hit rects. See
+// .plans/workload-dispatch.md step 5.
+export const OFFER_CARD_WIDTH = 220;
+export const OFFER_CARD_HEIGHT = 76;
+export const OFFER_CARD_GAP = 8;
+export const OFFER_BUTTON_HEIGHT = 22;
+export const OFFER_BUTTON_GAP = 6;
+
+// Left-anchored, fixed width — unlike the workload panel (right-anchored, sized to canvas
+// width), so neither function needs a canvasWidth parameter.
+export function getOfferCardRect(index: number): Rect {
+  return {
+    x: HUD_PANEL_MARGIN,
+    y: HUD_BAR_HEIGHT + HUD_PANEL_MARGIN + index * (OFFER_CARD_HEIGHT + OFFER_CARD_GAP),
+    width: OFFER_CARD_WIDTH,
+    height: OFFER_CARD_HEIGHT,
+  };
+}
+
+export function getOfferButtonRect(index: number, kind: 'accept' | 'decline'): Rect {
+  const card = getOfferCardRect(index);
+  const buttonWidth = (card.width - HUD_PANEL_MARGIN - OFFER_BUTTON_GAP) / 2;
+  const x = kind === 'accept' ? card.x + HUD_PANEL_MARGIN / 2 : card.x + card.width / 2 + OFFER_BUTTON_GAP / 2;
+  return {
+    x,
+    y: card.y + card.height - OFFER_BUTTON_HEIGHT - 6,
+    width: buttonWidth,
+    height: OFFER_BUTTON_HEIGHT,
+  };
+}
+
+function getOffersPanelRect(offerCount: number): Rect {
+  const count = Math.max(offerCount, 0);
+  const height = count === 0 ? 0 : count * OFFER_CARD_HEIGHT + (count - 1) * OFFER_CARD_GAP;
+  return {
+    x: HUD_PANEL_MARGIN,
+    y: HUD_BAR_HEIGHT + HUD_PANEL_MARGIN,
+    width: OFFER_CARD_WIDTH,
+    height,
+  };
+}
+
+export function pointerInHud(
+  point: { x: number; y: number },
+  canvas: HTMLCanvasElement,
+  offerCount = 0,
+): boolean {
   if (pointerInRect(point, getHudBarRect(canvas.width))) return true;
 
   // Row count only affects panel height, not x/width — a generous upper bound (max rows,
   // each potentially a 2-line pending row, plus a "+N more" line) safely covers the panel's
   // full extent for hit-testing without needing to know the actual workload list.
   const panelRect = getWorkloadPanelRect(canvas.width, HUD_PANEL_MAX_ROWS * 2 + 1);
-  return pointerInRect(point, panelRect);
+  if (pointerInRect(point, panelRect)) return true;
+
+  if (offerCount > 0 && pointerInRect(point, getOffersPanelRect(offerCount))) {
+    return true;
+  }
+
+  return false;
 }

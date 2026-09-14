@@ -14,7 +14,7 @@ import {
   coolingCapacities,
   utilizations,
   demandClocks,
-  workloads,
+  offers,
 } from '../ecs/components';
 import {
   RACK_SLOT_CAPACITY,
@@ -84,22 +84,20 @@ export function spawnFacility(world: World): EntityId {
   return id;
 }
 
-export function spawnWorkload(
-  world: World,
-  archetypeId: WorkloadArchetypeId,
-  scale: number,
-): EntityId {
+// Spawns an Offer awaiting accept/decline — NOT a live Workload. Accepting (dispatch.ts's
+// acceptOffer) is what turns an offer into a Workload entity; see .plans/workload-dispatch.md
+// step 5.
+export function spawnOffer(world: World, archetypeId: WorkloadArchetypeId, scale: number): EntityId {
   const archetype = WORKLOAD_ARCHETYPES[archetypeId];
   const appliedScale = archetype.scales ? scale : 1;
   const id = world.createEntity();
-  world.addComponent(workloads, id, {
+  world.addComponent(offers, id, {
     archetypeId,
     demands: scaleTraits(archetype.demands, appliedScale),
     workSeconds: archetype.workSeconds,
-    workRemainingSeconds: archetype.workSeconds,
+    deadlineSeconds: archetype.deadlineSeconds,
     payPerSecond: archetype.payPerSecond * appliedScale,
-    deadlineRemainingSeconds: archetype.deadlineSeconds,
-    state: 'pending',
+    secondsRemaining: archetype.offerSeconds,
   });
   return id;
 }

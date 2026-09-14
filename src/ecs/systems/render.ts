@@ -232,7 +232,7 @@ function drawPendingBorder(world: World, renderer: Renderer): void {
   let lowestDeadline = Infinity;
   for (const id of world.query(workloads)) {
     const workload = world.getComponent(workloads, id)!;
-    if (workload.state !== 'pending') continue;
+    if (workload.state !== 'accepted') continue;
     lowestDeadline = Math.min(lowestDeadline, workload.deadlineRemainingSeconds);
   }
   if (lowestDeadline === Infinity) return;

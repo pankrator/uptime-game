@@ -9,7 +9,7 @@ import { createPathFollowSystem } from './ecs/systems/path-follow';
 import { createMovementSystem } from './ecs/systems/movement';
 import { createResourceSystem } from './ecs/systems/resource';
 import { createCapacitySystem } from './ecs/systems/capacity';
-import { createWorkloadSpawnSystem } from './ecs/systems/workload-spawn';
+import { createWorkloadSpawnSystem, createOfferExpirySystem } from './ecs/systems/workload-spawn';
 import { createWorkloadAssignSystem } from './ecs/systems/workload-assign';
 import { createWorkloadRunSystem } from './ecs/systems/workload-run';
 import { createRenderSystem } from './ecs/systems/render';
@@ -51,6 +51,7 @@ const updateSystems = [
   createResourceSystem(world, facility),
   createCapacitySystem(world, facility),
   createWorkloadSpawnSystem(world, facility),
+  createOfferExpirySystem(world),
   createWorkloadAssignSystem(world),
   createWorkloadRunSystem(world, facility),
 ];

@@ -184,10 +184,23 @@ export interface PlacedOn {
   serverId: EntityId;
 }
 
-// Workloads — their own entities, with no Position and no Renderable. `state` keeps its step-1
-// 'pending' value for now ('pending' == "accepted, not yet placed") — step 5 renames it to
-// 'accepted' once Offer exists and 'pending' would otherwise be ambiguous with an offer.
-export type WorkloadState = 'pending' | 'running';
+// An offered contract awaiting accept/decline. Its own entity; no Position, no Renderable.
+// Turning this down costs nothing (see REPUTATION_ON_DECLINE) — the accept/decline choice is
+// the actual difficulty dial now, not passive demand escalation. See
+// .plans/workload-dispatch.md "New loop" and the Offer section under Data model changes.
+export interface Offer {
+  archetypeId: WorkloadArchetypeId;
+  demands: Traits;
+  workSeconds: number;
+  deadlineSeconds: number;
+  payPerSecond: number;
+  secondsRemaining: number; // offer auto-declines at 0, no reputation penalty
+}
+
+// Workloads — their own entities, with no Position and no Renderable. 'accepted' means
+// "accepted, not yet placed" (an unplaced workload sitting in the tray); 'running' means
+// placed on an online server.
+export type WorkloadState = 'accepted' | 'running';
 
 // D2: a single finish deadline, not separate start/finish deadlines. deadlineRemainingSeconds
 // ticks ALWAYS from acceptance (whether sitting unplaced or running); workRemainingSeconds only
@@ -227,3 +240,4 @@ export const utilizations = createComponentStore<Utilization>();
 export const demandClocks = createComponentStore<DemandClock>();
 export const placedOns = createComponentStore<PlacedOn>();
 export const workloads = createComponentStore<Workload>();
+export const offers = createComponentStore<Offer>();

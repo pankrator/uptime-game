@@ -14,8 +14,10 @@ import {
   installTasks,
   powerCapacities,
   coolingCapacities,
+  offers,
   type BuildableDef,
 } from '../components';
+import { acceptOffer, declineOffer } from '../dispatch';
 import {
   getFloorGridBounds,
   isWalkable,
@@ -32,8 +34,34 @@ import {
 import { type InputState } from '../../input';
 import { spawnRack } from '../../entities';
 import { type Renderer } from '../../rendering';
-import { getBuildPanelEntryRect, pointerInRect, pointerInHud } from '../../ui/layout';
+import {
+  getBuildPanelEntryRect,
+  pointerInRect,
+  pointerInHud,
+  getOfferButtonRect,
+} from '../../ui/layout';
 import { type System } from './system';
+
+interface OfferButtonHit {
+  offerId: EntityId;
+  kind: 'accept' | 'decline';
+}
+
+function hitTestOfferButtons(
+  world: World,
+  point: { x: number; y: number },
+): OfferButtonHit | null {
+  const offerIds = world.query(offers).sort((a, b) => a - b);
+  for (let index = 0; index < offerIds.length; index++) {
+    if (pointerInRect(point, getOfferButtonRect(index, 'accept'))) {
+      return { offerId: offerIds[index], kind: 'accept' };
+    }
+    if (pointerInRect(point, getOfferButtonRect(index, 'decline'))) {
+      return { offerId: offerIds[index], kind: 'decline' };
+    }
+  }
+  return null;
+}
 
 function hitTestPanel(point: { x: number; y: number }, canvasHeight: number): number | null {
   for (let index = 0; index < BUILDABLES.length; index++) {
@@ -215,7 +243,20 @@ export function createInputSystem(
       const pointer = input.getPointerPosition();
       if (!pointer) return;
 
-      if (pointerInHud(pointer, renderer.canvas)) return;
+      // 0. Offer Accept/Decline — checked before the general HUD-blocking test since offer
+      // cards live inside the HUD region; this branch owns clicks there regardless of any
+      // other in-progress interaction (an install task or build mode should not swallow it).
+      const offerHit = hitTestOfferButtons(world, pointer);
+      if (offerHit) {
+        if (offerHit.kind === 'accept') {
+          acceptOffer(world, offerHit.offerId);
+        } else {
+          declineOffer(world, offerHit.offerId);
+        }
+        return;
+      }
+
+      if (pointerInHud(pointer, renderer.canvas, world.query(offers).length)) return;
 
       // 1. Install in progress → any click cancels and refunds.
       if (world.getComponent(installTasks, controlled)) {

@@ -7,14 +7,23 @@ import {
   utilizations,
   demandClocks,
   workloads,
+  offers,
+  machines,
+  installedIns,
+  powereds,
+  serverCapacities,
   type Workload,
+  type Offer,
 } from '../components';
-import { WORKLOAD_ARCHETYPES } from '../game-data';
+import { WORKLOAD_ARCHETYPES, TRAIT_LABELS, TRAIT_KEYS } from '../game-data';
+import { fits } from '../traits';
 import { type Renderer } from '../../rendering';
 import {
   getHudBarRect,
   getWorkloadPanelRect,
   getWorkloadRowRect,
+  getOfferCardRect,
+  getOfferButtonRect,
   HUD_PANEL_MAX_ROWS,
   HUD_PANEL_MARGIN,
 } from '../../ui/layout';
@@ -165,12 +174,13 @@ function drawWorkloadPanel(world: World, renderer: Renderer, facility: EntityId)
   active.sort((a, b) => a.id - b.id);
   pending.sort((a, b) => a.id - b.id);
 
-  // Section headers count as rows for layout purposes. Pending jobs are always shown in
-  // full (they're deadline-timed and self-expire, so the list can't grow unbounded) — only
+  // Section headers count as rows for layout purposes. Unplaced jobs (accepted but not yet
+  // placed on a server — the tray, until the rack panel exists in step 7) are always shown in
+  // full since they're deadline-timed and self-expire, so the list can't grow unbounded — only
   // ACTIVE rows are capped/truncated to keep the panel from overflowing the canvas.
   const pendingLines: { kind: 'header' | 'pending'; row?: WorkloadRow; label?: string }[] = [];
   if (pending.length > 0) {
-    pendingLines.push({ kind: 'header', label: 'PENDING' });
+    pendingLines.push({ kind: 'header', label: 'UNPLACED' });
     for (const row of pending) {
       // Pending rows take two lines (label+countdown, then shortfall).
       pendingLines.push({ kind: 'pending', row });
@@ -309,10 +319,103 @@ function drawWorkloadPanel(world: World, renderer: Renderer, facility: EntityId)
   }
 }
 
+// Whether ANY online, installed server currently has enough free capacity for these demands —
+// used to dim an offer the player can't currently serve. Informative, not blocking: they may
+// be about to install a bigger box, so the offer stays acceptable either way.
+function anyServerFits(world: World, demands: Offer['demands']): boolean {
+  return world.query(machines, installedIns, powereds, serverCapacities).some((id) => {
+    if (!world.getComponent(powereds, id)!.online) return false;
+    const capacity = world.getComponent(serverCapacities, id)!;
+    return fits(demands, capacity.free);
+  });
+}
+
+function drawOfferCard(world: World, renderer: Renderer, index: number, offer: Offer): void {
+  const ctx = renderer.context;
+  const card = getOfferCardRect(index);
+  const archetype = WORKLOAD_ARCHETYPES[offer.archetypeId];
+  const servable = anyServerFits(world, offer.demands);
+
+  ctx.globalAlpha = servable ? 1 : 0.55;
+
+  ctx.fillStyle = 'rgba(20, 22, 25, 0.92)';
+  ctx.fillRect(card.x, card.y, card.width, card.height);
+  ctx.strokeStyle = '#33383f';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(card.x, card.y, card.width, card.height);
+
+  const padX = 10;
+  let textY = card.y + 14;
+
+  ctx.font = 'bold 12px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = TEXT_COLOR;
+  ctx.fillText(archetype.label, card.x + padX, textY);
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = offer.secondsRemaining < 5 ? RED : AMBER;
+  ctx.font = '11px sans-serif';
+  ctx.fillText(`${Math.max(0, Math.ceil(offer.secondsRemaining))}s`, card.x + card.width - padX, textY);
+
+  textY += 14;
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = DIM_COLOR;
+  const demandsText = TRAIT_KEYS.map((key) => `${TRAIT_LABELS[key]} ${offer.demands[key]}`).join(' · ');
+  ctx.fillText(demandsText, card.x + padX, textY);
+
+  textY += 14;
+  ctx.fillStyle = GREEN;
+  const totalValue = offer.payPerSecond * offer.workSeconds;
+  ctx.fillText(
+    `$${offer.payPerSecond.toFixed(2)}/s · ~$${totalValue.toFixed(0)} total`,
+    card.x + padX,
+    textY,
+  );
+
+  if (!servable) {
+    textY += 12;
+    ctx.fillStyle = RED;
+    ctx.font = '9px sans-serif';
+    ctx.fillText('no server fits this', card.x + padX, textY);
+  }
+
+  const acceptRect = getOfferButtonRect(index, 'accept');
+  ctx.fillStyle = '#2f6f4f';
+  ctx.fillRect(acceptRect.x, acceptRect.y, acceptRect.width, acceptRect.height);
+  ctx.strokeStyle = GREEN;
+  ctx.strokeRect(acceptRect.x, acceptRect.y, acceptRect.width, acceptRect.height);
+  ctx.fillStyle = TEXT_COLOR;
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('Accept', acceptRect.x + acceptRect.width / 2, acceptRect.y + acceptRect.height / 2);
+
+  const declineRect = getOfferButtonRect(index, 'decline');
+  ctx.fillStyle = '#3a3f47';
+  ctx.fillRect(declineRect.x, declineRect.y, declineRect.width, declineRect.height);
+  ctx.strokeStyle = '#666';
+  ctx.strokeRect(declineRect.x, declineRect.y, declineRect.width, declineRect.height);
+  ctx.fillStyle = TEXT_COLOR;
+  ctx.fillText('Decline', declineRect.x + declineRect.width / 2, declineRect.y + declineRect.height / 2);
+
+  ctx.globalAlpha = 1;
+  ctx.textAlign = 'left';
+}
+
+function drawOffersPanel(world: World, renderer: Renderer): void {
+  const offerIds = world.query(offers).sort((a, b) => a - b);
+  offerIds.forEach((offerId, index) => {
+    const offer = world.getComponent(offers, offerId)!;
+    drawOfferCard(world, renderer, index, offer);
+  });
+}
+
 export function createHudSystem(world: World, renderer: Renderer, facility: EntityId): System {
   return {
     update() {
       drawTopBar(world, renderer, facility);
+      drawOffersPanel(world, renderer);
       drawWorkloadPanel(world, renderer, facility);
     },
   };

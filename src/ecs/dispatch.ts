@@ -1,11 +1,8 @@
 // The only place workload placement mutates. Systems and input both call into this module, so
 // the `Workload.state` / `PlacedOn` / `ServerCapacity.free` invariant lives in one file. See
 // .plans/workload-dispatch.md D1 and the "New module: src/ecs/dispatch.ts" section.
-//
-// Step 3: checkPlacement/placeWorkload/unplaceWorkload only. acceptOffer/declineOffer are added
-// in step 5 once the Offer component exists.
 import { type World, type EntityId } from './world';
-import { placedOns, serverCapacities, powereds, workloads } from './components';
+import { placedOns, serverCapacities, powereds, workloads, offers, type Workload } from './components';
 import { type TraitKey } from './game-data';
 import { fits, shortfall } from './traits';
 
@@ -49,5 +46,32 @@ export function unplaceWorkload(world: World, workloadId: EntityId): void {
   if (!world.getComponent(placedOns, workloadId)) return;
 
   world.removeComponent(placedOns, workloadId);
-  if (workload) workload.state = 'pending';
+  if (workload) workload.state = 'accepted';
+}
+
+// Turns an Offer into a Workload entity (accepted, not yet placed) and destroys the offer.
+// Offer.secondsRemaining is NOT carried over — deadlineRemainingSeconds starts fresh from
+// deadlineSeconds the instant a contract is accepted (see .plans/workload-dispatch.md D2 and
+// the "New loop": "ACCEPT -> enters the tray. Finish deadline starts ticking NOW.").
+export function acceptOffer(world: World, offerId: EntityId): EntityId {
+  const offer = world.getComponent(offers, offerId)!;
+  const id = world.createEntity();
+  const workload: Workload = {
+    archetypeId: offer.archetypeId,
+    demands: offer.demands,
+    workSeconds: offer.workSeconds,
+    workRemainingSeconds: offer.workSeconds,
+    payPerSecond: offer.payPerSecond,
+    deadlineRemainingSeconds: offer.deadlineSeconds,
+    state: 'accepted',
+  };
+  world.addComponent(workloads, id, workload);
+  world.destroyEntity(offerId);
+  return id;
+}
+
+// Declining costs nothing (REPUTATION_ON_DECLINE = 0) — see the D-note in game-data.ts: if
+// declining cost reputation, the accept gate would be a false choice.
+export function declineOffer(world: World, offerId: EntityId): void {
+  world.destroyEntity(offerId);
 }
