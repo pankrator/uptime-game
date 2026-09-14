@@ -115,6 +115,15 @@ export interface RackSlots {
   capacity: number;
 }
 
+// Per-rack power/heat rollup — derived cache, recomputed every frame by capacity.ts from the
+// rack's installed machines. Lives on the RACK entity. Read straight off by render.ts for the
+// under-rack power/heat labels.
+export interface RackLoad {
+  powerKw: number;
+  heatKw: number;
+  serverCount: number;
+}
+
 // Machines
 export interface Machine {
   tierId: MachineTierId;
@@ -128,6 +137,15 @@ export interface InstalledIn {
 export interface Powered {
   online: boolean;
   offlineCooldown: number;
+}
+
+// Mutable free capacity for a server — derived cache, recomputed every frame by capacity.ts
+// from the server's tier traits minus the demands of every workload placed on it. Never
+// hand-edited outside capacity.ts. Lives on the MACHINE entity (a "server" in dispatch
+// terminology). See .plans/workload-dispatch.md.
+export interface ServerCapacity {
+  total: Traits;
+  free: Traits;
 }
 
 // Install interaction (attached to the player)
@@ -146,6 +164,10 @@ export interface Utilization {
   coolingDrawKw: number;
   computeTotal: number;
   computeFree: number;
+  // Step 2: added alongside computeTotal/computeFree, filled by capacity.ts. Step 3/4 removes
+  // the compute-only pair once capacity.ts is the sole source of facility-wide free capacity.
+  traitsTotal: Traits;
+  traitsFree: Traits;
 }
 
 export interface DemandClock {
@@ -187,10 +209,12 @@ export const reputations = createComponentStore<Reputation>();
 export const powerCapacities = createComponentStore<PowerCapacity>();
 export const coolingCapacities = createComponentStore<CoolingCapacity>();
 export const rackSlots = createComponentStore<RackSlots>();
+export const rackLoads = createComponentStore<RackLoad>();
 export const machines = createComponentStore<Machine>();
 export const installedIns = createComponentStore<InstalledIn>();
 export const powereds = createComponentStore<Powered>();
 export const installTasks = createComponentStore<InstallTask>();
+export const serverCapacities = createComponentStore<ServerCapacity>();
 
 export const utilizations = createComponentStore<Utilization>();
 export const demandClocks = createComponentStore<DemandClock>();

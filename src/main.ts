@@ -8,6 +8,7 @@ import { createInstallProgressSystem } from './ecs/systems/install-progress';
 import { createPathFollowSystem } from './ecs/systems/path-follow';
 import { createMovementSystem } from './ecs/systems/movement';
 import { createResourceSystem } from './ecs/systems/resource';
+import { createCapacitySystem } from './ecs/systems/capacity';
 import { createWorkloadSpawnSystem } from './ecs/systems/workload-spawn';
 import { createWorkloadAssignSystem } from './ecs/systems/workload-assign';
 import { createWorkloadRunSystem } from './ecs/systems/workload-run';
@@ -28,13 +29,17 @@ const world = createWorld();
 const facility = spawnFacility(world);
 const player = spawnPlayer(world, { x: canvas.width / 2, y: canvas.height / 2 });
 
-// ORDER IS LOAD-BEARING — see .plans/machines-and-racks.md and .plans/workload-economy.md.
+// ORDER IS LOAD-BEARING — see .plans/machines-and-racks.md, .plans/workload-economy.md, and
+// .plans/workload-dispatch.md.
 // - install-progress runs before movement (detects arrival on last frame's position).
 // - resource runs before every workload-* system: it computes Utilization and flips each
 //   machine's Powered.online. Running workload-assign first would assign work to a machine
 //   about to go dark; running workload-run first would pay out for browned-out machines and
 //   the capacity wall would be cosmetic.
 // - resource runs after movement so a machine installed this frame is budgeted the same frame.
+// - capacity runs AFTER resource (needs Powered.online) and BEFORE the workload-* systems:
+//   running workload-run against stale free-capacity would pay out for placements a brownout
+//   already invalidated this frame.
 // - spawn -> assign -> run: a contract arriving this frame is assigned the same frame (no
 //   one-frame pending flicker when capacity is ample), and run (which destroys completed/
 //   expired workloads) never destroys something assign just wired up.
@@ -44,6 +49,7 @@ const updateSystems = [
   createPathFollowSystem(world),
   createMovementSystem(world),
   createResourceSystem(world, facility),
+  createCapacitySystem(world, facility),
   createWorkloadSpawnSystem(world, facility),
   createWorkloadAssignSystem(world),
   createWorkloadRunSystem(world, facility),

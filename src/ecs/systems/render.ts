@@ -9,6 +9,7 @@ import {
   BUILDING_MARGIN,
   gridToWorld,
   rackSlots,
+  rackLoads,
   machines,
   installedIns,
   powereds,
@@ -16,6 +17,10 @@ import {
   wallets,
   assignments,
   workloads,
+  serverCapacities,
+  utilizations,
+  powerCapacities,
+  coolingCapacities,
 } from '../components';
 import { RACK_SLOT_CAPACITY } from '../game-data';
 import { type Renderer } from '../../rendering';
@@ -79,19 +84,25 @@ function drawBuilding(renderer: Renderer): void {
 
 const RACK_PADDING = 4;
 
-type SlotState = 'empty' | 'online-idle' | 'online-busy' | 'offline';
+// 'partial'/'full' replace the old 'online-busy': full means every trait in ServerCapacity.free
+// has hit zero (see capacity.ts), partial means some but not all capacity is used. A server can
+// be 'online-idle' (nothing placed), 'partial', or 'full' without any single trait telling the
+// whole story — that's the point of showing traits at all.
+type SlotState = 'empty' | 'online-idle' | 'partial' | 'full' | 'offline';
 
 const SLOT_SLAT_FILL: Record<SlotState, string> = {
   empty: '#22262b',
   'online-idle': '#2e343b',
-  'online-busy': '#2e343b',
+  partial: '#2e343b',
+  full: '#2e343b',
   offline: '#22262b',
 };
 
 const SLOT_LED_COLOR: Record<SlotState, string | null> = {
   empty: null,
   'online-idle': '#f7b731',
-  'online-busy': '#3ddc84',
+  partial: '#4dabf7',
+  full: '#3ddc84',
   offline: '#e5484d',
 };
 
@@ -138,6 +149,33 @@ function drawRack(renderer: Renderer, gridX: number, gridY: number, slots: SlotS
       ctx.stroke();
     }
   }
+}
+
+const RACK_LABEL_OVER_COLOR = '#e5484d';
+const RACK_LABEL_COLOR = '#9aa0a6';
+
+// Under-rack power/heat readout, read straight off RackLoad — visible from across the floor
+// without opening anything. Colored against facility headroom so an over-drawing rack stands
+// out. See .plans/workload-dispatch.md step 2.
+function drawRackLoadLabel(
+  renderer: Renderer,
+  gridX: number,
+  gridY: number,
+  load: { powerKw: number; heatKw: number },
+  facilityOverPower: boolean,
+  facilityOverCooling: boolean,
+): void {
+  const ctx = renderer.context;
+  const centerX = gridX * GRID_CELL_SIZE + GRID_CELL_SIZE / 2;
+  const labelY = gridY * GRID_CELL_SIZE + GRID_CELL_SIZE + 9;
+
+  ctx.font = '9px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = facilityOverPower ? RACK_LABEL_OVER_COLOR : RACK_LABEL_COLOR;
+  ctx.fillText(`⚡ ${load.powerKw.toFixed(1)}kW`, centerX, labelY);
+  ctx.fillStyle = facilityOverCooling ? RACK_LABEL_OVER_COLOR : RACK_LABEL_COLOR;
+  ctx.fillText(`🔥 ${load.heatKw.toFixed(1)}kW`, centerX, labelY + 10);
 }
 
 function drawManager(renderer: Renderer, x: number, y: number): void {
@@ -334,13 +372,49 @@ export function createRenderSystem(
           const powered = world.getComponent(powereds, machineId);
           if (!powered?.online) {
             slots[installedIn.slotIndex] = 'offline';
+            continue;
+          }
+
+          // Partial vs. full: any trait in ServerCapacity.free at zero means full — a server
+          // can be maxed on CPU while still having free RAM/storage, which is exactly the
+          // situation traits exist to surface. Falls back to the old busy/idle-by-Assignment
+          // check if capacity.ts hasn't run yet (e.g. very first frame).
+          const capacityState = world.getComponent(serverCapacities, machineId);
+          if (capacityState) {
+            const anyTraitExhausted =
+              capacityState.free.cpu <= 0 ||
+              capacityState.free.ramGb <= 0 ||
+              capacityState.free.storageGb <= 0;
+            const anyTraitUsed =
+              capacityState.free.cpu < capacityState.total.cpu ||
+              capacityState.free.ramGb < capacityState.total.ramGb ||
+              capacityState.free.storageGb < capacityState.total.storageGb;
+            slots[installedIn.slotIndex] = anyTraitExhausted
+              ? 'full'
+              : anyTraitUsed
+                ? 'partial'
+                : 'online-idle';
           } else {
             const busy = world.getComponent(assignments, machineId) !== undefined;
-            slots[installedIn.slotIndex] = busy ? 'online-busy' : 'online-idle';
+            slots[installedIn.slotIndex] = busy ? 'partial' : 'online-idle';
           }
         }
 
         drawRack(renderer, grid.gridX, grid.gridY, slots);
+
+        const load = world.getComponent(rackLoads, id);
+        if (load) {
+          const powerCapacity = world.getComponent(powerCapacities, facility);
+          const coolingCapacity = world.getComponent(coolingCapacities, facility);
+          const utilization = world.getComponent(utilizations, facility);
+          const facilityOverPower = Boolean(
+            powerCapacity && utilization && utilization.powerDrawKw > powerCapacity.kw,
+          );
+          const facilityOverCooling = Boolean(
+            coolingCapacity && utilization && utilization.coolingDrawKw > coolingCapacity.kw,
+          );
+          drawRackLoadLabel(renderer, grid.gridX, grid.gridY, load, facilityOverPower, facilityOverCooling);
+        }
       }
 
       drawInstallIndicator(world, renderer, controlled);

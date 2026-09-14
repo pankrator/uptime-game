@@ -26,7 +26,7 @@ import {
   type MachineTierId,
   type WorkloadArchetypeId,
 } from '../ecs/game-data';
-import { scaleTraits } from '../ecs/traits';
+import { scaleTraits, zeroTraits } from '../ecs/traits';
 
 const FIRST_ARRIVAL_SECONDS = 15;
 
@@ -72,6 +72,8 @@ export function spawnFacility(world: World): EntityId {
     coolingDrawKw: 0,
     computeTotal: 0,
     computeFree: 0,
+    traitsTotal: zeroTraits(),
+    traitsFree: zeroTraits(),
   });
   world.addComponent(demandClocks, id, {
     elapsedSeconds: 0,
