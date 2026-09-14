@@ -269,17 +269,22 @@ export function createInputSystem(
         if (movePoint) updateDrag(world, controlled, movePoint);
       }
 
+      // wasReleased() fires on EVERY click, not just drags (mousedown -> mouseup -> click is
+      // the sequence for an ordinary click too). Only treat this as drag territory — and
+      // swallow the paired wasClicked() — if a drag was actually in progress; otherwise let
+      // the click fall through to the normal chain below (movement, rack-open, build, etc.).
+      const wasDragging = world.getComponent(dragStates, controlled) !== undefined;
       if (input.wasReleased()) {
-        // wasClicked() is also pending on this same release — consume it now so the click
-        // chain below never sees it, whether or not a drag was actually in progress. Dragging
-        // a chip a few pixels and releasing should never also walk the player to that spot.
-        input.wasClicked();
-
         const releasePoint = input.getPointerPosition();
-        if (releasePoint) {
-          resolveDrop(world, renderer, controlled, releasePoint);
+        if (wasDragging) {
+          // Consume the paired click now so the chain below never sees it — dragging a chip a
+          // few pixels and releasing should never also walk the player to that spot.
+          input.wasClicked();
+          if (releasePoint) {
+            resolveDrop(world, renderer, controlled, releasePoint);
+          }
+          return;
         }
-        return;
       }
 
       if (!input.wasClicked()) return;
