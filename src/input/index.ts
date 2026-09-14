@@ -3,6 +3,14 @@ export interface InputState {
   onKeyDown(key: string, handler: () => void): () => void;
   getPointerPosition(): { x: number; y: number } | null;
   wasClicked(): boolean;
+  // Press/release edges, for drag gestures (rack panel drag-and-drop — see
+  // .plans/workload-dispatch.md step 6) that wasClicked() alone can't express: a drag needs to
+  // know WHEN the pointer went down (to start) and WHEN it came up (to commit/cancel), not just
+  // that a full click happened. wasClicked() is unaffected and still fires on click, same as
+  // before — this is purely additive.
+  wasPressed(): boolean;
+  wasReleased(): boolean;
+  isPointerDown(): boolean;
 }
 
 export function createInput(canvas: HTMLCanvasElement, target: Window = window): InputState {
@@ -10,6 +18,9 @@ export function createInput(canvas: HTMLCanvasElement, target: Window = window):
   const keyDownHandlers = new Map<string, Set<() => void>>();
   let pointerPosition: { x: number; y: number } | null = null;
   let clicked = false;
+  let pointerDown = false;
+  let pressed = false;
+  let released = false;
 
   target.addEventListener('keydown', (event) => {
     keysDown.add(event.key);
@@ -26,6 +37,20 @@ export function createInput(canvas: HTMLCanvasElement, target: Window = window):
 
   canvas.addEventListener('click', () => {
     clicked = true;
+  });
+
+  canvas.addEventListener('mousedown', () => {
+    pointerDown = true;
+    pressed = true;
+  });
+
+  // Released on the window, not the canvas: a drag that ends after the pointer has left the
+  // canvas (dragged off-canvas, or the browser delivers mouseup elsewhere) must still be seen
+  // as released, or a drag could get stuck "held" with no way to end it.
+  target.addEventListener('mouseup', () => {
+    if (!pointerDown) return;
+    pointerDown = false;
+    released = true;
   });
 
   return {
@@ -48,6 +73,19 @@ export function createInput(canvas: HTMLCanvasElement, target: Window = window):
       if (!clicked) return false;
       clicked = false;
       return true;
+    },
+    wasPressed() {
+      if (!pressed) return false;
+      pressed = false;
+      return true;
+    },
+    wasReleased() {
+      if (!released) return false;
+      released = false;
+      return true;
+    },
+    isPointerDown() {
+      return pointerDown;
     },
   };
 }
