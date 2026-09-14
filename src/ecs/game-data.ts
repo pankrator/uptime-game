@@ -1,10 +1,36 @@
+// Trait vector — see .plans/workload-dispatch.md D5. Named fields, not a Record<string,
+// number>, so a forgotten trait in a fit-check or panel is a compile error, not a runtime bug.
+export interface Traits {
+  cpu: number; // cores
+  ramGb: number;
+  storageGb: number;
+}
+
+export const TRAIT_KEYS = ['cpu', 'ramGb', 'storageGb'] as const;
+export type TraitKey = (typeof TRAIT_KEYS)[number];
+
+export const TRAIT_LABELS: Record<TraitKey, string> = {
+  cpu: 'CPU',
+  ramGb: 'RAM',
+  storageGb: 'SSD',
+};
+
+export const TRAIT_UNITS: Record<TraitKey, string> = {
+  cpu: 'c',
+  ramGb: 'GB',
+  storageGb: 'GB',
+};
+
+// Step 1 of .plans/workload-dispatch.md: only `basic`/`dense` for now, converted from the old
+// scalar `compute` to `traits.cpu` with a 1:1 mapping so nothing else changes behavior yet.
+// Step 1a adds `storage` | `memory` | `budget`.
 export type MachineTierId = 'basic' | 'dense';
 
 export interface MachineTierDef {
   id: MachineTierId;
   label: string;
   cost: number;
-  compute: number;
+  traits: Traits;
   powerKw: number;
   coolingKw: number;
   installSeconds: number;
@@ -15,7 +41,7 @@ export const MACHINE_TIERS: Record<MachineTierId, MachineTierDef> = {
     id: 'basic',
     label: 'Server',
     cost: 250,
-    compute: 10,
+    traits: { cpu: 10, ramGb: 999, storageGb: 999 },
     powerKw: 0.4,
     coolingKw: 0.3,
     installSeconds: 3.0,
@@ -24,7 +50,7 @@ export const MACHINE_TIERS: Record<MachineTierId, MachineTierDef> = {
     id: 'dense',
     label: 'Blade Chassis',
     cost: 900,
-    compute: 45,
+    traits: { cpu: 45, ramGb: 999, storageGb: 999 },
     powerKw: 1.6,
     coolingKw: 1.4,
     installSeconds: 4.5,
@@ -49,20 +75,22 @@ export type WorkloadArchetypeId = 'web' | 'batch' | 'render' | 'training';
 export interface WorkloadArchetypeDef {
   id: WorkloadArchetypeId;
   label: string;
-  computeRequired: number;
+  demands: Traits;
   durationSeconds: number;
   payPerSecond: number;
   coolingBonusKw: number; // per assigned machine, while running
   graceSeconds: number;
   minReputation: number;
-  scales: boolean; // false: computeRequired/payPerSecond stay flat, ignoring getComputeScale
+  scales: boolean; // false: demands/payPerSecond stay flat, ignoring getComputeScale
 }
 
+// Step 1: demands.ramGb/storageGb are set to 0 (no old scalar to map from) so they never block
+// the still-CPU-only auto-assign logic in workload-assign.ts. Step 4/9 gives these real shapes.
 export const WORKLOAD_ARCHETYPES: Record<WorkloadArchetypeId, WorkloadArchetypeDef> = {
   web: {
     id: 'web',
     label: 'Web Hosting',
-    computeRequired: 10,
+    demands: { cpu: 10, ramGb: 0, storageGb: 0 },
     durationSeconds: 45,
     payPerSecond: 0.9,
     coolingBonusKw: 0,
@@ -73,7 +101,7 @@ export const WORKLOAD_ARCHETYPES: Record<WorkloadArchetypeId, WorkloadArchetypeD
   batch: {
     id: 'batch',
     label: 'Batch Job',
-    computeRequired: 25,
+    demands: { cpu: 25, ramGb: 0, storageGb: 0 },
     durationSeconds: 30,
     payPerSecond: 2.6,
     coolingBonusKw: 0,
@@ -84,7 +112,7 @@ export const WORKLOAD_ARCHETYPES: Record<WorkloadArchetypeId, WorkloadArchetypeD
   render: {
     id: 'render',
     label: 'Render Farm',
-    computeRequired: 45,
+    demands: { cpu: 45, ramGb: 0, storageGb: 0 },
     durationSeconds: 40,
     payPerSecond: 5.2,
     coolingBonusKw: 0.8,
@@ -95,7 +123,7 @@ export const WORKLOAD_ARCHETYPES: Record<WorkloadArchetypeId, WorkloadArchetypeD
   training: {
     id: 'training',
     label: 'ML Training',
-    computeRequired: 90,
+    demands: { cpu: 90, ramGb: 0, storageGb: 0 },
     durationSeconds: 60,
     payPerSecond: 11.0,
     coolingBonusKw: 2.2,

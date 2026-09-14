@@ -53,7 +53,7 @@ export function createWorkloadRunSystem(world: World, facility: EntityId): Syste
           clock.contractsServed += 1;
           clock.peakComputeServed = Math.max(
             clock.peakComputeServed,
-            assignedComputeByWorkload.get(workloadId) ?? workload.computeRequired,
+            assignedComputeByWorkload.get(workloadId) ?? workload.demands.cpu,
           );
           clearAssignmentsFor(world, workloadId);
           world.destroyEntity(workloadId);

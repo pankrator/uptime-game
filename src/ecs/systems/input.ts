@@ -249,7 +249,10 @@ export function createInputSystem(
         }
 
         if (buildable.placement === 'rack') {
-          const tierId: MachineTierId = buildable.id === 'machine-dense' ? 'dense' : 'basic';
+          // buildable.id is `machine-${MachineTierId}` for every rack-placement buildable —
+          // strip the prefix rather than hand-matching each tier id (see BUILDABLES in
+          // components.ts, generated from MACHINE_TIERS).
+          const tierId = buildable.id.slice('machine-'.length) as MachineTierId;
           tryInstallIntoRack(world, renderer, controlled, facility, tierId, gridX, gridY);
           world.removeComponent(buildModes, controlled);
           return;

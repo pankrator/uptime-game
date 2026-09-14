@@ -259,7 +259,7 @@ function drawWorkloadPanel(world: World, renderer: Renderer, facility: EntityId)
       ctx.textAlign = 'left';
       ctx.fillStyle = GREEN;
       ctx.fillText(
-        `$${workload.payPerSecond.toFixed(2)}/s · ▦ ${workload.computeRequired}`,
+        `$${workload.payPerSecond.toFixed(2)}/s · ▦ ${workload.demands.cpu}`,
         rect.x + padX,
         statsY,
       );
@@ -287,7 +287,7 @@ function drawWorkloadPanel(world: World, renderer: Renderer, facility: EntityId)
     ctx.textAlign = 'left';
     ctx.fillStyle = DIM_COLOR;
     ctx.fillText(
-      `needs ${workload.computeRequired}, have ${utilization.computeFree}`,
+      `needs ${workload.demands.cpu}, have ${utilization.computeFree}`,
       rect.x + padX,
       shortfallY,
     );

@@ -58,7 +58,7 @@ function unassign(world: World, machineId: EntityId): void {
     .filter((id) => world.getComponent(assignments, id)!.workloadId === assignment.workloadId)
     .reduce((sum, id) => sum + world.getComponent(assignments, id)!.compute, 0);
 
-  if (remainingCompute < workload.computeRequired) {
+  if (remainingCompute < workload.demands.cpu) {
     workload.state = 'pending';
   }
 }
@@ -134,9 +134,9 @@ export function createResourceSystem(world: World, facility: EntityId): System {
 
         const machine = world.getComponent(machines, id)!;
         const tier = MACHINE_TIERS[machine.tierId];
-        computeTotal += tier.compute;
+        computeTotal += tier.traits.cpu;
         if (!world.getComponent(assignments, id)) {
-          computeFree += tier.compute;
+          computeFree += tier.traits.cpu;
         }
       }
 

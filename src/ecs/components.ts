@@ -6,6 +6,7 @@ import {
   COOLING_UPGRADE_COST,
   type MachineTierId,
   type WorkloadArchetypeId,
+  type Traits,
 } from './game-data';
 
 export const GRID_CELL_SIZE = 40;
@@ -62,7 +63,10 @@ export interface Renderable {
 
 export type PlacementKind = 'empty-cell' | 'rack' | 'purchase';
 
-export type BuildableId = 'rack' | 'machine-basic' | 'machine-dense' | 'power-upgrade' | 'cooling-upgrade';
+// `machine-${MachineTierId}` so a new tier in MACHINE_TIERS (game-data.ts) automatically gets a
+// BuildableId, a build-panel entry, and a number-key hotkey with no changes here — see
+// .plans/workload-dispatch.md D6 and the BUILDABLES generalization below.
+export type BuildableId = 'rack' | `machine-${MachineTierId}` | 'power-upgrade' | 'cooling-upgrade';
 
 export interface BuildableDef {
   id: BuildableId;
@@ -71,10 +75,16 @@ export interface BuildableDef {
   placement: PlacementKind;
 }
 
+const machineBuildables: BuildableDef[] = Object.values(MACHINE_TIERS).map((tier) => ({
+  id: `machine-${tier.id}` as BuildableId,
+  label: tier.label,
+  cost: tier.cost,
+  placement: 'rack',
+}));
+
 export const BUILDABLES: BuildableDef[] = [
   { id: 'rack', label: 'Rack', cost: RACK_COST, placement: 'empty-cell' },
-  { id: 'machine-basic', label: 'Server', cost: MACHINE_TIERS.basic.cost, placement: 'rack' },
-  { id: 'machine-dense', label: 'Blades', cost: MACHINE_TIERS.dense.cost, placement: 'rack' },
+  ...machineBuildables,
   { id: 'power-upgrade', label: '+5kW Power', cost: POWER_UPGRADE_COST, placement: 'purchase' },
   { id: 'cooling-upgrade', label: '+5kW Cool', cost: COOLING_UPGRADE_COST, placement: 'purchase' },
 ];
@@ -156,7 +166,7 @@ export type WorkloadState = 'pending' | 'running';
 
 export interface Workload {
   archetypeId: WorkloadArchetypeId;
-  computeRequired: number;
+  demands: Traits; // step 1: replaces computeRequired; step 4 adds deadline/work-remaining split
   durationSeconds: number;
   elapsedSeconds: number;
   payPerSecond: number;

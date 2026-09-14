@@ -26,6 +26,7 @@ import {
   type MachineTierId,
   type WorkloadArchetypeId,
 } from '../ecs/game-data';
+import { scaleTraits } from '../ecs/traits';
 
 const FIRST_ARRIVAL_SECONDS = 15;
 
@@ -91,7 +92,7 @@ export function spawnWorkload(
   const id = world.createEntity();
   world.addComponent(workloads, id, {
     archetypeId,
-    computeRequired: Math.round(archetype.computeRequired * appliedScale),
+    demands: scaleTraits(archetype.demands, appliedScale),
     durationSeconds: archetype.durationSeconds,
     elapsedSeconds: 0,
     payPerSecond: archetype.payPerSecond * appliedScale,

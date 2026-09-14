@@ -47,14 +47,14 @@ export function createWorkloadAssignSystem(world: World): System {
           })
           .map((id) => ({
             id,
-            compute: MACHINE_TIERS[world.getComponent(machines, id)!.tierId].compute,
+            compute: MACHINE_TIERS[world.getComponent(machines, id)!.tierId].traits.cpu,
           }));
 
-        const selected = selectMachinesForWorkload(candidates, workload.computeRequired);
+        const selected = selectMachinesForWorkload(candidates, workload.demands.cpu);
         if (!selected) continue;
 
         for (const machineId of selected) {
-          const compute = MACHINE_TIERS[world.getComponent(machines, machineId)!.tierId].compute;
+          const compute = MACHINE_TIERS[world.getComponent(machines, machineId)!.tierId].traits.cpu;
           world.addComponent(assignments, machineId, { workloadId, compute });
         }
         workload.state = 'running';
