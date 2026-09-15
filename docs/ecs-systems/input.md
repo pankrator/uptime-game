@@ -1,0 +1,56 @@
+# input
+
+`src/ecs/systems/input.ts` — `createInputSystem(world, input, renderer, controlled, facility, camera)`,
+plus exported `moveControlledTo`
+
+## Purpose
+
+Owns every left-button pointer gesture (plain clicks and drags) as one priority chain,
+plus keyboard shortcuts for build mode. This is the single dispatcher that decides what a
+click/drag means depending on current UI state — no other system independently
+interprets `wasClicked`/`wasPressed`/`wasReleased`.
+
+## Keyboard (registered once, outside `update`)
+
+- `Escape` — closes shop panel if open, else clears build mode
+- Number keys `1..N` (one per `BUILDABLES` entry) — toggle build mode for that buildable,
+  ignored while an install task is active
+
+## Per-frame priority chain (`update`)
+
+Drag lifecycle runs unconditionally every frame (independent of `wasClicked()`, since a
+drag spans multiple frames):
+1. `wasPressed()` → `tryStartDrag` (rack-panel.ts) — may begin a drag
+2. drag in progress → `updateDrag` (rack-panel.ts) — follows the pointer
+3. `wasReleased()` while a drag was in progress → consumes the paired synthetic
+   `wasClicked()` (so a drag-release never also triggers a walk) and calls `resolveDrop`
+
+Then, only if `wasClicked()` (and not already consumed by a drag), in strict order:
+0. Offer accept/decline buttons (checked before general HUD-blocking, since offer cards
+   live inside the HUD but must not be swallowed by an in-progress install or build mode)
+1. `pointerInHud` check — HUD-region clicks otherwise fall through to nothing
+2. Install task active → any click cancels + refunds to inventory (`cancelInstallTask`)
+3. Rack panel visible (viewing, or dispatching-and-arrived) → **absorbs every click**
+   except its close button (full-screen modal)
+4. Shop panel open → **absorbs every click**: close button, category tabs, buy buttons
+5. Build panel entry hit → toggles that buildable's build mode
+6. Build mode active → place a rack (`'empty-cell'`) or start an install
+   (`'rack'`, via `tryInstallIntoRack`) at the clicked grid cell
+7. Rack clicked (no build mode) → `openOrPromoteRackPanel` (rack-panel.ts) + walk there
+8. Otherwise → plain floor click: `moveControlledTo`, cancelling any not-yet-arrived
+   pending dispatch panel (the player redirected away from it)
+
+## `moveControlledTo(world, controlled, facility, targetPixel)`
+
+Shared pathing entry point (also called by `rack-panel.ts` for the walk-to-rack case):
+resolves walkable regions (`world-map.ts`), finds the nearest walkable neighbor if the
+target itself is blocked, runs `findPath` (`pathfinding.ts`), simplifies it to a pixel
+path, and attaches it as a `PathFollow`.
+
+## Notes
+
+- The ordering above is load-bearing — e.g. rack-panel and shop are both "absorb every
+  click" modals, and either being checked in the wrong order relative to build mode or
+  the build panel would swallow input incorrectly.
+- See [rack-panel](./rack-panel.md) for why drag/click ownership is centralized here
+  rather than split across systems.

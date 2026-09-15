@@ -41,6 +41,27 @@ a system.
 - New gameplay features are designed ECS-first: new state is a component, new behavior is a
   system, not a new entity subtype or method.
 
+## ECS system docs
+
+Before adding or extending a system, check the relevant doc below — it may already cover
+the behavior, an ordering dependency, or a shared helper to reuse. See
+[docs/ecs-systems/README.md](docs/ecs-systems/README.md) for the update order and core
+ECS files.
+
+- [input](docs/ecs-systems/input.md) — pointer/keyboard gesture ownership: build mode, click-priority chain, drag lifecycle entry points
+- [movement](docs/ecs-systems/movement.md) — moves an entity's `Position` toward its `MoveTarget`
+- [path-follow](docs/ecs-systems/path-follow.md) — feeds a queued path into `MoveTarget` one waypoint at a time
+- [camera](docs/ecs-systems/camera.md) — eases the camera toward the controlled entity (render-only)
+- [install-progress](docs/ecs-systems/install-progress.md) — walks-to-rack-then-installs flow for a bought machine
+- [rack-panel](docs/ecs-systems/rack-panel.md) — rack panel open/close/arrival, scroll, and drag-and-drop resolution
+- [shop](docs/ecs-systems/shop.md) — proximity-based shop panel lifecycle and purchase application
+- [resource](docs/ecs-systems/resource.md) — power/cooling brownout selection and facility draw totals
+- [capacity](docs/ecs-systems/capacity.md) — derived per-server/per-rack/facility free-capacity cache
+- [workload-spawn](docs/ecs-systems/workload-spawn.md) — offer arrival cadence and offer expiry
+- [workload-run](docs/ecs-systems/workload-run.md) — ticks placed/unplaced workloads: payout, completion, deadline miss
+- [render](docs/ecs-systems/render.md) — all Canvas drawing of the floor, racks, panels, build UI (presentation only)
+- [hud](docs/ecs-systems/hud.md) — top bar, workload panel, offers panel (presentation only)
+
 ## Game Concept
 
 A top-down 2D datacenter tycoon. The player manages a datacenter: walking the floor between
