@@ -1,26 +1,12 @@
 import { type World } from './world';
-import { type GridCell, gridPositions, worldToGrid, GRID_CELL_SIZE, BUILDING_MARGIN } from './components';
-import { type Renderer } from '../rendering';
+import { type GridCell, gridPositions, worldToGrid, GRID_CELL_SIZE } from './components';
+import type { WorldRegions } from './world-map';
 
 export interface GridBounds {
   minGridX: number;
   minGridY: number;
   maxGridX: number;
   maxGridY: number;
-}
-
-export function getFloorGridBounds(canvas: Renderer['canvas']): GridBounds {
-  const topLeft = worldToGrid(BUILDING_MARGIN, BUILDING_MARGIN);
-  const bottomRight = worldToGrid(
-    canvas.width - BUILDING_MARGIN,
-    canvas.height - BUILDING_MARGIN,
-  );
-  return {
-    minGridX: topLeft.gridX,
-    minGridY: topLeft.gridY,
-    maxGridX: bottomRight.gridX,
-    maxGridY: bottomRight.gridY,
-  };
 }
 
 function isInBounds(bounds: GridBounds, gridX: number, gridY: number): boolean {
@@ -32,16 +18,41 @@ function isInBounds(bounds: GridBounds, gridX: number, gridY: number): boolean {
   );
 }
 
-export function isWalkable(world: World, bounds: GridBounds, gridX: number, gridY: number): boolean {
-  if (!isInBounds(bounds, gridX, gridY)) return false;
-  return !world.query(gridPositions).some((id) => {
-    const grid = world.getComponent(gridPositions, id)!;
-    return grid.gridX === gridX && grid.gridY === gridY;
-  });
+function isInAnyRegion(regions: WorldRegions, gridX: number, gridY: number): boolean {
+  return regions.regions.some((bounds) => isInBounds(bounds, gridX, gridY));
 }
 
 function cellKey(cell: GridCell): string {
   return `${cell.gridX},${cell.gridY}`;
+}
+
+// Occupied-cell lookup, built once per findPath call and passed down rather than each
+// isWalkable call doing its own world.query scan — A* visits many cells per search, so an
+// O(cells × entities) scan per cell becomes a visible hitch on a larger world (see
+// .plans/facility-shop-inventory.md Step 3's performance note). Occupancy is only ever read,
+// never mutated, during a search.
+export function buildOccupiedSet(world: World): Set<string> {
+  const occupied = new Set<string>();
+  for (const id of world.query(gridPositions)) {
+    const grid = world.getComponent(gridPositions, id)!;
+    occupied.add(`${grid.gridX},${grid.gridY}`);
+  }
+  return occupied;
+}
+
+export function isWalkable(
+  world: World,
+  regions: WorldRegions,
+  gridX: number,
+  gridY: number,
+  occupied?: Set<string>,
+): boolean {
+  if (!isInAnyRegion(regions, gridX, gridY)) return false;
+  if (occupied) return !occupied.has(`${gridX},${gridY}`);
+  return !world.query(gridPositions).some((id) => {
+    const grid = world.getComponent(gridPositions, id)!;
+    return grid.gridX === gridX && grid.gridY === gridY;
+  });
 }
 
 const NEIGHBOR_OFFSETS = [
@@ -57,11 +68,12 @@ function heuristic(a: GridCell, b: GridCell): number {
 
 export function findPath(
   world: World,
-  bounds: GridBounds,
+  regions: WorldRegions,
   start: GridCell,
   goal: GridCell,
 ): GridCell[] | null {
-  if (!isWalkable(world, bounds, goal.gridX, goal.gridY)) return null;
+  const occupied = buildOccupiedSet(world);
+  if (!isWalkable(world, regions, goal.gridX, goal.gridY, occupied)) return null;
   if (start.gridX === goal.gridX && start.gridY === goal.gridY) return [];
 
   const startKey = cellKey(start);
@@ -102,7 +114,7 @@ export function findPath(
     for (const { dx, dy } of NEIGHBOR_OFFSETS) {
       const neighborX = current.gridX + dx;
       const neighborY = current.gridY + dy;
-      if (!isWalkable(world, bounds, neighborX, neighborY)) continue;
+      if (!isWalkable(world, regions, neighborX, neighborY, occupied)) continue;
 
       const neighbor: GridCell = { gridX: neighborX, gridY: neighborY };
       const neighborKey = cellKey(neighbor);
@@ -125,7 +137,7 @@ export function findPath(
 
 export function findNearestWalkableNeighbor(
   world: World,
-  bounds: GridBounds,
+  regions: WorldRegions,
   cell: GridCell,
   from: GridCell,
 ): GridCell | null {
@@ -134,13 +146,13 @@ export function findNearestWalkableNeighbor(
 
   for (const { dx, dy } of NEIGHBOR_OFFSETS) {
     const candidate: GridCell = { gridX: cell.gridX + dx, gridY: cell.gridY + dy };
-    if (!isWalkable(world, bounds, candidate.gridX, candidate.gridY)) continue;
+    if (!isWalkable(world, regions, candidate.gridX, candidate.gridY)) continue;
 
     if (candidate.gridX === from.gridX && candidate.gridY === from.gridY) {
       return candidate;
     }
 
-    const path = findPath(world, bounds, from, candidate);
+    const path = findPath(world, regions, from, candidate);
     if (path === null) continue;
 
     if (bestPath === null || path.length < bestPath.length) {
@@ -157,16 +169,17 @@ export interface PixelPoint {
   y: number;
 }
 
-function hasLineOfSight(world: World, bounds: GridBounds, from: PixelPoint, to: PixelPoint): boolean {
+function hasLineOfSight(world: World, regions: WorldRegions, from: PixelPoint, to: PixelPoint): boolean {
   const distance = Math.hypot(to.x - from.x, to.y - from.y);
   const steps = Math.ceil(distance / (GRID_CELL_SIZE / 4));
+  const occupied = buildOccupiedSet(world);
 
   for (let step = 0; step <= steps; step++) {
     const t = step / steps;
     const x = from.x + (to.x - from.x) * t;
     const y = from.y + (to.y - from.y) * t;
     const { gridX, gridY } = worldToGrid(x, y);
-    if (!isWalkable(world, bounds, gridX, gridY)) return false;
+    if (!isWalkable(world, regions, gridX, gridY, occupied)) return false;
   }
 
   return true;
@@ -178,7 +191,7 @@ function hasLineOfSight(world: World, bounds: GridBounds, from: PixelPoint, to: 
  */
 export function simplifyPathToPixels(
   world: World,
-  bounds: GridBounds,
+  regions: WorldRegions,
   start: PixelPoint,
   path: GridCell[],
   end: PixelPoint,
@@ -194,7 +207,7 @@ export function simplifyPathToPixels(
 
   for (let index = 1; index < points.length; index++) {
     const isLast = index === points.length - 1;
-    if (!isLast && hasLineOfSight(world, bounds, points[anchorIndex], points[index + 1])) {
+    if (!isLast && hasLineOfSight(world, regions, points[anchorIndex], points[index + 1])) {
       continue;
     }
     simplified.push(points[index]);

@@ -121,12 +121,13 @@ function getOffersPanelRect(offerCount: number): Rect {
 export const RACK_PANEL_WIDTH = 460;
 export const RACK_PANEL_PADDING = 16;
 export const RACK_PANEL_HEADER_HEIGHT = 30;
-// Was 54 — too tight for a label line plus three trait-bar-and-label pairs beneath it (they
-// visually overlapped). Layout, top to bottom: 16px to the server-name label, 18px gap, then
-// three stacked trait rows (each a label line + a 6px bar, 20px apart), 8px bottom margin. See
-// getServerRowLabelY / getServerTraitBarRect below for the exact offsets this height is sized
-// against — keep them in sync if this changes.
-export const RACK_SERVER_ROW_HEIGHT = 100;
+// Was 54, then 100 — 100 was too tight once a power/cooling draw line was added below the
+// server-name label. Layout, top to bottom: 16px to the server-name label, 14px to the
+// power/cooling draw line, then a gap, then three stacked trait rows (each a label line + a
+// 6px bar, 20px apart), 8px bottom margin. See getServerRowLabelY / getServerRowDrawY /
+// getServerTraitBarRect below for the exact offsets this height is sized against — keep them
+// in sync if this changes.
+export const RACK_SERVER_ROW_HEIGHT = 116;
 export const RACK_SERVER_ROW_GAP = 10;
 export const RACK_TRAIT_BAR_HEIGHT = 6;
 export const RACK_TRAIT_BAR_GAP = 4;
@@ -203,12 +204,18 @@ export function getServerRowRect(
 // apart the way they did before this fix — RACK_SERVER_ROW_HEIGHT's comment is sized against
 // exactly these numbers, so change them together.
 const RACK_ROW_LABEL_OFFSET_Y = 16;
-const RACK_ROW_BARS_TOP_OFFSET_Y = 34;
+const RACK_ROW_DRAW_OFFSET_Y = 30;
+const RACK_ROW_BARS_TOP_OFFSET_Y = 50;
 const RACK_TRAIT_ROW_HEIGHT = 20; // 10px label line + RACK_TRAIT_BAR_GAP + RACK_TRAIT_BAR_HEIGHT
 
 // Baseline Y for the server's own name/status label, top-left of the row.
 export function getServerRowLabelY(row: Rect): number {
   return row.y + RACK_ROW_LABEL_OFFSET_Y;
+}
+
+// Baseline Y for the server's power/cooling draw line, just beneath the name/status label.
+export function getServerRowDrawY(row: Rect): number {
+  return row.y + RACK_ROW_DRAW_OFFSET_Y;
 }
 
 // One bar per TRAIT_KEYS entry, stacked vertically (not side by side — three short horizontal
@@ -226,8 +233,9 @@ export function getServerTraitBarRect(
   const row = getServerRowRect(serverIndex, canvasWidth, canvasHeight, serverCount, trayCount);
   const barsTop = row.y + RACK_ROW_BARS_TOP_OFFSET_Y;
   // Chips sit at the row's top-right (see getPlacedChipRect); trait bars stop short of that
-  // column so a long trait label/bar never runs under a chip.
-  const chipColumnWidth = 76;
+  // column so a long trait label/bar never runs under a chip. Kept equal to getPlacedChipRect's
+  // chipWidth so the two never drift apart.
+  const chipColumnWidth = 96;
   // Each trait gets a RACK_TRAIT_ROW_HEIGHT-tall block; the bar sits at the block's bottom so
   // its own label (drawn above it by render.ts) has the full block's top to sit in without
   // colliding with the previous trait's bar.
@@ -249,7 +257,10 @@ export function getPlacedChipRect(
   trayCount: number,
 ): Rect {
   const row = getServerRowRect(serverIndex, canvasWidth, canvasHeight, serverCount, trayCount);
-  const chipWidth = 70;
+  // Wide enough for "Render Farm 🔥0.8" (the longest label+cooling-bonus chip text) at 9px
+  // sans-serif without truncating — see render.ts's chip label, which appends coolingBonusKw
+  // when nonzero.
+  const chipWidth = 96;
   return {
     x: row.x + row.width - chipWidth,
     y: row.y + 2 + chipIndex * (RACK_CHIP_HEIGHT + RACK_CHIP_GAP),
@@ -307,6 +318,93 @@ export function getTrayDropRect(
     width: panel.width - RACK_PANEL_PADDING * 2,
     height: panel.y + panel.height - RACK_PANEL_PADDING - top,
   };
+}
+
+// Shop panel — opened by proximity to the shop door (shop.ts), closed by walking away. Follows
+// the rack panel's centered-modal geometry (getRackPanelRect above): category tabs across the
+// top, one row per catalog entry in the selected category, a buy button per row. See
+// .plans/facility-shop-inventory.md Step 5.
+export const SHOP_PANEL_WIDTH = 420;
+export const SHOP_PANEL_PADDING = 16;
+export const SHOP_PANEL_HEADER_HEIGHT = 30;
+export const SHOP_TAB_HEIGHT = 28;
+export const SHOP_ROW_HEIGHT = 40;
+export const SHOP_ROW_GAP = 6;
+export const SHOP_BUY_BUTTON_WIDTH = 70;
+export const SHOP_BUY_BUTTON_HEIGHT = 26;
+export const SHOP_CLOSE_BUTTON_SIZE = 24;
+
+export function getShopPanelRect(canvasWidth: number, canvasHeight: number, rowCount: number): Rect {
+  const rowsHeight = rowCount > 0 ? rowCount * SHOP_ROW_HEIGHT + (rowCount - 1) * SHOP_ROW_GAP : SHOP_ROW_HEIGHT;
+  const width = Math.min(SHOP_PANEL_WIDTH, canvasWidth - SHOP_PANEL_PADDING * 2);
+  const height = Math.min(
+    SHOP_PANEL_HEADER_HEIGHT + SHOP_TAB_HEIGHT + SHOP_PANEL_PADDING * 3 + rowsHeight,
+    canvasHeight - SHOP_PANEL_PADDING * 2,
+  );
+  return {
+    x: (canvasWidth - width) / 2,
+    y: (canvasHeight - height) / 2,
+    width,
+    height,
+  };
+}
+
+export function getShopCloseButtonRect(canvasWidth: number, canvasHeight: number, rowCount: number): Rect {
+  const panel = getShopPanelRect(canvasWidth, canvasHeight, rowCount);
+  return {
+    x: panel.x + panel.width - SHOP_PANEL_PADDING - SHOP_CLOSE_BUTTON_SIZE,
+    y: panel.y + (SHOP_PANEL_HEADER_HEIGHT - SHOP_CLOSE_BUTTON_SIZE) / 2 + SHOP_PANEL_PADDING / 2,
+    width: SHOP_CLOSE_BUTTON_SIZE,
+    height: SHOP_CLOSE_BUTTON_SIZE,
+  };
+}
+
+export function getShopTabRect(tabIndex: number, tabCount: number, canvasWidth: number, canvasHeight: number, rowCount: number): Rect {
+  const panel = getShopPanelRect(canvasWidth, canvasHeight, rowCount);
+  const tabsTop = panel.y + SHOP_PANEL_PADDING + SHOP_PANEL_HEADER_HEIGHT;
+  const tabWidth = (panel.width - SHOP_PANEL_PADDING * 2) / tabCount;
+  return {
+    x: panel.x + SHOP_PANEL_PADDING + tabIndex * tabWidth,
+    y: tabsTop,
+    width: tabWidth,
+    height: SHOP_TAB_HEIGHT,
+  };
+}
+
+export function getShopRowRect(index: number, canvasWidth: number, canvasHeight: number, rowCount: number): Rect {
+  const panel = getShopPanelRect(canvasWidth, canvasHeight, rowCount);
+  const top = panel.y + SHOP_PANEL_PADDING + SHOP_PANEL_HEADER_HEIGHT + SHOP_TAB_HEIGHT + SHOP_PANEL_PADDING;
+  return {
+    x: panel.x + SHOP_PANEL_PADDING,
+    y: top + index * (SHOP_ROW_HEIGHT + SHOP_ROW_GAP),
+    width: panel.width - SHOP_PANEL_PADDING * 2,
+    height: SHOP_ROW_HEIGHT,
+  };
+}
+
+export function getShopBuyButtonRect(index: number, canvasWidth: number, canvasHeight: number, rowCount: number): Rect {
+  const row = getShopRowRect(index, canvasWidth, canvasHeight, rowCount);
+  return {
+    x: row.x + row.width - SHOP_BUY_BUTTON_WIDTH,
+    y: row.y + (row.height - SHOP_BUY_BUTTON_HEIGHT) / 2,
+    width: SHOP_BUY_BUTTON_WIDTH,
+    height: SHOP_BUY_BUTTON_HEIGHT,
+  };
+}
+
+// The world-drawing/camera-framing area, minus the strips permanently occupied by HUD
+// chrome: the top bar, the left offers column, and the right workload panel column. Both side
+// panels grow/shrink in height with their content but always start flush against the canvas
+// edge at a fixed width, so reserving their full column (not just their current content
+// height) keeps the boundary stable as offers/workloads come and go — recomputing it every
+// frame from content height would make the camera framing jitter.
+export function getGameViewportRect(canvasWidth: number, canvasHeight: number): Rect {
+  const left = HUD_PANEL_MARGIN * 2 + OFFER_CARD_WIDTH;
+  const right = HUD_PANEL_MARGIN * 2 + getHudPanelWidth(canvasWidth);
+  const top = HUD_BAR_HEIGHT;
+  const width = Math.max(0, canvasWidth - left - right);
+  const height = Math.max(0, canvasHeight - top);
+  return { x: left, y: top, width, height };
 }
 
 export function pointerInHud(

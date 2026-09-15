@@ -8,40 +8,40 @@ import {
   worldToGrid,
   buildModes,
   BUILDABLES,
-  wallets,
   rackSlots,
   installedIns,
   installTasks,
-  powerCapacities,
-  coolingCapacities,
   offers,
   openRackPanels,
   dragStates,
+  shopOpens,
   type BuildableDef,
 } from '../components';
 import { acceptOffer, declineOffer } from '../dispatch';
 import {
-  getFloorGridBounds,
   isWalkable,
   findPath,
   findNearestWalkableNeighbor,
   simplifyPathToPixels,
 } from '../pathfinding';
-import {
-  MACHINE_TIERS,
-  POWER_UPGRADE_KW,
-  COOLING_UPGRADE_KW,
-  type MachineTierId,
-} from '../game-data';
+import { getWalkableRegions } from '../world-map';
+import { MACHINE_TIERS, type MachineTierId, type PurchasableId } from '../game-data';
+import { getRoomRect } from '../room';
+import { takeFromInventory, addToInventory } from '../inventory';
+import { buy, dismissShop, shopTab, shopCategories, shopCatalogForTab } from './shop';
 import { type InputState } from '../../input';
 import { spawnRack } from '../../entities';
 import { type Renderer } from '../../rendering';
+import { type Camera } from '../../camera';
 import {
   getBuildPanelEntryRect,
   pointerInRect,
   pointerInHud,
   getOfferButtonRect,
   getRackPanelCloseButtonRect,
+  getShopCloseButtonRect,
+  getShopTabRect,
+  getShopBuyButtonRect,
 } from '../../ui/layout';
 import {
   findRackAt,
@@ -105,36 +105,30 @@ function findLowestFreeSlot(world: World, rackId: EntityId, capacity: number): n
   return null;
 }
 
-function canAfford(world: World, facility: EntityId, cost: number): boolean {
-  const wallet = world.getComponent(wallets, facility);
-  if (!wallet) return false;
-  return Math.floor(wallet.money) >= cost;
-}
-
 // Exported for rack-panel.ts: walking to a clicked rack (an obstacle — see D4's dispatching
 // open path) needs the identical obstacle-fallback pathfinding as walking to any other point,
 // so it reuses this rather than a second, likely-diverging implementation.
 export function moveControlledTo(
   world: World,
-  renderer: Renderer,
   controlled: EntityId,
+  facility: EntityId,
   targetPixel: { x: number; y: number },
 ): void {
   const position = world.getComponent(positions, controlled);
   if (!position) return;
 
-  const bounds = getFloorGridBounds(renderer.canvas);
+  const regions = getWalkableRegions(world, facility);
   const start = worldToGrid(position.x, position.y);
   const { gridX: targetGridX, gridY: targetGridY } = worldToGrid(targetPixel.x, targetPixel.y);
 
-  const targetIsWalkable = isWalkable(world, bounds, targetGridX, targetGridY);
+  const targetIsWalkable = isWalkable(world, regions, targetGridX, targetGridY);
   const goal = targetIsWalkable
     ? { gridX: targetGridX, gridY: targetGridY }
-    : findNearestWalkableNeighbor(world, bounds, { gridX: targetGridX, gridY: targetGridY }, start);
+    : findNearestWalkableNeighbor(world, regions, { gridX: targetGridX, gridY: targetGridY }, start);
 
   if (!goal) return;
 
-  const path = findPath(world, bounds, start, goal);
+  const path = findPath(world, regions, start, goal);
   if (path === null) return;
 
   // Exact click point when it's reachable; otherwise the neighbor cell's center, since the
@@ -143,18 +137,17 @@ export function moveControlledTo(
 
   world.removeComponent(moveTargets, controlled);
 
-  const simplified = simplifyPathToPixels(world, bounds, position, path, endPixel);
+  const simplified = simplifyPathToPixels(world, regions, position, path, endPixel);
   world.addComponent(pathFollows, controlled, { path: simplified, index: 0 });
 }
 
+// D7: cancelling an install refunds to INVENTORY, not the wallet — the item was bought at the
+// shop and is still owned; only the install itself was abandoned.
 function cancelInstallTask(world: World, facility: EntityId, controlled: EntityId): void {
   const task = world.getComponent(installTasks, controlled);
   if (!task) return;
 
-  const wallet = world.getComponent(wallets, facility);
-  if (wallet) {
-    wallet.money += MACHINE_TIERS[task.tierId].cost;
-  }
+  addToInventory(world, facility, `machine-${task.tierId}` as PurchasableId);
 
   world.removeComponent(installTasks, controlled);
   world.removeComponent(pathFollows, controlled);
@@ -163,7 +156,6 @@ function cancelInstallTask(world: World, facility: EntityId, controlled: EntityI
 
 function tryInstallIntoRack(
   world: World,
-  renderer: Renderer,
   controlled: EntityId,
   facility: EntityId,
   tierId: MachineTierId,
@@ -178,12 +170,9 @@ function tryInstallIntoRack(
   if (slotIndex === null) return;
 
   const tier = MACHINE_TIERS[tierId];
-  if (!canAfford(world, facility, tier.cost)) return;
+  if (!takeFromInventory(world, facility, `machine-${tierId}` as PurchasableId)) return;
 
-  const wallet = world.getComponent(wallets, facility)!;
-  wallet.money -= tier.cost;
-
-  moveControlledTo(world, renderer, controlled, gridToWorld(gridX, gridY));
+  moveControlledTo(world, controlled, facility, gridToWorld(gridX, gridY));
 
   world.addComponent(installTasks, controlled, {
     rackId,
@@ -195,26 +184,7 @@ function tryInstallIntoRack(
   });
 }
 
-function applyPurchase(world: World, facility: EntityId, buildable: BuildableDef): void {
-  if (!canAfford(world, facility, buildable.cost)) return;
-  const wallet = world.getComponent(wallets, facility)!;
-  wallet.money -= buildable.cost;
-
-  if (buildable.id === 'power-upgrade') {
-    const powerCapacity = world.getComponent(powerCapacities, facility)!;
-    powerCapacity.kw += POWER_UPGRADE_KW;
-  } else if (buildable.id === 'cooling-upgrade') {
-    const coolingCapacity = world.getComponent(coolingCapacities, facility)!;
-    coolingCapacity.kw += COOLING_UPGRADE_KW;
-  }
-}
-
-function selectBuildable(world: World, facility: EntityId, controlled: EntityId, selected: BuildableDef): void {
-  if (selected.placement === 'purchase') {
-    applyPurchase(world, facility, selected);
-    return;
-  }
-
+function selectBuildable(world: World, controlled: EntityId, selected: BuildableDef): void {
   const buildMode = world.getComponent(buildModes, controlled);
   if (buildMode?.buildableId === selected.id) {
     world.removeComponent(buildModes, controlled);
@@ -229,8 +199,14 @@ export function createInputSystem(
   renderer: Renderer,
   controlled: EntityId,
   facility: EntityId,
+  camera: Camera,
 ): System {
   input.onKeyDown('Escape', () => {
+    if (world.getComponent(shopOpens, controlled)) {
+      world.removeComponent(shopOpens, controlled);
+      dismissShop();
+      return;
+    }
     if (world.getComponent(buildModes, controlled)) {
       world.removeComponent(buildModes, controlled);
     }
@@ -240,7 +216,7 @@ export function createInputSystem(
     const key = String(index + 1);
     input.onKeyDown(key, () => {
       if (world.getComponent(installTasks, controlled)) return;
-      selectBuildable(world, facility, controlled, buildable);
+      selectBuildable(world, controlled, buildable);
     });
   });
 
@@ -337,26 +313,63 @@ export function createInputSystem(
         return;
       }
 
+      // 1.6. Shop panel — full-screen modal like the rack panel above; ordering here is
+      // load-bearing for the same reason (both absorb every click while open). Opened/closed
+      // purely by proximity (shop.ts), so there's no travel state to check here — just whether
+      // it's currently open.
+      if (world.getComponent(shopOpens, controlled)) {
+        const rowCount = shopCatalogForTab(shopTab.current).length;
+        const closeRect = getShopCloseButtonRect(renderer.canvas.width, renderer.canvas.height, rowCount);
+        if (pointerInRect(pointer, closeRect)) {
+          world.removeComponent(shopOpens, controlled);
+          dismissShop();
+          return;
+        }
+
+        const categories = shopCategories();
+        for (let tabIndex = 0; tabIndex < categories.length; tabIndex++) {
+          const tabRect = getShopTabRect(tabIndex, categories.length, renderer.canvas.width, renderer.canvas.height, rowCount);
+          if (pointerInRect(pointer, tabRect)) {
+            shopTab.current = categories[tabIndex];
+            return;
+          }
+        }
+
+        const rows = shopCatalogForTab(shopTab.current);
+        for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+          const buyRect = getShopBuyButtonRect(rowIndex, renderer.canvas.width, renderer.canvas.height, rowCount);
+          if (pointerInRect(pointer, buyRect)) {
+            buy(world, facility, rows[rowIndex].id);
+            return;
+          }
+        }
+
+        return;
+      }
+
       const panelIndex = hitTestPanel(pointer, renderer.canvas.height);
       const buildMode = world.getComponent(buildModes, controlled);
 
       // 2. Panel hit.
       if (panelIndex !== null) {
-        selectBuildable(world, facility, controlled, BUILDABLES[panelIndex]);
+        selectBuildable(world, controlled, BUILDABLES[panelIndex]);
         return;
       }
 
       // 3. Build mode active.
       if (buildMode) {
         const buildable = BUILDABLES.find((b) => b.id === buildMode.buildableId)!;
-        const { gridX, gridY } = worldToGrid(pointer.x, pointer.y);
+        const worldPoint = camera.screenToWorld(pointer);
+        const { gridX, gridY } = worldToGrid(worldPoint.x, worldPoint.y);
 
         if (buildable.placement === 'empty-cell') {
-          if (!canAfford(world, facility, buildable.cost)) return;
+          const room = getRoomRect(world, facility);
+          const insideRoom =
+            gridX >= room.minGridX && gridX <= room.maxGridX && gridY >= room.minGridY && gridY <= room.maxGridY;
+          if (!insideRoom) return;
           if (isGridCellOccupied(world, gridX, gridY)) return;
+          if (!takeFromInventory(world, facility, buildable.id as PurchasableId)) return;
 
-          const wallet = world.getComponent(wallets, facility)!;
-          wallet.money -= buildable.cost;
           spawnRack(world, gridX, gridY);
           // Stay in build mode so a row of racks can be laid out quickly.
           return;
@@ -367,7 +380,7 @@ export function createInputSystem(
           // strip the prefix rather than hand-matching each tier id (see BUILDABLES in
           // components.ts, generated from MACHINE_TIERS).
           const tierId = buildable.id.slice('machine-'.length) as MachineTierId;
-          tryInstallIntoRack(world, renderer, controlled, facility, tierId, gridX, gridY);
+          tryInstallIntoRack(world, controlled, facility, tierId, gridX, gridY);
           world.removeComponent(buildModes, controlled);
           return;
         }
@@ -377,12 +390,13 @@ export function createInputSystem(
 
       // 4. Rack click (no build mode): dispatch — open/promote its panel and walk there. See
       // rack-panel.ts's openOrPromoteRackPanel and D4.
-      const { gridX, gridY } = worldToGrid(pointer.x, pointer.y);
+      const worldPointer = camera.screenToWorld(pointer);
+      const { gridX, gridY } = worldToGrid(worldPointer.x, worldPointer.y);
       const rackId = findRackAt(world, gridX, gridY);
       if (rackId !== null) {
         const shouldWalk = openOrPromoteRackPanel(world, controlled, rackId);
         if (shouldWalk) {
-          moveControlledTo(world, renderer, controlled, gridToWorld(gridX, gridY));
+          moveControlledTo(world, controlled, facility, gridToWorld(gridX, gridY));
         }
         return;
       }
@@ -395,7 +409,7 @@ export function createInputSystem(
       if (openPanel) {
         world.removeComponent(openRackPanels, controlled);
       }
-      moveControlledTo(world, renderer, controlled, pointer);
+      moveControlledTo(world, controlled, facility, worldPointer);
     },
   };
 }

@@ -14,7 +14,6 @@ import {
   installedIns,
   powereds,
   installTasks,
-  wallets,
   workloads,
   serverCapacities,
   utilizations,
@@ -23,20 +22,35 @@ import {
   openRackPanels,
   dragStates,
   rejectedDrops,
+  wallets,
+  shopOpens,
+  inventories,
 } from '../components';
-import { RACK_SLOT_CAPACITY, MACHINE_TIERS, TRAIT_KEYS, TRAIT_LABELS, WORKLOAD_ARCHETYPES } from '../game-data';
+import { RACK_SLOT_CAPACITY, MACHINE_TIERS, TRAIT_KEYS, TRAIT_LABELS, WORKLOAD_ARCHETYPES, type PurchasableId } from '../game-data';
 import { type Renderer } from '../../rendering';
+import { type Camera } from '../../camera';
+import { getRoomRect, getNextRoomTier } from '../room';
+import { type GridBounds } from '../pathfinding';
+import { SHOP_RECT, CORRIDOR_RECT, SHOP_DOOR } from '../world-map';
+import { countOf } from '../inventory';
+import { shopTab, shopCategories, shopCatalogForTab } from './shop';
 import {
   getBuildPanelEntryRect,
   getRackPanelRect,
   getRackPanelCloseButtonRect,
   getServerRowRect,
   getServerRowLabelY,
+  getServerRowDrawY,
   getServerTraitBarRect,
   getPlacedChipRect,
   getTrayCardRect,
   getTrayTopY,
   RACK_PANEL_PADDING,
+  getShopPanelRect,
+  getShopCloseButtonRect,
+  getShopTabRect,
+  getShopRowRect,
+  getShopBuyButtonRect,
 } from '../../ui/layout';
 import { serversOn, trayWorkloadIds, placedWorkloadIds } from './rack-panel';
 import { type System } from './system';
@@ -44,14 +58,19 @@ import { type System } from './system';
 const PLAYER_RADIUS = 12;
 const BUILDING_WALL_THICKNESS = 8;
 
-function drawBuilding(renderer: Renderer): void {
-  const { width, height } = renderer.canvas;
+function gridBoundsToPixelRect(bounds: GridBounds): { x: number; y: number; w: number; h: number } {
+  const x = bounds.minGridX * GRID_CELL_SIZE;
+  const y = bounds.minGridY * GRID_CELL_SIZE;
+  const w = (bounds.maxGridX - bounds.minGridX + 1) * GRID_CELL_SIZE;
+  const h = (bounds.maxGridY - bounds.minGridY + 1) * GRID_CELL_SIZE;
+  return { x, y, w, h };
+}
+
+function drawBuilding(renderer: Renderer, world: World, facility: EntityId): void {
   const ctx = renderer.context;
 
-  const x = BUILDING_MARGIN;
-  const y = BUILDING_MARGIN;
-  const w = width - BUILDING_MARGIN * 2;
-  const h = height - BUILDING_MARGIN * 2;
+  const roomBounds = getRoomRect(world, facility);
+  const { x, y, w, h } = gridBoundsToPixelRect(roomBounds);
 
   // Floor
   ctx.fillStyle = '#1c1f22';
@@ -65,16 +84,16 @@ function drawBuilding(renderer: Renderer): void {
 
   ctx.strokeStyle = '#25292d';
   ctx.lineWidth = 1;
-  for (let gx = 0; gx <= width; gx += GRID_CELL_SIZE) {
+  for (let gx = x; gx <= x + w; gx += GRID_CELL_SIZE) {
     ctx.beginPath();
-    ctx.moveTo(gx, 0);
-    ctx.lineTo(gx, height);
+    ctx.moveTo(gx, y);
+    ctx.lineTo(gx, y + h);
     ctx.stroke();
   }
-  for (let gy = 0; gy <= height; gy += GRID_CELL_SIZE) {
+  for (let gy = y; gy <= y + h; gy += GRID_CELL_SIZE) {
     ctx.beginPath();
-    ctx.moveTo(0, gy);
-    ctx.lineTo(width, gy);
+    ctx.moveTo(x, gy);
+    ctx.lineTo(x + w, gy);
     ctx.stroke();
   }
 
@@ -94,6 +113,52 @@ function drawBuilding(renderer: Renderer): void {
   ctx.strokeStyle = '#6b7280';
   ctx.lineWidth = 1;
   ctx.strokeRect(x, y, w, h);
+
+  // Ghost outline of the next room tier, if one exists — makes the upgrade legible without a
+  // menu (see .plans/facility-shop-inventory.md Step 2).
+  const nextTier = getNextRoomTier(world, facility);
+  if (nextTier) {
+    const nextW = nextTier.gridWidth * GRID_CELL_SIZE;
+    const nextH = nextTier.gridHeight * GRID_CELL_SIZE;
+    ctx.save();
+    ctx.setLineDash([6, 5]);
+    ctx.strokeStyle = 'rgba(107, 114, 128, 0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(x, y, nextW, nextH);
+    ctx.restore();
+  }
+}
+
+// Shop building and the outdoor corridor connecting it to the room — the second walkable
+// location the camera exists to make reachable (see .plans/facility-shop-inventory.md D2/D3).
+function drawShopAndCorridor(renderer: Renderer): void {
+  const ctx = renderer.context;
+
+  const corridor = gridBoundsToPixelRect(CORRIDOR_RECT);
+  ctx.fillStyle = '#1a1c1f';
+  ctx.fillRect(corridor.x, corridor.y, corridor.w, corridor.h);
+
+  const shop = gridBoundsToPixelRect(SHOP_RECT);
+  ctx.fillStyle = '#1c1f22';
+  ctx.fillRect(shop.x, shop.y, shop.w, shop.h);
+
+  ctx.strokeStyle = '#4a4f57';
+  ctx.lineWidth = BUILDING_WALL_THICKNESS;
+  ctx.strokeRect(
+    shop.x - BUILDING_WALL_THICKNESS / 2,
+    shop.y - BUILDING_WALL_THICKNESS / 2,
+    shop.w + BUILDING_WALL_THICKNESS,
+    shop.h + BUILDING_WALL_THICKNESS,
+  );
+  ctx.strokeStyle = '#6b7280';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(shop.x, shop.y, shop.w, shop.h);
+
+  ctx.font = 'bold 13px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#9aa0a6';
+  ctx.fillText('SHOP', shop.x + shop.w / 2, shop.y + 16);
 }
 
 const RACK_PADDING = 4;
@@ -243,6 +308,47 @@ function drawManager(renderer: Renderer, x: number, y: number): void {
   ctx.stroke();
 }
 
+// Points an arrow from the player toward the shop door when inventory is completely empty —
+// makes "go buy something" legible without a menu (Step 6 polish, mitigating the "walking to
+// the shop is dead time" trade-off).
+function drawShopHint(renderer: Renderer, facility: EntityId, world: World, playerPosition: { x: number; y: number }): void {
+  const inventory = world.getComponent(inventories, facility);
+  const totalStock = inventory
+    ? Object.values(inventory.counts).reduce((sum: number, count) => sum + (count ?? 0), 0)
+    : 0;
+  if (totalStock > 0) return;
+
+  const doorCenter = gridToWorld(SHOP_DOOR.gridX, SHOP_DOOR.gridY);
+  const dx = doorCenter.x - playerPosition.x;
+  const dy = doorCenter.y - playerPosition.y;
+  const distance = Math.hypot(dx, dy);
+  if (distance < 40) return;
+
+  const angle = Math.atan2(dy, dx);
+  const arrowDistance = 28;
+  const arrowX = playerPosition.x + Math.cos(angle) * arrowDistance;
+  const arrowY = playerPosition.y + Math.sin(angle) * arrowDistance - 20;
+
+  const ctx = renderer.context;
+  ctx.save();
+  ctx.translate(arrowX, arrowY);
+  ctx.rotate(angle);
+  ctx.fillStyle = '#f7b731';
+  ctx.beginPath();
+  ctx.moveTo(8, 0);
+  ctx.lineTo(-6, -5);
+  ctx.lineTo(-6, 5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#f7b731';
+  ctx.fillText('SHOP', arrowX, arrowY - 12);
+}
+
 function drawPendingBorder(world: World, renderer: Renderer): void {
   let lowestDeadline = Infinity;
   for (const id of world.query(workloads)) {
@@ -273,8 +379,6 @@ function drawBuildPanel(
   facility: EntityId,
 ): void {
   const buildMode = world.getComponent(buildModes, controlled);
-  const wallet = world.getComponent(wallets, facility);
-  const money = wallet ? Math.floor(wallet.money) : 0;
 
   renderer.context.font = '14px sans-serif';
   renderer.context.textAlign = 'center';
@@ -283,10 +387,11 @@ function drawBuildPanel(
   BUILDABLES.forEach((buildable, index) => {
     const rect = getBuildPanelEntryRect(index, renderer.canvas.height);
     const isSelected = buildMode?.buildableId === buildable.id;
-    const affordable = money >= buildable.cost;
+    const owned = countOf(world, facility, buildable.id as PurchasableId);
+    const hasStock = owned > 0;
 
     renderer.context.fillStyle = isSelected ? '#4dabf7' : '#333';
-    renderer.context.globalAlpha = affordable ? 1 : 0.45;
+    renderer.context.globalAlpha = hasStock ? 1 : 0.45;
     renderer.context.fillRect(rect.x, rect.y, rect.width, rect.height);
     renderer.context.strokeStyle = isSelected ? '#fff' : '#666';
     renderer.context.lineWidth = 2;
@@ -294,7 +399,7 @@ function drawBuildPanel(
 
     renderer.context.fillStyle = '#fff';
     renderer.context.fillText(
-      `${buildable.label}  $${buildable.cost}`,
+      `${buildable.label}  x${owned}`,
       rect.x + rect.width / 2,
       rect.y + rect.height / 2,
     );
@@ -414,6 +519,20 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
   ctx.fillStyle = RACK_PANEL_DIM;
   ctx.fillText('×', closeRect.x + closeRect.width / 2, closeRect.y + closeRect.height / 2);
 
+  // Rack-wide total draw, right-aligned in the header (left of the close button) — RackLoad
+  // already sums every online server's tier power/cooling plus their workloads' cooling
+  // bonuses (capacity.ts), so no new aggregation is needed here.
+  const rackLoad = world.getComponent(rackLoads, panel.rackId) ?? { powerKw: 0, heatKw: 0, serverCount: 0 };
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = RACK_PANEL_DIM;
+  ctx.fillText(
+    `⚡ ${rackLoad.powerKw.toFixed(1)}kW   🔥 ${rackLoad.heatKw.toFixed(1)}kW`,
+    closeRect.x - 10,
+    headerY,
+  );
+
   // Server rows.
   serverIds.forEach((serverId, index) => {
     const row = getServerRowRect(index, canvasWidth, canvasHeight, serverIds.length, trayIds.length);
@@ -432,6 +551,24 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
     ctx.textBaseline = 'middle';
     ctx.fillStyle = online ? RACK_PANEL_TEXT : RACK_PANEL_RED;
     ctx.fillText(online ? tier.label : `${tier.label} (offline)`, row.x + 6, getServerRowLabelY(row));
+
+    // This server's own draw: tier baseline plus each placed workload's cooling bonus on top
+    // (same per-workload heat math resource.ts's drawFor uses to decide brownouts) — lets the
+    // player see why THIS box specifically is close to tripping a brownout, not just the
+    // facility-wide total in the HUD.
+    const rowWorkloadIds = placedWorkloadIds(world, serverId);
+    const workloadCoolingKw = rowWorkloadIds.reduce(
+      (sum, workloadId) =>
+        sum + (WORKLOAD_ARCHETYPES[world.getComponent(workloads, workloadId)!.archetypeId].coolingBonusKw ?? 0),
+      0,
+    );
+    ctx.font = '9px sans-serif';
+    ctx.fillStyle = RACK_PANEL_DIM;
+    ctx.fillText(
+      `⚡ ${tier.powerKw.toFixed(1)}kW   🔥 ${(tier.coolingKw + workloadCoolingKw).toFixed(1)}kW`,
+      row.x + 6,
+      getServerRowDrawY(row),
+    );
 
     // Pulse rejected trait bars red for a moment after a failed drop onto this server —
     // "flash the blocking trait bars red" (step 8).
@@ -481,7 +618,12 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
       ctx.font = '9px sans-serif';
       ctx.textAlign = 'left';
       ctx.fillStyle = RACK_PANEL_TEXT;
-      ctx.fillText(archetype.label, chip.x + 3, chip.y + chip.height / 2, chip.width - 6);
+      // Only render-farm/training archetypes carry a cooling bonus (web/batch are 0kW — see
+      // WORKLOAD_ARCHETYPES); appending it lets the player see, per workload, what's adding to
+      // this server's heat line above without opening a separate tooltip.
+      const chipLabel =
+        archetype.coolingBonusKw > 0 ? `${archetype.label} 🔥${archetype.coolingBonusKw.toFixed(1)}` : archetype.label;
+      ctx.fillText(chipLabel, chip.x + 3, chip.y + chip.height / 2, chip.width - 6);
     });
   });
 
@@ -555,15 +697,104 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
   }
 }
 
+const SHOP_TEXT = '#e6e8eb';
+const SHOP_DIM = '#9aa0a6';
+const SHOP_GREEN = '#3ddc84';
+
+function drawShopPanel(world: World, renderer: Renderer, controlled: EntityId, facility: EntityId): void {
+  if (!world.getComponent(shopOpens, controlled)) return;
+
+  const ctx = renderer.context;
+  const { width: canvasWidth, height: canvasHeight } = renderer.canvas;
+
+  const categories = shopCategories();
+  const rows = shopCatalogForTab(shopTab.current);
+  const rect = getShopPanelRect(canvasWidth, canvasHeight, rows.length);
+  const wallet = world.getComponent(wallets, facility);
+  const money = wallet ? Math.floor(wallet.money) : 0;
+
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+  ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+  ctx.fillStyle = 'rgba(24, 27, 31, 0.97)';
+  ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+  ctx.strokeStyle = '#3a3f47';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+
+  ctx.font = 'bold 13px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = SHOP_TEXT;
+  ctx.fillText(`Shop — $${money}`, rect.x + 14, rect.y + RACK_PANEL_PADDING + 8);
+
+  const closeRect = getShopCloseButtonRect(canvasWidth, canvasHeight, rows.length);
+  ctx.strokeStyle = '#666';
+  ctx.strokeRect(closeRect.x, closeRect.y, closeRect.width, closeRect.height);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = SHOP_DIM;
+  ctx.fillText('×', closeRect.x + closeRect.width / 2, closeRect.y + closeRect.height / 2);
+
+  categories.forEach((category, tabIndex) => {
+    const tabRect = getShopTabRect(tabIndex, categories.length, canvasWidth, canvasHeight, rows.length);
+    const isActive = category === shopTab.current;
+    ctx.fillStyle = isActive ? '#2f6fb0' : '#2a2e33';
+    ctx.fillRect(tabRect.x, tabRect.y, tabRect.width, tabRect.height);
+    ctx.strokeStyle = isActive ? '#4dabf7' : '#3a3f47';
+    ctx.strokeRect(tabRect.x, tabRect.y, tabRect.width, tabRect.height);
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = SHOP_TEXT;
+    ctx.fillText(category, tabRect.x + tabRect.width / 2, tabRect.y + tabRect.height / 2);
+  });
+
+  rows.forEach((purchasable, index) => {
+    const row = getShopRowRect(index, canvasWidth, canvasHeight, rows.length);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
+    ctx.fillRect(row.x, row.y, row.width, row.height);
+    ctx.strokeStyle = '#2f333a';
+    ctx.strokeRect(row.x, row.y, row.width, row.height);
+
+    const owned = purchasable.kind === 'stock' ? countOf(world, facility, purchasable.id as PurchasableId) : null;
+    const label = owned !== null ? `${purchasable.label}  x${owned}` : purchasable.label;
+
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = SHOP_TEXT;
+    ctx.fillText(label, row.x + 8, row.y + row.height / 2);
+
+    const buyRect = getShopBuyButtonRect(index, canvasWidth, canvasHeight, rows.length);
+    const affordable = money >= purchasable.cost;
+    ctx.fillStyle = affordable ? '#2f6f4f' : '#3a3f47';
+    ctx.globalAlpha = affordable ? 1 : 0.6;
+    ctx.fillRect(buyRect.x, buyRect.y, buyRect.width, buyRect.height);
+    ctx.strokeStyle = affordable ? SHOP_GREEN : '#666';
+    ctx.strokeRect(buyRect.x, buyRect.y, buyRect.width, buyRect.height);
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = SHOP_TEXT;
+    ctx.fillText(`$${purchasable.cost}`, buyRect.x + buyRect.width / 2, buyRect.y + buyRect.height / 2);
+    ctx.globalAlpha = 1;
+  });
+
+  ctx.textAlign = 'left';
+}
+
 export function createRenderSystem(
   world: World,
   renderer: Renderer,
   controlled: EntityId,
   facility: EntityId,
+  camera: Camera,
 ): System {
   return {
     update() {
-      drawBuilding(renderer);
+      camera.applyTransform(renderer.context);
+
+      drawBuilding(renderer, world, facility);
+      drawShopAndCorridor(renderer);
 
       const machinesByRack = new Map<EntityId, EntityId[]>();
       for (const id of world.query(machines, installedIns)) {
@@ -642,15 +873,22 @@ export function createRenderSystem(
 
         const position = world.getComponent(positions, id)!;
         drawManager(renderer, position.x, position.y);
+        drawShopHint(renderer, facility, world, position);
       }
 
+      camera.resetTransform(renderer.context);
+
+      // Everything below is screen-space UI: HUD bar, build/rack panels, pending-deadline
+      // border. Drawn outside the camera transform (see .plans/facility-shop-inventory.md D1).
       drawPendingBorder(world, renderer);
 
-      // The rack panel is a modal overlay: while open, it replaces the build panel rather than
-      // drawing over/under it — the two are separate concerns (dispatch vs. construction) and
-      // input.ts's click chain already treats the rack panel as consuming clicks first.
+      // The rack panel and shop panel are both full-screen modals that replace the build panel
+      // rather than drawing over/under it. Same priority order as input.ts's click chain: rack
+      // panel first, then shop.
       if (world.getComponent(openRackPanels, controlled)) {
         drawRackPanel(world, renderer, controlled);
+      } else if (world.getComponent(shopOpens, controlled)) {
+        drawShopPanel(world, renderer, controlled, facility);
       } else {
         drawBuildPanel(world, renderer, controlled, facility);
       }

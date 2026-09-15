@@ -12,6 +12,7 @@ import {
   installedIns,
   powereds,
   serverCapacities,
+  inventories,
   type Workload,
   type Offer,
 } from '../components';
@@ -130,12 +131,30 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
   ctx.fillText(repText, x, midY);
   x += ctx.measureText(repText).width + 20;
 
-  // Compute
-  ctx.fillStyle = TEXT_COLOR;
-  const assigned = utilization.computeTotal - utilization.computeFree;
-  const computeText = `▦ ${assigned}/${utilization.computeTotal} compute`;
-  ctx.fillText(computeText, x, midY);
-  x += ctx.measureText(computeText).width + 20;
+  // Per-trait capacity (D5: compute alone hid RAM/storage pressure that could bottleneck
+  // placement even while CPU still had headroom).
+  ctx.font = '13px sans-serif';
+  for (const key of TRAIT_KEYS) {
+    const total = utilization.traitsTotal[key];
+    const used = total - utilization.traitsFree[key];
+    const over = used > total;
+    ctx.fillStyle = over ? RED : TEXT_COLOR;
+    const traitText = `${TRAIT_LABELS[key]} ${used}/${total}`;
+    ctx.fillText(traitText, x, midY);
+    x += ctx.measureText(traitText).width + 6;
+    drawInlineBar(ctx, x, midY - 4, 36, 8, total > 0 ? used / total : 0, over ? RED : GREEN);
+    x += 36 + 16;
+  }
+
+  // Inventory summary — total owned-but-unplaced stock (D5), bought at the shop.
+  const inventory = world.getComponent(inventories, facility);
+  if (inventory) {
+    const totalStock = Object.values(inventory.counts).reduce((sum: number, count) => sum + (count ?? 0), 0);
+    ctx.fillStyle = totalStock > 0 ? TEXT_COLOR : DIM_COLOR;
+    const inventoryText = `📦 ${totalStock} in stock`;
+    ctx.fillText(inventoryText, x, midY);
+    x += ctx.measureText(inventoryText).width + 20;
+  }
 
   // Personal-best counters (cheap, already tracked)
   const clock = world.getComponent(demandClocks, facility);
@@ -300,11 +319,12 @@ function drawWorkloadPanel(world: World, renderer: Renderer, facility: EntityId)
     ctx.font = '11px sans-serif';
     ctx.textAlign = 'left';
     ctx.fillStyle = DIM_COLOR;
-    ctx.fillText(
-      `needs ${workload.demands.cpu}, have ${utilization.computeFree}`,
-      rect.x + padX,
-      shortfallY,
-    );
+    const shortfallText = TRAIT_KEYS.map((key) => {
+      const need = workload.demands[key];
+      const free = utilization.traitsFree[key];
+      return `${TRAIT_LABELS[key]} ${need}${free < need ? '!' : ''}`;
+    }).join(' · ');
+    ctx.fillText(shortfallText, rect.x + padX, shortfallY);
 
     rowIndex += 2;
   }

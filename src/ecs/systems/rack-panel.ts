@@ -30,6 +30,7 @@ import {
   GRID_CELL_SIZE,
 } from '../components';
 import { type InputState } from '../../input';
+import { type Camera } from '../../camera';
 import { placeWorkload, checkPlacement, unplaceWorkload } from '../dispatch';
 import {
   getServerRowRect,
@@ -270,6 +271,7 @@ export function createRackPanelSystem(
   world: World,
   input: InputState,
   controlled: EntityId,
+  camera: Camera,
 ): System {
   input.onKeyDown('Escape', () => {
     if (world.getComponent(openRackPanels, controlled)) {
@@ -319,7 +321,8 @@ export function createRackPanelSystem(
       const pointer = input.getPointerPosition();
       if (!pointer) return;
 
-      const { gridX, gridY } = worldToGrid(pointer.x, pointer.y);
+      const worldPointer = camera.screenToWorld(pointer);
+      const { gridX, gridY } = worldToGrid(worldPointer.x, worldPointer.y);
       const rackId = findRackAt(world, gridX, gridY);
       if (rackId === null) return;
 

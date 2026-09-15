@@ -92,10 +92,86 @@ export const MACHINE_TIERS: Record<MachineTierId, MachineTierDef> = {
 export const RACK_COST = 120;
 export const RACK_SLOT_CAPACITY = 6;
 
+// World is a fixed-size rect, not tied to window size (see .plans/facility-shop-inventory.md
+// D2) — sized to comfortably hold the largest room tier plus the shop plus outdoor space
+// between them.
+export const WORLD_WIDTH = 2400;
+export const WORLD_HEIGHT = 1600;
+
+export const CAMERA_EDGE_PAN_MARGIN_PX = 24;
+export const CAMERA_EDGE_PAN_SPEED = 700; // pixels/second while edge-panning or arrow-key panning
+export const CAMERA_FOLLOW_EASE = 6; // higher = camera catches up to the player faster
+
+// Room tier ladder — anchored at a shared top-left origin so upgrading always grows the room
+// right and down (see .plans/facility-shop-inventory.md D4). Grid cells, not pixels. gridY
+// leaves room above for the corridor strip (world-map.ts) that runs along the room's fixed
+// top edge to the shop.
+export const ROOM_ORIGIN = { gridX: 1, gridY: 6 };
+
+export interface RoomTierDef {
+  id: string;
+  label: string;
+  gridWidth: number;
+  gridHeight: number;
+  cost: number;
+}
+
+export const ROOM_TIERS: RoomTierDef[] = [
+  { id: 'closet', label: 'Server Closet', gridWidth: 6, gridHeight: 5, cost: 0 },
+  { id: 'small-room', label: 'Small Room', gridWidth: 10, gridHeight: 7, cost: 600 },
+  { id: 'medium-room', label: 'Medium Room', gridWidth: 15, gridHeight: 10, cost: 1800 },
+  { id: 'large-room', label: 'Large Room', gridWidth: 20, gridHeight: 14, cost: 4500 },
+];
+
 export const POWER_UPGRADE_COST = 400;
 export const POWER_UPGRADE_KW = 5;
 export const COOLING_UPGRADE_COST = 350;
 export const COOLING_UPGRADE_KW = 5;
+
+// What the shop sells — unifies the three purchase kinds that used to be mixed into
+// BUILDABLES (components.ts): 'stock' items go into inventory and are placed later from the
+// build panel; 'instant' and 'room' apply immediately at purchase. See
+// .plans/facility-shop-inventory.md D6.
+export type PurchasableKind = 'stock' | 'instant' | 'room';
+
+export type PurchasableId =
+  | 'rack'
+  | `machine-${MachineTierId}`
+  | 'power-upgrade'
+  | 'cooling-upgrade'
+  | `room-${string}`;
+
+export interface PurchasableDef {
+  id: PurchasableId;
+  label: string;
+  kind: PurchasableKind;
+  cost: number;
+  category: string;
+}
+
+const machinePurchasables: PurchasableDef[] = Object.values(MACHINE_TIERS).map((tier) => ({
+  id: `machine-${tier.id}` as PurchasableId,
+  label: tier.label,
+  kind: 'stock',
+  cost: tier.cost,
+  category: 'Machines',
+}));
+
+const roomPurchasables: PurchasableDef[] = ROOM_TIERS.slice(1).map((tier) => ({
+  id: `room-${tier.id}` as PurchasableId,
+  label: tier.label,
+  kind: 'room',
+  cost: tier.cost,
+  category: 'Room',
+}));
+
+export const PURCHASABLES: PurchasableDef[] = [
+  { id: 'rack', label: 'Rack', kind: 'stock', cost: RACK_COST, category: 'Racks' },
+  ...machinePurchasables,
+  { id: 'power-upgrade', label: '+5kW Power', kind: 'instant', cost: POWER_UPGRADE_COST, category: 'Utilities' },
+  { id: 'cooling-upgrade', label: '+5kW Cooling', kind: 'instant', cost: COOLING_UPGRADE_COST, category: 'Utilities' },
+  ...roomPurchasables,
+];
 
 export const STARTING_MONEY = 750;
 export const STARTING_POWER_KW = 3;

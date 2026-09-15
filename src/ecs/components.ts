@@ -1,11 +1,9 @@
 import { createComponentStore, type EntityId } from './world';
 import {
-  RACK_COST,
   MACHINE_TIERS,
-  POWER_UPGRADE_COST,
-  COOLING_UPGRADE_COST,
   type MachineTierId,
   type WorkloadArchetypeId,
+  type PurchasableId,
   type Traits,
   type TraitKey,
 } from './game-data';
@@ -62,36 +60,49 @@ export interface Renderable {
   kind: RenderableKind;
 }
 
-export type PlacementKind = 'empty-cell' | 'rack' | 'purchase';
+export type PlacementKind = 'empty-cell' | 'rack';
 
 // `machine-${MachineTierId}` so a new tier in MACHINE_TIERS (game-data.ts) automatically gets a
 // BuildableId, a build-panel entry, and a number-key hotkey with no changes here — see
 // .plans/workload-dispatch.md D6 and the BUILDABLES generalization below.
-export type BuildableId = 'rack' | `machine-${MachineTierId}` | 'power-upgrade' | 'cooling-upgrade';
+//
+// As of .plans/facility-shop-inventory.md D6, the build panel only ever shows STOCK
+// purchasables (rack, machines) — power/cooling upgrades are 'instant' kind, bought and
+// applied at the shop, never placed. BuildableId is a strict subset of PurchasableId.
+export type BuildableId = 'rack' | `machine-${MachineTierId}`;
 
 export interface BuildableDef {
   id: BuildableId;
   label: string;
-  cost: number;
   placement: PlacementKind;
 }
 
 const machineBuildables: BuildableDef[] = Object.values(MACHINE_TIERS).map((tier) => ({
   id: `machine-${tier.id}` as BuildableId,
   label: tier.label,
-  cost: tier.cost,
   placement: 'rack',
 }));
 
 export const BUILDABLES: BuildableDef[] = [
-  { id: 'rack', label: 'Rack', cost: RACK_COST, placement: 'empty-cell' },
+  { id: 'rack', label: 'Rack', placement: 'empty-cell' },
   ...machineBuildables,
-  { id: 'power-upgrade', label: '+5kW Power', cost: POWER_UPGRADE_COST, placement: 'purchase' },
-  { id: 'cooling-upgrade', label: '+5kW Cool', cost: COOLING_UPGRADE_COST, placement: 'purchase' },
 ];
 
 export interface BuildMode {
   buildableId: BuildableId;
+}
+
+// Facility singleton — which rung of ROOM_TIERS (game-data.ts) the room is currently on.
+export interface RoomTier {
+  index: number;
+}
+
+// Facility singleton — owned-but-unplaced stock, keyed by purchasable id (D5). A count is the
+// whole truth for an owned item: no position, no behavior, no per-item state, so no entity is
+// spawned until placement. Only 'stock'-kind purchasables (game-data.ts) ever appear here —
+// 'instant' and 'room' purchases apply immediately and never touch inventory.
+export interface Inventory {
+  counts: Partial<Record<PurchasableId, number>>;
 }
 
 // Facility singleton
@@ -194,6 +205,13 @@ export interface OpenRackPanel {
   arrived: boolean; // dispatching only; false while walking, drops held until true
 }
 
+// Marker on the player — the shop panel is open. Mirrors OpenRackPanel but the shop has no
+// mode/rackId: proximity alone opens and closes it (shop.ts), no travel state to track. See
+// .plans/facility-shop-inventory.md Step 5.
+export interface ShopOpen {
+  open: true;
+}
+
 // A drop the player made while still walking to a dispatching-mode rack — committed on
 // arrival, in order. See OpenRackPanel.arrived and rack-panel.ts.
 export interface PendingDrop {
@@ -258,6 +276,8 @@ export const renderables = createComponentStore<Renderable>();
 export const buildModes = createComponentStore<BuildMode>();
 export const pathFollows = createComponentStore<PathFollow>();
 
+export const roomTiers = createComponentStore<RoomTier>();
+export const inventories = createComponentStore<Inventory>();
 export const wallets = createComponentStore<Wallet>();
 export const reputations = createComponentStore<Reputation>();
 export const powerCapacities = createComponentStore<PowerCapacity>();
@@ -276,6 +296,7 @@ export const placedOns = createComponentStore<PlacedOn>();
 export const workloads = createComponentStore<Workload>();
 export const offers = createComponentStore<Offer>();
 export const openRackPanels = createComponentStore<OpenRackPanel>();
+export const shopOpens = createComponentStore<ShopOpen>();
 export const pendingDrops = createComponentStore<PendingDrop>();
 export const dragStates = createComponentStore<DragState>();
 export const rejectedDrops = createComponentStore<RejectedDrop>();

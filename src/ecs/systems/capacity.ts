@@ -11,7 +11,7 @@ import {
   rackLoads,
   utilizations,
 } from '../components';
-import { MACHINE_TIERS } from '../game-data';
+import { MACHINE_TIERS, WORKLOAD_ARCHETYPES } from '../game-data';
 import { zeroTraits, addTraits, subtractTraits } from '../traits';
 import { type System } from './system';
 
@@ -38,14 +38,19 @@ export function createCapacitySystem(world: World, facility: EntityId): System {
       let traitsFree = zeroTraits();
 
       // Sum of demands for every workload PlacedOn a given server — a server can host several
-      // workloads at once (D1), so this is a fold, not a single lookup.
+      // workloads at once (D1), so this is a fold, not a single lookup. Also accumulates each
+      // server's extra cooling draw from its placed workloads (see resource.ts's drawFor,
+      // which this mirrors so RackLoad.heatKw matches the brownout system's own math).
       const usedByServer = new Map<EntityId, ReturnType<typeof zeroTraits>>();
+      const workloadCoolingByServer = new Map<EntityId, number>();
       for (const workloadId of world.query(placedOns)) {
         const serverId = world.getComponent(placedOns, workloadId)!.serverId;
         const workload = world.getComponent(workloads, workloadId);
         if (!workload) continue;
         const current = usedByServer.get(serverId) ?? zeroTraits();
         usedByServer.set(serverId, addTraits(current, workload.demands));
+        const coolingBonus = WORKLOAD_ARCHETYPES[workload.archetypeId].coolingBonusKw;
+        workloadCoolingByServer.set(serverId, (workloadCoolingByServer.get(serverId) ?? 0) + coolingBonus);
       }
 
       for (const machineId of world.query(machines, installedIns, powereds)) {
@@ -73,8 +78,9 @@ export function createCapacitySystem(world: World, facility: EntityId): System {
         };
         rackAccum.powerKw += tier.powerKw;
         // Heat === cooling draw for now; kept as a separate field on RackLoad so local heat
-        // accumulation later doesn't need a data-model change.
-        rackAccum.heatKw += tier.coolingKw;
+        // accumulation later doesn't need a data-model change. Includes each placed workload's
+        // coolingBonusKw on top of the machine's own idle draw, same as resource.ts's drawFor.
+        rackAccum.heatKw += tier.coolingKw + (workloadCoolingByServer.get(machineId) ?? 0);
         rackAccum.serverCount += 1;
         rackLoadAccum.set(installedIn.rackId, rackAccum);
       }

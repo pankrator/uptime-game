@@ -15,6 +15,8 @@ import {
   utilizations,
   demandClocks,
   offers,
+  roomTiers,
+  inventories,
 } from '../ecs/components';
 import {
   RACK_SLOT_CAPACITY,
@@ -25,6 +27,7 @@ import {
   WORKLOAD_ARCHETYPES,
   type MachineTierId,
   type WorkloadArchetypeId,
+  type PurchasableId,
 } from '../ecs/game-data';
 import { scaleTraits, zeroTraits } from '../ecs/traits';
 
@@ -61,8 +64,18 @@ export function spawnMachine(
   return id;
 }
 
+// Starting stock — lets the game be playable before the shop exists (step 4) and becomes the
+// real starting state once it does (step 5): a rack and one budget box to get going, so a
+// fresh game isn't a walk to the shop before anything can happen.
+const STARTING_INVENTORY: Partial<Record<PurchasableId, number>> = {
+  rack: 1,
+  'machine-budget': 2,
+};
+
 export function spawnFacility(world: World): EntityId {
   const id = world.createEntity();
+  world.addComponent(roomTiers, id, { index: 0 });
+  world.addComponent(inventories, id, { counts: { ...STARTING_INVENTORY } });
   world.addComponent(wallets, id, { money: STARTING_MONEY });
   world.addComponent(reputations, id, { value: STARTING_REPUTATION });
   world.addComponent(powerCapacities, id, { kw: STARTING_POWER_KW });

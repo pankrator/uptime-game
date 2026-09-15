@@ -3,18 +3,23 @@ import { createInput } from './input';
 import { createGameState } from './state';
 import { createGameLoop } from './core';
 import { createWorld } from './ecs/world';
+import { createCamera } from './camera';
 import { createInputSystem } from './ecs/systems/input';
 import { createInstallProgressSystem } from './ecs/systems/install-progress';
 import { createPathFollowSystem } from './ecs/systems/path-follow';
 import { createMovementSystem } from './ecs/systems/movement';
 import { createRackPanelSystem } from './ecs/systems/rack-panel';
+import { createShopSystem } from './ecs/systems/shop';
 import { createResourceSystem } from './ecs/systems/resource';
 import { createCapacitySystem } from './ecs/systems/capacity';
 import { createWorkloadSpawnSystem, createOfferExpirySystem } from './ecs/systems/workload-spawn';
 import { createWorkloadRunSystem } from './ecs/systems/workload-run';
 import { createRenderSystem } from './ecs/systems/render';
 import { createHudSystem } from './ecs/systems/hud';
+import { createCameraSystem } from './ecs/systems/camera';
 import { spawnPlayer, spawnFacility } from './entities';
+import { getRoomRect } from './ecs/room';
+import { gridToWorld } from './ecs/components';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#game');
 if (!canvas) {
@@ -25,9 +30,15 @@ const renderer = createRenderer(canvas);
 const input = createInput(canvas);
 const state = createGameState();
 const world = createWorld();
+const camera = createCamera(input);
 
 const facility = spawnFacility(world);
-const player = spawnPlayer(world, { x: canvas.width / 2, y: canvas.height / 2 });
+const room = getRoomRect(world, facility);
+const spawnPoint = gridToWorld(
+  Math.floor((room.minGridX + room.maxGridX) / 2),
+  Math.floor((room.minGridY + room.maxGridY) / 2),
+);
+const player = spawnPlayer(world, spawnPoint);
 
 // ORDER IS LOAD-BEARING — see .plans/machines-and-racks.md, .plans/workload-economy.md, and
 // .plans/workload-dispatch.md.
@@ -46,11 +57,12 @@ const player = spawnPlayer(world, { x: canvas.width / 2, y: canvas.height / 2 })
 //   invalidated this frame.
 // - spawn runs before run so a contract's offer window starts the same frame it arrives.
 const updateSystems = [
-  createInputSystem(world, input, renderer, player, facility),
+  createInputSystem(world, input, renderer, player, facility, camera),
   createInstallProgressSystem(world, player, facility),
   createPathFollowSystem(world),
   createMovementSystem(world),
-  createRackPanelSystem(world, input, player),
+  createRackPanelSystem(world, input, player, camera),
+  createShopSystem(world, player),
   createResourceSystem(world, facility),
   createCapacitySystem(world, facility),
   createWorkloadSpawnSystem(world, facility),
@@ -62,8 +74,10 @@ const updateSystems = [
 // while the tab is unfocused, but the simulation must keep advancing regardless (see
 // src/core/index.ts). Render/HUD systems only read state and draw, so they're safe to
 // pause without affecting gameplay.
+// Camera update goes first — it must update before the render systems read it this frame.
 const renderSystems = [
-  createRenderSystem(world, renderer, player, facility),
+  createCameraSystem(world, renderer, input, player, camera),
+  createRenderSystem(world, renderer, player, facility, camera),
   createHudSystem(world, renderer, facility),
 ];
 
