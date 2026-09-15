@@ -165,6 +165,40 @@ export function getRackPanelRect(
   };
 }
 
+// The full, unclamped height of everything the panel would need to draw (every server row plus
+// the tray) — as opposed to getRackPanelRect's height, which is clamped to fit the canvas. The
+// difference between this and getRackPanelContentRect's height is how far the panel can scroll;
+// see rack-panel.ts's scroll handling.
+export function getRackPanelContentHeight(serverCount: number, trayCount: number): number {
+  const serversHeight =
+    serverCount > 0 ? serverCount * RACK_SERVER_ROW_HEIGHT + (serverCount - 1) * RACK_SERVER_ROW_GAP : 0;
+  const trayHeight =
+    RACK_TRAY_HEADER_HEIGHT +
+    (trayCount > 0 ? trayCount * RACK_TRAY_CARD_HEIGHT + (trayCount - 1) * RACK_TRAY_CARD_GAP : RACK_TRAY_CARD_HEIGHT);
+  return serversHeight + RACK_PANEL_PADDING + trayHeight;
+}
+
+// The scrollable sub-region inside the panel: everything below the header, inset by the same
+// padding as the rest of the panel. render.ts clips to this rect and translates its drawing by
+// -scrollOffsetPx; rack-panel.ts's hit-testing subtracts the same offset from the pointer before
+// comparing against row/tray/chip rects (which are laid out in unscrolled content space — see
+// getServerRowRect et al.). Content taller than this rect is what makes the panel scroll at all.
+export function getRackPanelContentRect(
+  canvasWidth: number,
+  canvasHeight: number,
+  serverCount: number,
+  trayCount: number,
+): Rect {
+  const panel = getRackPanelRect(canvasWidth, canvasHeight, serverCount, trayCount);
+  const top = panel.y + RACK_PANEL_PADDING + RACK_PANEL_HEADER_HEIGHT + RACK_PANEL_PADDING;
+  return {
+    x: panel.x + RACK_PANEL_PADDING,
+    y: top,
+    width: panel.width - RACK_PANEL_PADDING * 2,
+    height: panel.y + panel.height - RACK_PANEL_PADDING - top,
+  };
+}
+
 export function getRackPanelCloseButtonRect(
   canvasWidth: number,
   canvasHeight: number,

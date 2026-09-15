@@ -15,6 +15,10 @@ export interface InputState {
   // walk there). The browser's context menu is suppressed on the canvas so right-click is
   // free to mean something in-game.
   wasRightClicked(): boolean;
+  // Accumulated vertical wheel delta since the last read, consumed on read (same one-shot
+  // pattern as wasClicked/wasPressed/wasReleased) — used by the rack panel to scroll its
+  // content. Positive scrolls down, matching the DOM WheelEvent.deltaY sign.
+  consumeWheelDeltaY(): number;
 }
 
 export function createInput(canvas: HTMLCanvasElement, target: Window = window): InputState {
@@ -26,6 +30,7 @@ export function createInput(canvas: HTMLCanvasElement, target: Window = window):
   let pointerDown = false;
   let pressed = false;
   let released = false;
+  let wheelDeltaY = 0;
 
   target.addEventListener('keydown', (event) => {
     keysDown.add(event.key);
@@ -65,6 +70,17 @@ export function createInput(canvas: HTMLCanvasElement, target: Window = window):
     released = true;
   });
 
+  // passive: false so preventDefault can stop the page itself from scrolling while the
+  // pointer is over the canvas (the rack panel is the only thing that should respond to it).
+  canvas.addEventListener(
+    'wheel',
+    (event) => {
+      event.preventDefault();
+      wheelDeltaY += event.deltaY;
+    },
+    { passive: false },
+  );
+
   return {
     isKeyDown(key: string) {
       return keysDown.has(key);
@@ -103,6 +119,11 @@ export function createInput(canvas: HTMLCanvasElement, target: Window = window):
     },
     isPointerDown() {
       return pointerDown;
+    },
+    consumeWheelDeltaY() {
+      const delta = wheelDeltaY;
+      wheelDeltaY = 0;
+      return delta;
     },
   };
 }

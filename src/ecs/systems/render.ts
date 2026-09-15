@@ -20,15 +20,27 @@ import {
   powerCapacities,
   coolingCapacities,
   openRackPanels,
+  rackScrolls,
   dragStates,
   rejectedDrops,
   wallets,
   shopOpens,
   inventories,
 } from '../components';
-import { RACK_SLOT_CAPACITY, MACHINE_TIERS, TRAIT_KEYS, TRAIT_LABELS, WORKLOAD_ARCHETYPES, type PurchasableId } from '../game-data';
+import {
+  RACK_SLOT_CAPACITY,
+  MACHINE_TIERS,
+  TRAIT_KEYS,
+  TRAIT_LABELS,
+  TRAIT_UNITS,
+  WORKLOAD_ARCHETYPES,
+  type Traits,
+  type PurchasableId,
+  type MachineTierId,
+} from '../game-data';
 import { type Renderer } from '../../rendering';
 import { type Camera } from '../../camera';
+import { type InputState } from '../../input';
 import { getRoomRect, getNextRoomTier } from '../room';
 import { type GridBounds } from '../pathfinding';
 import { SHOP_RECT, CORRIDOR_RECT, SHOP_DOOR } from '../world-map';
@@ -37,6 +49,8 @@ import { shopTab, shopCategories, shopCatalogForTab } from './shop';
 import {
   getBuildPanelEntryRect,
   getRackPanelRect,
+  getRackPanelContentRect,
+  getRackPanelContentHeight,
   getRackPanelCloseButtonRect,
   getServerRowRect,
   getServerRowLabelY,
@@ -51,8 +65,9 @@ import {
   getShopTabRect,
   getShopRowRect,
   getShopBuyButtonRect,
+  pointerInRect,
 } from '../../ui/layout';
-import { serversOn, trayWorkloadIds, placedWorkloadIds } from './rack-panel';
+import { serversOn, trayWorkloadIds, placedWorkloadIds, maxRackScroll } from './rack-panel';
 import { type System } from './system';
 
 const PLAYER_RADIUS = 12;
@@ -372,17 +387,47 @@ function drawPendingBorder(world: World, renderer: Renderer): void {
   ctx.restore();
 }
 
+// Traits tooltip for a hovered machine build-panel entry — small floating box that follows the
+// pointer, same compact "8c/32GB/1000GB" form used in the rack panel and shop. Only
+// `machine-${MachineTierId}` buildables carry Traits (racks don't), so non-machine entries
+// never trigger it.
+function drawBuildPanelTooltip(renderer: Renderer, pointer: { x: number; y: number }, traits: Traits): void {
+  const ctx = renderer.context;
+  const text = formatDemands(traits);
+  ctx.font = '11px sans-serif';
+  const textWidth = ctx.measureText(text).width;
+  const paddingX = 8;
+  const boxWidth = textWidth + paddingX * 2;
+  const boxHeight = 22;
+  const x = pointer.x + 14;
+  const y = pointer.y - boxHeight - 10;
+
+  ctx.fillStyle = 'rgba(24, 27, 31, 0.97)';
+  ctx.fillRect(x, y, boxWidth, boxHeight);
+  ctx.strokeStyle = '#4a4f57';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x, y, boxWidth, boxHeight);
+
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = RACK_PANEL_TEXT;
+  ctx.fillText(text, x + paddingX, y + boxHeight / 2);
+}
+
 function drawBuildPanel(
   world: World,
   renderer: Renderer,
   controlled: EntityId,
   facility: EntityId,
+  pointer: { x: number; y: number } | null,
 ): void {
   const buildMode = world.getComponent(buildModes, controlled);
 
   renderer.context.font = '14px sans-serif';
   renderer.context.textAlign = 'center';
   renderer.context.textBaseline = 'middle';
+
+  let hoveredTraits: Traits | null = null;
 
   BUILDABLES.forEach((buildable, index) => {
     const rect = getBuildPanelEntryRect(index, renderer.canvas.height);
@@ -410,7 +455,16 @@ function drawBuildPanel(
     renderer.context.textAlign = 'center';
 
     renderer.context.globalAlpha = 1;
+
+    if (pointer && buildable.id.startsWith('machine-') && pointerInRect(pointer, rect)) {
+      const tierId = buildable.id.slice('machine-'.length) as MachineTierId;
+      hoveredTraits = MACHINE_TIERS[tierId].traits;
+    }
   });
+
+  if (pointer && hoveredTraits) {
+    drawBuildPanelTooltip(renderer, pointer, hoveredTraits);
+  }
 }
 
 function drawInstallIndicator(world: World, renderer: Renderer, controlled: EntityId): void {
@@ -454,6 +508,12 @@ function drawInstallIndicator(world: World, renderer: Renderer, controlled: Enti
   ctx.arc(center.x, center.y, radius, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
   ctx.stroke();
   ctx.restore();
+}
+
+// Compact "2c/4GB/50GB" form of a workload's demands, in TRAIT_KEYS order — used anywhere the
+// player needs to see what a workload costs to run without opening a separate tooltip.
+function formatDemands(demands: Traits): string {
+  return TRAIT_KEYS.map((key) => `${demands[key]}${TRAIT_UNITS[key]}`).join('/');
 }
 
 const RACK_PANEL_TEXT = '#e6e8eb';
@@ -532,6 +592,22 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
     closeRect.x - 10,
     headerY,
   );
+
+  // Server rows + tray both live in the scrollable content region: clip to it and translate up
+  // by however far the player has scrolled, so every rect computed below (all laid out in
+  // unscrolled content space by getServerRowRect/getTrayCardRect/getPlacedChipRect) ends up in
+  // the right place on screen without needing scroll-awareness of its own. Restored before the
+  // dragged card below, which must follow the raw cursor in screen space, not content space.
+  const contentRect = getRackPanelContentRect(canvasWidth, canvasHeight, serverIds.length, trayIds.length);
+  const contentHeight = getRackPanelContentHeight(serverIds.length, trayIds.length);
+  const maxScroll = maxRackScroll(contentHeight, contentRect.height);
+  const scrollOffsetPx = Math.min(world.getComponent(rackScrolls, controlled)?.offsetPx ?? 0, maxScroll);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(contentRect.x, contentRect.y, contentRect.width, contentRect.height);
+  ctx.clip();
+  ctx.translate(0, -scrollOffsetPx);
 
   // Server rows.
   serverIds.forEach((serverId, index) => {
@@ -658,16 +734,36 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = RACK_PANEL_TEXT;
-      ctx.fillText(archetype.label, card.x + 6, card.y + card.height * 0.35);
+      ctx.fillText(archetype.label, card.x + 6, card.y + card.height * 0.24);
+
+      ctx.font = '8px sans-serif';
+      ctx.fillStyle = RACK_PANEL_DIM;
+      ctx.fillText(formatDemands(workload.demands), card.x + 6, card.y + card.height * 0.55);
 
       ctx.font = '9px sans-serif';
       ctx.fillStyle = urgent ? RACK_PANEL_AMBER : RACK_PANEL_DIM;
       ctx.fillText(
         `${Math.max(0, Math.ceil(workload.deadlineRemainingSeconds))}s left`,
         card.x + 6,
-        card.y + card.height * 0.72,
+        card.y + card.height * 0.84,
       );
     });
+  }
+
+  ctx.restore(); // end content clip/scroll — everything below draws in normal screen space
+
+  // Scrollbar: a thin track down the content region's right edge with a thumb sized/positioned
+  // to the visible fraction, same idea as a native scrollbar. Only drawn once there's actually
+  // something to scroll — most racks (a handful of servers, an empty tray) never trigger it.
+  if (maxScroll > 0) {
+    const trackX = contentRect.x + contentRect.width - 4;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+    ctx.fillRect(trackX, contentRect.y, 3, contentRect.height);
+
+    const thumbHeight = Math.max(20, (contentRect.height / contentHeight) * contentRect.height);
+    const thumbY = contentRect.y + (scrollOffsetPx / maxScroll) * (contentRect.height - thumbHeight);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.fillRect(trackX, thumbY, 3, thumbHeight);
   }
 
   // The dragged card itself, following the cursor, drawn last so it's always on top.
@@ -691,7 +787,11 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = RACK_PANEL_TEXT;
-      ctx.fillText(archetype.label, x + cardWidth / 2, y + cardHeight / 2);
+      ctx.fillText(archetype.label, x + cardWidth / 2, y + cardHeight * 0.35);
+
+      ctx.font = '9px sans-serif';
+      ctx.fillStyle = RACK_PANEL_DIM;
+      ctx.fillText(formatDemands(workload.demands), x + cardWidth / 2, y + cardHeight * 0.7);
       ctx.restore();
     }
   }
@@ -759,11 +859,23 @@ function drawShopPanel(world: World, renderer: Renderer, controlled: EntityId, f
     const owned = purchasable.kind === 'stock' ? countOf(world, facility, purchasable.id as PurchasableId) : null;
     const label = owned !== null ? `${purchasable.label}  x${owned}` : purchasable.label;
 
+    // Machine purchasables carry Traits (game-data.ts's MachineTierDef) — show them under the
+    // label so the player can compare CPU/RAM/storage across tiers before buying, the same
+    // compact form as a workload's demands in the rack panel.
+    const tierId = purchasable.id.startsWith('machine-') ? (purchasable.id.slice('machine-'.length) as MachineTierId) : null;
+    const traits = tierId ? MACHINE_TIERS[tierId].traits : null;
+
     ctx.font = '12px sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = SHOP_TEXT;
-    ctx.fillText(label, row.x + 8, row.y + row.height / 2);
+    ctx.fillText(label, row.x + 8, row.y + row.height * (traits ? 0.32 : 0.5));
+
+    if (traits) {
+      ctx.font = '10px sans-serif';
+      ctx.fillStyle = SHOP_DIM;
+      ctx.fillText(formatDemands(traits), row.x + 8, row.y + row.height * 0.7);
+    }
 
     const buyRect = getShopBuyButtonRect(index, canvasWidth, canvasHeight, rows.length);
     const affordable = money >= purchasable.cost;
@@ -788,6 +900,7 @@ export function createRenderSystem(
   controlled: EntityId,
   facility: EntityId,
   camera: Camera,
+  input: InputState,
 ): System {
   return {
     update() {
@@ -890,7 +1003,7 @@ export function createRenderSystem(
       } else if (world.getComponent(shopOpens, controlled)) {
         drawShopPanel(world, renderer, controlled, facility);
       } else {
-        drawBuildPanel(world, renderer, controlled, facility);
+        drawBuildPanel(world, renderer, controlled, facility, input.getPointerPosition());
       }
     },
   };

@@ -205,6 +205,15 @@ export interface OpenRackPanel {
   arrived: boolean; // dispatching only; false while walking, drops held until true
 }
 
+// How far the open rack panel's content (server rows + tray) has scrolled, in pixels. Attached
+// to the player alongside OpenRackPanel; reset to 0 whenever a panel opens (see
+// openOrPromoteRackPanel/createRackPanelSystem in rack-panel.ts) so a new rack always opens
+// scrolled to the top. Clamped every frame to [0, maxScroll] since the content height (and thus
+// how far it CAN scroll) changes as servers/workloads are added or removed.
+export interface RackScroll {
+  offsetPx: number;
+}
+
 // Marker on the player — the shop panel is open. Mirrors OpenRackPanel but the shop has no
 // mode/rackId: proximity alone opens and closes it (shop.ts), no travel state to track. See
 // .plans/facility-shop-inventory.md Step 5.
@@ -296,6 +305,7 @@ export const placedOns = createComponentStore<PlacedOn>();
 export const workloads = createComponentStore<Workload>();
 export const offers = createComponentStore<Offer>();
 export const openRackPanels = createComponentStore<OpenRackPanel>();
+export const rackScrolls = createComponentStore<RackScroll>();
 export const shopOpens = createComponentStore<ShopOpen>();
 export const pendingDrops = createComponentStore<PendingDrop>();
 export const dragStates = createComponentStore<DragState>();

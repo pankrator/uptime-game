@@ -22,6 +22,7 @@ import {
   machines,
   installedIns,
   openRackPanels,
+  rackScrolls,
   pendingDrops,
   dragStates,
   rejectedDrops,
@@ -37,6 +38,8 @@ import {
   getTrayCardRect,
   getTrayDropRect,
   getPlacedChipRect,
+  getRackPanelContentRect,
+  getRackPanelContentHeight,
   pointerInRect,
 } from '../../ui/layout';
 import { type Renderer } from '../../rendering';
@@ -75,11 +78,41 @@ export function trayWorkloadIds(world: World): EntityId[] {
 
 export function closeRackPanel(world: World, controlled: EntityId): void {
   world.removeComponent(openRackPanels, controlled);
+  world.removeComponent(rackScrolls, controlled);
   world.removeComponent(dragStates, controlled);
   world.removeComponent(rejectedDrops, controlled);
   for (const workloadId of world.query(pendingDrops)) {
     world.removeComponent(pendingDrops, workloadId);
   }
+}
+
+// Highest legal scroll offset for the given content/viewport heights — 0 once content fits
+// without scrolling. Shared by the wheel handler (clamping the new offset) and render.ts
+// (nothing to draw beyond this, so it never needs to know about the clamp itself).
+export function maxRackScroll(contentHeight: number, viewportHeight: number): number {
+  return Math.max(0, contentHeight - viewportHeight);
+}
+
+// Translates a screen-space pointer into the rack panel's unscrolled content space (the space
+// getServerRowRect/getTrayCardRect/getPlacedChipRect lay out in) by adding back however far the
+// content has scrolled. Returns null if the pointer isn't over the content viewport at all —
+// scrolled-off content is clipped in render.ts and must not be hit-testable either.
+function toContentSpace(
+  world: World,
+  controlled: EntityId,
+  renderer: Renderer,
+  rackId: EntityId,
+  pointer: { x: number; y: number },
+): { x: number; y: number } | null {
+  const canvasWidth = renderer.canvas.width;
+  const canvasHeight = renderer.canvas.height;
+  const serverIds = serversOn(world, rackId);
+  const trayIds = trayWorkloadIds(world);
+  const contentRect = getRackPanelContentRect(canvasWidth, canvasHeight, serverIds.length, trayIds.length);
+  if (!pointerInRect(pointer, contentRect)) return null;
+
+  const offsetPx = world.getComponent(rackScrolls, controlled)?.offsetPx ?? 0;
+  return { x: pointer.x, y: pointer.y + offsetPx };
 }
 
 // Called from input.ts's click-priority chain when a rack was clicked in dispatch mode (the
@@ -100,6 +133,7 @@ export function openOrPromoteRackPanel(world: World, controlled: EntityId, rackI
   }
 
   world.addComponent(openRackPanels, controlled, { rackId, mode: 'dispatching', arrived: false });
+  world.addComponent(rackScrolls, controlled, { offsetPx: 0 });
   return true;
 }
 
@@ -132,6 +166,11 @@ export function tryStartDrag(
   // start a drag against geometry that isn't actually on screen.
   if (!panel || panel.mode !== 'dispatching' || !panel.arrived) return false;
 
+  // Scrolled-off content is clipped in render.ts and must not be draggable either — toContentSpace
+  // returns null for a pointer outside the visible content viewport.
+  const contentPoint = toContentSpace(world, controlled, renderer, panel.rackId, pointer);
+  if (!contentPoint) return false;
+
   const canvasWidth = renderer.canvas.width;
   const canvasHeight = renderer.canvas.height;
   const serverIds = serversOn(world, panel.rackId);
@@ -144,10 +183,10 @@ export function tryStartDrag(
     const placedIds = placedWorkloadIds(world, serverId);
     for (let chipIndex = 0; chipIndex < placedIds.length; chipIndex++) {
       const chip = getPlacedChipRect(serverIndex, chipIndex, canvasWidth, canvasHeight, serverIds.length, trayIds.length);
-      if (pointerInRect(pointer, chip)) {
+      if (pointerInRect(contentPoint, chip)) {
         world.addComponent(dragStates, controlled, {
           workloadId: placedIds[chipIndex],
-          pointer,
+          pointer, // screen space — render.ts draws the dragged card at the raw cursor position
           origin: { serverId },
         });
         return true;
@@ -157,7 +196,7 @@ export function tryStartDrag(
 
   for (let trayIndex = 0; trayIndex < trayIds.length; trayIndex++) {
     const card = getTrayCardRect(trayIndex, canvasWidth, canvasHeight, serverIds.length, trayIds.length);
-    if (pointerInRect(pointer, card)) {
+    if (pointerInRect(contentPoint, card)) {
       world.addComponent(dragStates, controlled, {
         workloadId: trayIds[trayIndex],
         pointer,
@@ -177,7 +216,9 @@ export function updateDrag(world: World, controlled: EntityId, pointer: { x: num
   if (drag) drag.pointer = pointer;
 }
 
-// Which server row (if any) the pointer is over, within the currently open panel.
+// Which server row (if any) the pointer is over, within the currently open panel. `pointer` is
+// already in content space (see toContentSpace) — callers convert once and pass the same point
+// to both this and any tray-rect check, rather than converting twice.
 function hitTestServerRow(
   world: World,
   renderer: Renderer,
@@ -221,6 +262,11 @@ export function resolveDrop(
   const panel = world.getComponent(openRackPanels, controlled);
   if (!panel) return; // panel closed mid-drag — nothing to resolve against
 
+  // Dropped outside the visible content viewport (including scrolled-off content) — same as
+  // dropping outside any row or the tray: cancelled, workload stays at its origin.
+  const contentPoint = toContentSpace(world, controlled, renderer, panel.rackId, pointer);
+  if (!contentPoint) return;
+
   const canvasWidth = renderer.canvas.width;
   const canvasHeight = renderer.canvas.height;
   const serverIds = serversOn(world, panel.rackId);
@@ -228,13 +274,13 @@ export function resolveDrop(
 
   if (typeof drag.origin === 'object') {
     const trayRect = getTrayDropRect(canvasWidth, canvasHeight, serverIds.length, trayIds.length);
-    if (pointerInRect(pointer, trayRect)) {
+    if (pointerInRect(contentPoint, trayRect)) {
       unplaceWorkload(world, drag.workloadId);
       return;
     }
   }
 
-  const targetServerId = hitTestServerRow(world, renderer, panel.rackId, pointer);
+  const targetServerId = hitTestServerRow(world, renderer, panel.rackId, contentPoint);
   if (targetServerId === null) return; // dropped outside any row or the tray — cancelled
 
   // Dropping back onto the server it's already on is a no-op, not a move.
@@ -270,6 +316,7 @@ export function cancelDrag(world: World, controlled: EntityId): void {
 export function createRackPanelSystem(
   world: World,
   input: InputState,
+  renderer: Renderer,
   controlled: EntityId,
   camera: Camera,
 ): System {
@@ -287,6 +334,36 @@ export function createRackPanelSystem(
       const rejection = world.getComponent(rejectedDrops, controlled);
       if (rejection && performance.now() >= rejection.expiresAtMs) {
         world.removeComponent(rejectedDrops, controlled);
+      }
+
+      // Scroll: only while a panel is visible (viewing, or dispatching-and-arrived — same
+      // "actually on screen" gate tryStartDrag uses) and the pointer is over its content
+      // viewport, so wheeling over the rest of the floor doesn't hijack the browser's own
+      // scroll-suppression for nothing. Clamped every frame (not just on wheel input) since
+      // content height changes underneath the panel — a workload finishing and disappearing
+      // from the tray, say — could leave a stale offset scrolled past the new max.
+      const panelVisible = panel && (panel.mode === 'viewing' || panel.arrived);
+      if (panelVisible) {
+        const serverIds = serversOn(world, panel.rackId);
+        const trayIds = trayWorkloadIds(world);
+        const contentRect = getRackPanelContentRect(
+          renderer.canvas.width,
+          renderer.canvas.height,
+          serverIds.length,
+          trayIds.length,
+        );
+        const contentHeight = getRackPanelContentHeight(serverIds.length, trayIds.length);
+        const maxScroll = maxRackScroll(contentHeight, contentRect.height);
+
+        const scroll = world.getComponent(rackScrolls, controlled) ?? { offsetPx: 0 };
+        if (!world.getComponent(rackScrolls, controlled)) world.addComponent(rackScrolls, controlled, scroll);
+
+        const pointer = input.getPointerPosition();
+        const wheelDeltaY = input.consumeWheelDeltaY();
+        if (wheelDeltaY !== 0 && pointer && pointerInRect(pointer, contentRect)) {
+          scroll.offsetPx += wheelDeltaY;
+        }
+        scroll.offsetPx = Math.min(Math.max(scroll.offsetPx, 0), maxScroll);
       }
 
       // Arrival check for an open, not-yet-arrived dispatching panel.
@@ -331,6 +408,7 @@ export function createRackPanelSystem(
       // is strictly weaker, so this is a no-op rather than a demotion.
       if (!existing || existing.mode !== 'dispatching' || existing.rackId !== rackId) {
         world.addComponent(openRackPanels, controlled, { rackId, mode: 'viewing', arrived: false });
+        world.addComponent(rackScrolls, controlled, { offsetPx: 0 });
       }
     },
   };
