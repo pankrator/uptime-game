@@ -5,3 +5,8 @@ power, cooling, and bandwidth balanced as the facility grows — workloads earn 
 which gets reinvested into more capacity.
 
 Built with TypeScript, Canvas rendering, and a hand-rolled ECS architecture.
+
+## Screenshots
+
+![Landing screen](docs/screenshots/landing.png)
+![Gameplay](docs/screenshots/gameplay.png)
