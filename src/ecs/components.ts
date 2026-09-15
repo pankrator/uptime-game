@@ -170,7 +170,10 @@ export interface InstallTask {
   arrived: boolean;
 }
 
-// Facility singleton — derived cache, fully recomputed every frame
+// Facility singleton — derived cache, fully recomputed every frame. Written by more than one
+// system (resource.ts and workload-run.ts write disjoint fields; capacity.ts writes the
+// traits/compute fields) — see .plans/power-billing.md step 3. A third writer means this should
+// be split by owner.
 export interface Utilization {
   powerDrawKw: number;
   coolingDrawKw: number;
@@ -180,6 +183,12 @@ export interface Utilization {
   // the compute-only pair once capacity.ts is the sole source of facility-wide free capacity.
   traitsTotal: Traits;
   traitsFree: Traits;
+  // .plans/power-billing.md: derived (power + cooling) * POWER_COST_PER_KW_SECOND, written by
+  // resource.ts.
+  powerCostPerSecond: number;
+  // .plans/power-billing.md: sum of payPerSecond over running (placed + online) workloads,
+  // written by workload-run.ts.
+  revenuePerSecond: number;
 }
 
 export interface DemandClock {

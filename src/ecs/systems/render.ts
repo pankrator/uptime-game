@@ -34,6 +34,7 @@ import {
   TRAIT_LABELS,
   TRAIT_UNITS,
   WORKLOAD_ARCHETYPES,
+  POWER_COST_PER_KW_SECOND,
   type Traits,
   type PurchasableId,
   type MachineTierId,
@@ -638,10 +639,14 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
         sum + (WORKLOAD_ARCHETYPES[world.getComponent(workloads, workloadId)!.archetypeId].coolingBonusKw ?? 0),
       0,
     );
+    // .plans/power-billing.md step 4 (optional): per-machine draw cost, so the tier trade-off
+    // is a concrete number at the exact moment the player is deciding where to place work.
+    const rowCoolingKw = tier.coolingKw + workloadCoolingKw;
+    const rowCostPerSecond = (tier.powerKw + rowCoolingKw) * POWER_COST_PER_KW_SECOND;
     ctx.font = '9px sans-serif';
     ctx.fillStyle = RACK_PANEL_DIM;
     ctx.fillText(
-      `⚡ ${tier.powerKw.toFixed(1)}kW   🔥 ${(tier.coolingKw + workloadCoolingKw).toFixed(1)}kW`,
+      `⚡ ${tier.powerKw.toFixed(1)}kW   🔥 ${rowCoolingKw.toFixed(1)}kW   -$${rowCostPerSecond.toFixed(2)}/s`,
       row.x + 6,
       getServerRowDrawY(row),
     );

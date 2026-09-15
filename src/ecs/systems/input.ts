@@ -33,6 +33,7 @@ import { type InputState } from '../../input';
 import { spawnRack } from '../../entities';
 import { type Renderer } from '../../rendering';
 import { type Camera } from '../../camera';
+import { type Audio } from '../../audio';
 import {
   getBuildPanelEntryRect,
   pointerInRect,
@@ -42,6 +43,7 @@ import {
   getShopCloseButtonRect,
   getShopTabRect,
   getShopBuyButtonRect,
+  getMuteButtonRect,
 } from '../../ui/layout';
 import {
   findRackAt,
@@ -200,6 +202,7 @@ export function createInputSystem(
   controlled: EntityId,
   facility: EntityId,
   camera: Camera,
+  audio: Audio,
 ): System {
   input.onKeyDown('Escape', () => {
     if (world.getComponent(shopOpens, controlled)) {
@@ -267,11 +270,19 @@ export function createInputSystem(
       const pointer = input.getPointerPosition();
       if (!pointer) return;
 
+      // -1. Mute toggle — always reachable, checked before anything else can swallow the click
+      // (an install task, build mode, or a full-screen panel should never block it).
+      if (pointerInRect(pointer, getMuteButtonRect(renderer.canvas.width))) {
+        audio.setMuted(!audio.isMuted());
+        return;
+      }
+
       // 0. Offer Accept/Decline — checked before the general HUD-blocking test since offer
       // cards live inside the HUD region; this branch owns clicks there regardless of any
       // other in-progress interaction (an install task or build mode should not swallow it).
       const offerHit = hitTestOfferButtons(world, pointer);
       if (offerHit) {
+        audio.play('uiClick');
         if (offerHit.kind === 'accept') {
           acceptOffer(world, offerHit.offerId);
         } else {
@@ -339,6 +350,7 @@ export function createInputSystem(
         for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
           const buyRect = getShopBuyButtonRect(rowIndex, renderer.canvas.width, renderer.canvas.height, rowCount);
           if (pointerInRect(pointer, buyRect)) {
+            audio.play('uiClick');
             buy(world, facility, rows[rowIndex].id);
             return;
           }
@@ -371,6 +383,7 @@ export function createInputSystem(
           if (!takeFromInventory(world, facility, buildable.id as PurchasableId)) return;
 
           spawnRack(world, gridX, gridY);
+          audio.play('rackPlaced');
           // Stay in build mode so a row of racks can be laid out quickly.
           return;
         }

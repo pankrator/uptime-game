@@ -25,9 +25,11 @@ import {
   getWorkloadRowRect,
   getOfferCardRect,
   getOfferButtonRect,
+  getMuteButtonRect,
   HUD_PANEL_MAX_ROWS,
   HUD_PANEL_MARGIN,
 } from '../../ui/layout';
+import { type Audio } from '../../audio';
 import { type System } from './system';
 
 const TEXT_COLOR = '#e6e8eb';
@@ -57,6 +59,22 @@ function drawInlineBar(
   ctx.fillRect(x, y, width * Math.min(1, fraction), height);
 }
 
+function drawMuteButton(renderer: Renderer, audio: Audio): void {
+  const ctx = renderer.context;
+  const rect = getMuteButtonRect(renderer.canvas.width);
+  const muted = audio.isMuted();
+
+  ctx.fillStyle = muted ? '#3a3f47' : 'rgba(255, 255, 255, 0.08)';
+  ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+
+  ctx.font = '13px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = muted ? DIM_COLOR : TEXT_COLOR;
+  ctx.fillText(muted ? '🔇' : '🔊', rect.x + rect.width / 2, rect.y + rect.height / 2);
+  ctx.textAlign = 'left';
+}
+
 function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void {
   const ctx = renderer.context;
   const bar = getHudBarRect(renderer.canvas.width);
@@ -84,17 +102,28 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
 
   let x = 12;
 
-  // Money
-  ctx.fillStyle = GREEN;
-  const moneyText = `$${Math.floor(wallet.money).toLocaleString()}`;
+  // Money — red with a minus sign once negative (.plans/power-billing.md D4/D5).
+  const negative = wallet.money < 0;
+  ctx.font = 'bold 14px sans-serif';
+  ctx.fillStyle = negative ? RED : GREEN;
+  const moneyText = `${negative ? '-' : ''}$${Math.floor(Math.abs(wallet.money)).toLocaleString()}`;
   ctx.fillText(moneyText, x, midY);
-  x += ctx.measureText(moneyText).width + 20;
+  x += ctx.measureText(moneyText).width + 12;
+
+  // Net income rate: revenue - power/cooling cost, the whole point of D5 — makes the tier
+  // trade-off visible instead of just a slower income curve.
+  const netPerSecond = utilization.revenuePerSecond - utilization.powerCostPerSecond;
+  ctx.font = '12px sans-serif';
+  ctx.fillStyle = netPerSecond >= 0 ? GREEN : RED;
+  const netText = `${netPerSecond >= 0 ? '+' : ''}${netPerSecond.toFixed(2)}/s`;
+  ctx.fillText(netText, x, midY);
+  x += ctx.measureText(netText).width + 20;
 
   // Power
   const overPower = utilization.powerDrawKw > powerCapacity.kw;
   ctx.font = '13px sans-serif';
   ctx.fillStyle = overPower ? RED : TEXT_COLOR;
-  const powerText = `⚡ ${utilization.powerDrawKw.toFixed(1)} / ${powerCapacity.kw.toFixed(1)} kW`;
+  const powerText = `⚡ ${utilization.powerDrawKw.toFixed(1)} / ${powerCapacity.kw.toFixed(1)} kW  (-${utilization.powerCostPerSecond.toFixed(2)}/s)`;
   ctx.fillText(powerText, x, midY);
   x += ctx.measureText(powerText).width + 6;
   drawInlineBar(
@@ -431,10 +460,11 @@ function drawOffersPanel(world: World, renderer: Renderer): void {
   });
 }
 
-export function createHudSystem(world: World, renderer: Renderer, facility: EntityId): System {
+export function createHudSystem(world: World, renderer: Renderer, facility: EntityId, audio: Audio): System {
   return {
     update() {
       drawTopBar(world, renderer, facility);
+      drawMuteButton(renderer, audio);
       drawOffersPanel(world, renderer);
       drawWorkloadPanel(world, renderer, facility);
     },

@@ -1,6 +1,7 @@
 import { type World, type EntityId } from '../world';
-import { workloads, placedOns, powereds, wallets, reputations, demandClocks } from '../components';
+import { workloads, placedOns, powereds, wallets, reputations, demandClocks, utilizations } from '../components';
 import { REPUTATION_ON_MISSED_DEADLINE, REPUTATION_ON_COMPLETION } from '../game-data';
+import { type Audio } from '../../audio';
 import { type System } from './system';
 
 function clampReputation(value: number): number {
@@ -13,13 +14,18 @@ function clampReputation(value: number): number {
 //   3. Completion checked BEFORE deadline, so a job finishing the same tick its deadline
 //      expires counts as a success.
 //   4. Deadline miss: reputation penalty, unplace, destroy.
-export function createWorkloadRunSystem(world: World, facility: EntityId): System {
+export function createWorkloadRunSystem(world: World, facility: EntityId, audio: Audio): System {
   return {
     update(deltaSeconds: number) {
       const wallet = world.getComponent(wallets, facility);
       const reputation = world.getComponent(reputations, facility);
       const clock = world.getComponent(demandClocks, facility);
+      const utilization = world.getComponent(utilizations, facility);
       if (!wallet || !reputation || !clock) return;
+
+      // .plans/power-billing.md step 3: HUD net-rate cache, written here since this system
+      // already iterates every workload and knows which are running on an online server.
+      let revenuePerSecond = 0;
 
       for (const workloadId of world.query(workloads)) {
         const workload = world.getComponent(workloads, workloadId)!;
@@ -31,6 +37,7 @@ export function createWorkloadRunSystem(world: World, facility: EntityId): Syste
         if (placement && server?.online) {
           wallet.money += workload.payPerSecond * deltaSeconds;
           workload.workRemainingSeconds -= deltaSeconds;
+          revenuePerSecond += workload.payPerSecond;
         }
 
         if (workload.workRemainingSeconds <= 0) {
@@ -41,6 +48,7 @@ export function createWorkloadRunSystem(world: World, facility: EntityId): Syste
           clock.peakComputeServed = Math.max(clock.peakComputeServed, workload.demands.cpu);
           world.removeComponent(placedOns, workloadId);
           world.destroyEntity(workloadId);
+          audio.play('contractCompleted');
           continue;
         }
 
@@ -48,8 +56,11 @@ export function createWorkloadRunSystem(world: World, facility: EntityId): Syste
           reputation.value = clampReputation(reputation.value + REPUTATION_ON_MISSED_DEADLINE);
           world.removeComponent(placedOns, workloadId);
           world.destroyEntity(workloadId);
+          audio.play('contractMissed');
         }
       }
+
+      if (utilization) utilization.revenuePerSecond = revenuePerSecond;
     },
   };
 }

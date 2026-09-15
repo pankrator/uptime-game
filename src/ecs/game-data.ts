@@ -123,6 +123,11 @@ export const ROOM_TIERS: RoomTierDef[] = [
   { id: 'large-room', label: 'Large Room', gridWidth: 20, gridHeight: 14, cost: 4500 },
 ];
 
+// Charged per second on (powerDrawKw + coolingDrawKw). See .plans/power-billing.md D6 —
+// tuned so power is ~10-20% of gross revenue at healthy utilization, which is what makes a
+// low-draw tier a genuine alternative to the highest-trait tier the player can afford.
+export const POWER_COST_PER_KW_SECOND = 0.2;
+
 export const POWER_UPGRADE_COST = 400;
 export const POWER_UPGRADE_KW = 5;
 export const COOLING_UPGRADE_COST = 350;

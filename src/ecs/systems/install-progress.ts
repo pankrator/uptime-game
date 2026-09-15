@@ -11,6 +11,7 @@ import {
 } from '../components';
 import { MACHINE_TIERS } from '../game-data';
 import { spawnMachine } from '../../entities';
+import { type Audio } from '../../audio';
 import { type System } from './system';
 
 const INSTALL_REACH_PX = GRID_CELL_SIZE * 1.2;
@@ -31,6 +32,7 @@ export function createInstallProgressSystem(
   world: World,
   controlled: EntityId,
   facility: EntityId,
+  audio: Audio,
 ): System {
   return {
     update(deltaSeconds: number) {
@@ -79,6 +81,7 @@ export function createInstallProgressSystem(
       }
 
       spawnMachine(world, task.rackId, task.tierId, slotIndex);
+      audio.play('machineInstalled');
       world.removeComponent(installTasks, controlled);
     },
   };

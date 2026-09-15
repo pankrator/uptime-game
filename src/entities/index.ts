@@ -87,6 +87,8 @@ export function spawnFacility(world: World): EntityId {
     computeFree: 0,
     traitsTotal: zeroTraits(),
     traitsFree: zeroTraits(),
+    powerCostPerSecond: 0,
+    revenuePerSecond: 0,
   });
   world.addComponent(demandClocks, id, {
     elapsedSeconds: 0,

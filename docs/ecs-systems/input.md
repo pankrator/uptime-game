@@ -1,6 +1,6 @@
 # input
 
-`src/ecs/systems/input.ts` — `createInputSystem(world, input, renderer, controlled, facility, camera)`,
+`src/ecs/systems/input.ts` — `createInputSystem(world, input, renderer, controlled, facility, camera, audio)`,
 plus exported `moveControlledTo`
 
 ## Purpose
@@ -26,6 +26,8 @@ drag spans multiple frames):
    `wasClicked()` (so a drag-release never also triggers a walk) and calls `resolveDrop`
 
 Then, only if `wasClicked()` (and not already consumed by a drag), in strict order:
+-1. Mute button (`getMuteButtonRect`) — always reachable, checked before anything else can
+   swallow the click. See [audio](./audio.md).
 0. Offer accept/decline buttons (checked before general HUD-blocking, since offer cards
    live inside the HUD but must not be swallowed by an in-progress install or build mode)
 1. `pointerInHud` check — HUD-region clicks otherwise fall through to nothing

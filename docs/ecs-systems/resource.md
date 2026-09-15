@@ -1,6 +1,6 @@
 # resource
 
-`src/ecs/systems/resource.ts` — `createResourceSystem(world, facility)`
+`src/ecs/systems/resource.ts` — `createResourceSystem(world, facility, audio)`
 
 ## Purpose
 
@@ -28,7 +28,8 @@ flips that flag.
 4. Any machine transitioning online→offline gets `BROWNOUT_COOLDOWN_SECONDS` cooldown and
    has every workload placed on it unplaced (`unplaceAllOn`) — they return to the tray
    still holding their deadline, a visible/recoverable setback rather than silent
-   progress loss.
+   progress loss. Plays `brownout` per machine that goes offline this tick (see
+   [audio](./audio.md)).
 5. Recompute draw/compute totals from the final online set.
 
 ## Notes

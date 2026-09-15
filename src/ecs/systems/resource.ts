@@ -1,7 +1,8 @@
 import { type World, type EntityId } from '../world';
-import { machines, installedIns, powereds, placedOns, workloads, utilizations, powerCapacities, coolingCapacities } from '../components';
-import { MACHINE_TIERS, WORKLOAD_ARCHETYPES, BROWNOUT_COOLDOWN_SECONDS } from '../game-data';
+import { machines, installedIns, powereds, placedOns, workloads, utilizations, powerCapacities, coolingCapacities, wallets } from '../components';
+import { MACHINE_TIERS, WORKLOAD_ARCHETYPES, BROWNOUT_COOLDOWN_SECONDS, POWER_COST_PER_KW_SECOND } from '../game-data';
 import { unplaceWorkload } from '../dispatch';
+import { type Audio } from '../../audio';
 import { type System } from './system';
 
 export interface MachineDraw {
@@ -69,7 +70,7 @@ function drawFor(world: World, machineId: EntityId): MachineDraw {
   return { id: machineId, powerKw: tier.powerKw, coolingKw };
 }
 
-export function createResourceSystem(world: World, facility: EntityId): System {
+export function createResourceSystem(world: World, facility: EntityId, audio: Audio): System {
   return {
     update(deltaSeconds: number) {
       const powerCapacity = world.getComponent(powerCapacities, facility);
@@ -114,6 +115,7 @@ export function createResourceSystem(world: World, facility: EntityId): System {
           powered.online = false;
           powered.offlineCooldown = BROWNOUT_COOLDOWN_SECONDS;
           unplaceAllOn(world, id);
+          audio.play('brownout');
         }
 
         if (!powered.online) continue;
@@ -136,6 +138,12 @@ export function createResourceSystem(world: World, facility: EntityId): System {
       utilization.coolingDrawKw = coolingDrawKw;
       utilization.computeTotal = computeTotal;
       utilization.computeFree = computeFree;
+
+      // .plans/power-billing.md D1/D2: billed on draw (offline machines already `continue`d
+      // above and contribute 0), power + cooling at one rate.
+      utilization.powerCostPerSecond = (powerDrawKw + coolingDrawKw) * POWER_COST_PER_KW_SECOND;
+      const wallet = world.getComponent(wallets, facility);
+      if (wallet) wallet.money -= utilization.powerCostPerSecond * deltaSeconds;
     },
   };
 }

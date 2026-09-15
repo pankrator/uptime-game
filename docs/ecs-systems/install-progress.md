@@ -1,6 +1,6 @@
 # install-progress
 
-`src/ecs/systems/install-progress.ts` — `createInstallProgressSystem(world, controlled, facility)`
+`src/ecs/systems/install-progress.ts` — `createInstallProgressSystem(world, controlled, facility, audio)`
 
 ## Purpose
 
@@ -26,3 +26,5 @@ machine entity on completion.
   wallet (not inventory) since the task is abandoned outright, not player-cancelled.
 - Cancellation (any click while a task is active, or Escape) is handled by `input.ts`'s
   `cancelInstallTask`, which refunds to inventory instead — see [input](./input.md).
+- Plays `machineInstalled` once `spawnMachine` succeeds (not on the refund branches) — see
+  [audio](./audio.md).

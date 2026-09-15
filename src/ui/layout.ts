@@ -43,6 +43,20 @@ export function getHudBarRect(canvasWidth: number): Rect {
   return { x: 0, y: 0, width: canvasWidth, height: HUD_BAR_HEIGHT };
 }
 
+// Mute toggle — top-right corner of the HUD bar itself, so it's always reachable regardless
+// of build mode/panels (checked first in input.ts's click chain, same as offer buttons).
+export const MUTE_BUTTON_SIZE = 24;
+export const MUTE_BUTTON_MARGIN = 6;
+
+export function getMuteButtonRect(canvasWidth: number): Rect {
+  return {
+    x: canvasWidth - MUTE_BUTTON_MARGIN - MUTE_BUTTON_SIZE,
+    y: (HUD_BAR_HEIGHT - MUTE_BUTTON_SIZE) / 2,
+    width: MUTE_BUTTON_SIZE,
+    height: MUTE_BUTTON_SIZE,
+  };
+}
+
 function getHudPanelWidth(canvasWidth: number): number {
   return Math.min(HUD_PANEL_WIDTH, canvasWidth - HUD_PANEL_MARGIN * 2);
 }

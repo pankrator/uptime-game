@@ -1,6 +1,6 @@
 # workload-run
 
-`src/ecs/systems/workload-run.ts` — `createWorkloadRunSystem(world, facility)`
+`src/ecs/systems/workload-run.ts` — `createWorkloadRunSystem(world, facility, audio)`
 
 ## Purpose
 
@@ -25,8 +25,10 @@ timers, and resolves completion or deadline miss.
    deadline expires counts as a success, not a miss.
 4. Completion: `+REPUTATION_ON_COMPLETION`, `contractsServed += 1`, updates
    `peakComputeServed` from the workload's own `demands.cpu` (one workload occupies
-   exactly one server, so no cross-machine fold is needed), unplace + destroy.
-5. Deadline miss: `+REPUTATION_ON_MISSED_DEADLINE` (negative), unplace + destroy.
+   exactly one server, so no cross-machine fold is needed), unplace + destroy, plays
+   `contractCompleted` (see [audio](./audio.md)).
+5. Deadline miss: `+REPUTATION_ON_MISSED_DEADLINE` (negative), unplace + destroy, plays
+   `contractMissed`.
 
 ## Notes
 

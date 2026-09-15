@@ -58,3 +58,4 @@ Systems run in this order every tick; several depend on it (noted below):
 - [workload-run](./workload-run.md) — ticks placed/unplaced workloads: payout, completion, deadline miss
 - [render](./render.md) — all Canvas drawing of the floor, racks, panels, build UI (presentation only)
 - [hud](./hud.md) — top bar, workload panel, offers panel (presentation only)
+- [audio](./audio.md) — synthesized SFX and mute toggle, threaded through several systems as a shared dependency

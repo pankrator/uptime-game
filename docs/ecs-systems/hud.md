@@ -1,6 +1,6 @@
 # hud
 
-`src/ecs/systems/hud.ts` — `createHudSystem(world, renderer, facility)`
+`src/ecs/systems/hud.ts` — `createHudSystem(world, renderer, facility, audio)`
 
 ## Purpose
 
@@ -33,3 +33,6 @@ the incoming offers panel. Presentation only, no component writes.
   changes.
 - Runs last in `renderSystems`, on top of everything `render.ts` draws. See the
   [update order](./README.md#update-order).
+- Also draws the mute button (`drawMuteButton`, `getMuteButtonRect`); the click itself is
+  hit-tested in `input.ts`, ahead of everything else in the priority chain — see
+  [audio](./audio.md).

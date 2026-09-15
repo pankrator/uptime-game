@@ -21,6 +21,7 @@ import { spawnPlayer, spawnFacility } from './entities';
 import { getRoomRect } from './ecs/room';
 import { gridToWorld } from './ecs/components';
 import { showLanding, hideLanding } from './landing';
+import { createAudio } from './audio';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#game');
 if (!canvas) {
@@ -44,6 +45,7 @@ function runGame(canvas: HTMLCanvasElement): void {
   const state = createGameState();
   const world = createWorld();
   const camera = createCamera(input);
+  const audio = createAudio();
 
   const facility = spawnFacility(world);
   const room = getRoomRect(world, facility);
@@ -70,17 +72,17 @@ function runGame(canvas: HTMLCanvasElement): void {
   //   invalidated this frame.
   // - spawn runs before run so a contract's offer window starts the same frame it arrives.
   const updateSystems = [
-    createInputSystem(world, input, renderer, player, facility, camera),
-    createInstallProgressSystem(world, player, facility),
+    createInputSystem(world, input, renderer, player, facility, camera, audio),
+    createInstallProgressSystem(world, player, facility, audio),
     createPathFollowSystem(world),
     createMovementSystem(world),
     createRackPanelSystem(world, input, renderer, player, camera),
     createShopSystem(world, player),
-    createResourceSystem(world, facility),
+    createResourceSystem(world, facility, audio),
     createCapacitySystem(world, facility),
     createWorkloadSpawnSystem(world, facility),
     createOfferExpirySystem(world),
-    createWorkloadRunSystem(world, facility),
+    createWorkloadRunSystem(world, facility, audio),
   ];
 
   // Rendering runs on requestAnimationFrame, separate from the systems above: rAF pauses
@@ -91,10 +93,11 @@ function runGame(canvas: HTMLCanvasElement): void {
   const renderSystems = [
     createCameraSystem(world, renderer, input, player, camera),
     createRenderSystem(world, renderer, player, facility, camera, input),
-    createHudSystem(world, renderer, facility),
+    createHudSystem(world, renderer, facility, audio),
   ];
 
   const loop = createGameLoop({ renderer, input, state, updateSystems, renderSystems });
   state.scene = 'playing';
   loop.start();
+  audio.startMusic();
 }
