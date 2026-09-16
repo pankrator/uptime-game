@@ -26,6 +26,7 @@ import {
   wallets,
   shopOpens,
   inventories,
+  cycleLabel,
   temperatures,
   thermalTrips,
   coolingUnits,
@@ -848,9 +849,13 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
       ctx.fillStyle = RACK_PANEL_TEXT;
       // Only render-farm/training archetypes carry a cooling bonus (web/batch are 0kW — see
       // WORKLOAD_ARCHETYPES); appending it lets the player see, per workload, what's adding to
-      // this server's heat line above without opening a separate tooltip.
+      // this server's heat line above without opening a separate tooltip. cycleLabel appends
+      // "3/5" for a recurring contract (.plans/contract-variety.md D2) — without it, a
+      // workload that refuses to disappear on completion looks like a bug.
       const chipLabel =
-        archetype.coolingBonusKw > 0 ? `${archetype.label} 🔥${archetype.coolingBonusKw.toFixed(1)}` : archetype.label;
+        archetype.label +
+        cycleLabel(workload) +
+        (archetype.coolingBonusKw > 0 ? ` 🔥${archetype.coolingBonusKw.toFixed(1)}` : '');
       ctx.fillText(chipLabel, chip.x + 3, chip.y + chip.height / 2, chip.width - 6);
     });
   });
@@ -886,19 +891,25 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = RACK_PANEL_TEXT;
-      ctx.fillText(archetype.label, card.x + 6, card.y + card.height * 0.24);
+      ctx.fillText(archetype.label + cycleLabel(workload), card.x + 6, card.y + card.height * 0.16);
 
       ctx.font = '8px sans-serif';
       ctx.fillStyle = RACK_PANEL_DIM;
-      ctx.fillText(formatDemands(workload.demands), card.x + 6, card.y + card.height * 0.55);
+      ctx.fillText(formatDemands(workload.demands), card.x + 6, card.y + card.height * 0.4);
 
       ctx.font = '9px sans-serif';
       ctx.fillStyle = urgent ? RACK_PANEL_AMBER : RACK_PANEL_DIM;
       ctx.fillText(
         `${Math.max(0, Math.ceil(workload.deadlineRemainingSeconds))}s left`,
         card.x + 6,
-        card.y + card.height * 0.84,
+        card.y + card.height * 0.64,
       );
+
+      // .plans/contract-variety.md D1: the penalty is what makes leaving this in the tray a
+      // real bet, so it stays visible everywhere the deadline countdown does.
+      ctx.font = '9px sans-serif';
+      ctx.fillStyle = RACK_PANEL_RED;
+      ctx.fillText(`-$${workload.penaltyOnMiss.toFixed(0)} if missed`, card.x + 6, card.y + card.height * 0.88);
     });
   }
 

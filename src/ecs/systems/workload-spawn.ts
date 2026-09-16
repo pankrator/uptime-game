@@ -57,8 +57,10 @@ export function createWorkloadSpawnSystem(world: World, facility: EntityId): Sys
   };
 }
 
-// Ticks every open offer's countdown; at zero it auto-declines — destroyed with NO reputation
-// penalty (an ignored offer is a silent decline, same as REPUTATION_ON_DECLINE = 0).
+// Ticks every open offer's countdown; at zero it auto-declines — destroyed directly, NOT via
+// dispatch.ts's declineOffer, so REPUTATION_ON_DECLINE never applies here. An ignored offer is
+// a silent decline: the player never made a choice, so per .plans/contract-variety.md D1 it
+// costs nothing, unlike an explicit decline click.
 export function createOfferExpirySystem(world: World): System {
   return {
     update(deltaSeconds: number) {

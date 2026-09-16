@@ -110,10 +110,13 @@ export function getWorkloadRowRect(index: number, canvasWidth: number, rowCount:
 // workload panel above occupies the right), each with its own Accept/Decline hit rects. See
 // .plans/workload-dispatch.md step 5.
 export const OFFER_CARD_WIDTH = 220;
-// Tall enough for the accept/decline buttons at OFFER_BUTTON_HEIGHT (touch-target floor, see
-// .plans/mobile-touch-support.md D4) plus a clear gap below the card's own text, which runs to
-// a 54px offset in the worst case (drawOfferCard's "no server fits this" line) — was 76.
-export const OFFER_CARD_HEIGHT = 104;
+// Was 76, then 104/120 separately — grown by .plans/mobile-touch-support.md D4 (the
+// accept/decline buttons sit at the touch-target floor, OFFER_BUTTON_HEIGHT) AND by
+// .plans/contract-variety.md step 1/2 (a penalty line, always shown, plus a recurring-contract
+// marker when the offer rolled a repeat). Worst case the card's own text runs to an 80px
+// offset (penalty + recurring + "no server fits this"); the buttons need
+// OFFER_BUTTON_HEIGHT + 6px below that — 132 clears both with room to spare.
+export const OFFER_CARD_HEIGHT = 132;
 export const OFFER_CARD_GAP = 8;
 export const OFFER_BUTTON_HEIGHT = 32;
 export const OFFER_BUTTON_GAP = 6;
@@ -174,9 +177,16 @@ export const RACK_TRAIT_BAR_HEIGHT = 6;
 export const RACK_TRAIT_BAR_GAP = 4;
 export const RACK_CHIP_HEIGHT = 16;
 export const RACK_CHIP_GAP = 3;
+// Was 96, wide enough for "Render Farm 🔥0.8" (the longest label+cooling-bonus chip text) at
+// 9px sans-serif. Grown by .plans/contract-variety.md step 2 so a recurring cycle counter
+// ("Render Farm 2/2 🔥0.8") also fits without truncating. Shared by getServerTraitBarRect
+// (as its chip-column reservation) and getPlacedChipRect — keep them equal.
+export const RACK_CHIP_WIDTH = 112;
 export const RACK_TRAY_HEADER_HEIGHT = 20;
-export const RACK_TRAY_CARD_WIDTH = 110;
-export const RACK_TRAY_CARD_HEIGHT = 38;
+// Was 110x38 (3 lines) — grown by .plans/contract-variety.md step 1/2 to fit a 4th line
+// (penalty), plus a cycle counter appended to the label line for recurring contracts.
+export const RACK_TRAY_CARD_WIDTH = 130;
+export const RACK_TRAY_CARD_HEIGHT = 50;
 export const RACK_TRAY_CARD_GAP = 8;
 // 32px — touch-target floor (see .plans/mobile-touch-support.md D4), up from 24.
 export const RACK_CLOSE_BUTTON_SIZE = 32;
@@ -320,9 +330,9 @@ export function getServerTraitBarRect(
   const row = getServerRowRect(serverIndex, canvasWidth, canvasHeight, serverCount, trayCount);
   const barsTop = row.y + RACK_ROW_BARS_TOP_OFFSET_Y;
   // Chips sit at the row's top-right (see getPlacedChipRect); trait bars stop short of that
-  // column so a long trait label/bar never runs under a chip. Kept equal to getPlacedChipRect's
-  // chipWidth so the two never drift apart.
-  const chipColumnWidth = 96;
+  // column so a long trait label/bar never runs under a chip. Shares RACK_CHIP_WIDTH with
+  // getPlacedChipRect so the two never drift apart.
+  const chipColumnWidth = RACK_CHIP_WIDTH;
   // Each trait gets a RACK_TRAIT_ROW_HEIGHT-tall block; the bar sits at the block's bottom so
   // its own label (drawn above it by render.ts) has the full block's top to sit in without
   // colliding with the previous trait's bar.
@@ -344,10 +354,7 @@ export function getPlacedChipRect(
   trayCount: number,
 ): Rect {
   const row = getServerRowRect(serverIndex, canvasWidth, canvasHeight, serverCount, trayCount);
-  // Wide enough for "Render Farm 🔥0.8" (the longest label+cooling-bonus chip text) at 9px
-  // sans-serif without truncating — see render.ts's chip label, which appends coolingBonusKw
-  // when nonzero.
-  const chipWidth = 96;
+  const chipWidth = RACK_CHIP_WIDTH;
   return {
     x: row.x + row.width - chipWidth,
     y: row.y + 2 + chipIndex * (RACK_CHIP_HEIGHT + RACK_CHIP_GAP),
