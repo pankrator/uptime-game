@@ -15,9 +15,11 @@ import {
   openRackPanels,
   dragStates,
   shopOpens,
+  tutorialProgresses,
   type BuildableDef,
 } from '../components';
 import { acceptOffer, declineOffer } from '../dispatch';
+import { advanceTutorial, skipTutorial, isTutorialActionStep } from './tutorial';
 import {
   isWalkable,
   findPath,
@@ -44,6 +46,8 @@ import {
   getShopTabRect,
   getShopBuyButtonRect,
   getMuteButtonRect,
+  getTutorialActionButtonRect,
+  getTutorialSkipRect,
 } from '../../ui/layout';
 import {
   findRackAt,
@@ -277,6 +281,33 @@ export function createInputSystem(
         return;
       }
 
+      // -0.5. Tutorial banner — always reachable, checked early like the mute button, since the
+      // banner sits above every other panel (see hud.ts's drawTutorialBanner).
+      const tutorialProgress = world.getComponent(tutorialProgresses, facility);
+      const tutorialBannerVisible = !!tutorialProgress && !tutorialProgress.skipped;
+      if (tutorialProgress && tutorialBannerVisible) {
+        if (
+          isTutorialActionStep(tutorialProgress.stepId) &&
+          pointerInRect(pointer, getTutorialActionButtonRect(renderer.canvas.width))
+        ) {
+          audio.play('uiClick');
+          if (tutorialProgress.stepId === 'welcome') {
+            advanceTutorial(world, facility);
+          } else {
+            skipTutorial(world, facility);
+          }
+          return;
+        }
+        if (
+          !isTutorialActionStep(tutorialProgress.stepId) &&
+          pointerInRect(pointer, getTutorialSkipRect(renderer.canvas.width))
+        ) {
+          audio.play('uiClick');
+          skipTutorial(world, facility);
+          return;
+        }
+      }
+
       // 0. Offer Accept/Decline — checked before the general HUD-blocking test since offer
       // cards live inside the HUD region; this branch owns clicks there regardless of any
       // other in-progress interaction (an install task or build mode should not swallow it).
@@ -291,7 +322,7 @@ export function createInputSystem(
         return;
       }
 
-      if (pointerInHud(pointer, renderer.canvas, world.query(offers).length)) return;
+      if (pointerInHud(pointer, renderer.canvas, world.query(offers).length, tutorialBannerVisible)) return;
 
       // 1. Install in progress → any click cancels and refunds.
       if (world.getComponent(installTasks, controlled)) {

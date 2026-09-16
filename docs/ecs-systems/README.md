@@ -37,6 +37,7 @@ Systems run in this order every tick; several depend on it (noted below):
 8. `capacity` — recomputes free capacity per server/rack/facility (must run after `resource`, before `workload-run`)
 9. `workload-spawn` — spawns new offers, ticks offer expiry
 10. `workload-run` — advances placed workloads, pays out, resolves completion/deadline miss (must run after `capacity`)
+11. `tutorial` — advances the guided-tutorial step (must run last: reads this frame's mutations from every system above)
 
 **`renderSystems`** (presentation only, skipped when tab hidden):
 1. `camera` — eases camera toward the player
@@ -58,4 +59,5 @@ Systems run in this order every tick; several depend on it (noted below):
 - [workload-run](./workload-run.md) — ticks placed/unplaced workloads: payout, completion, deadline miss
 - [render](./render.md) — all Canvas drawing of the floor, racks, panels, build UI (presentation only)
 - [hud](./hud.md) — top bar, workload panel, offers panel (presentation only)
+- [tutorial](./tutorial.md) — first-time guided-tutorial step advance (banner drawn by hud.ts)
 - [audio](./audio.md) — synthesized SFX and mute toggle, threaded through several systems as a shared dependency

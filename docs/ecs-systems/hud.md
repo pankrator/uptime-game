@@ -21,6 +21,9 @@ the incoming offers panel. Presentation only, no component writes.
   `anyServerFits` when no online server currently has enough free capacity for it
   (informative only — never blocks accept, since the player may be about to install a
   bigger box)
+- `drawTutorialBanner` — the guided-tutorial step banner, drawn last (topmost) so it stays
+  legible over the rack/shop panels' full-screen dim; see [tutorial](./tutorial.md) for the
+  step-advance logic this only reads
 
 ## Notes
 

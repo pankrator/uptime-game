@@ -61,6 +61,7 @@ ECS files.
 - [workload-run](docs/ecs-systems/workload-run.md) — ticks placed/unplaced workloads: payout, completion, deadline miss
 - [render](docs/ecs-systems/render.md) — all Canvas drawing of the floor, racks, panels, build UI (presentation only)
 - [hud](docs/ecs-systems/hud.md) — top bar, workload panel, offers panel (presentation only)
+- [tutorial](docs/ecs-systems/tutorial.md) — first-time guided-tutorial step advance (banner drawn by hud.ts)
 
 ## Game Concept
 

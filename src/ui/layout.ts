@@ -459,6 +459,7 @@ export function pointerInHud(
   point: { x: number; y: number },
   canvas: HTMLCanvasElement,
   offerCount = 0,
+  tutorialBannerVisible = false,
 ): boolean {
   if (pointerInRect(point, getHudBarRect(canvas.width))) return true;
 
@@ -472,6 +473,56 @@ export function pointerInHud(
     return true;
   }
 
+  if (tutorialBannerVisible && pointerInRect(point, getTutorialBannerRect(canvas.width))) {
+    return true;
+  }
+
   return false;
+}
+
+// Tutorial banner — a persistent, always-on-top overlay (drawn last, by hud.ts) explaining the
+// current guided-tutorial step. Centered under the HUD bar, in the gap between the offers
+// column (left) and workload panel column (right) — see getGameViewportRect. Its own
+// action/skip buttons are hit-tested in input.ts, ahead of everything else in the priority
+// chain, same treatment as the mute button.
+export const TUTORIAL_BANNER_WIDTH = 460;
+// Generous height for up to 3 wrapped body lines plus the title and (on welcome/done) a
+// primary button — see hud.ts's drawTutorialBanner, the only place that measures actual text
+// width to wrap it.
+export const TUTORIAL_BANNER_HEIGHT = 118;
+export const TUTORIAL_BANNER_MARGIN_TOP = 8;
+export const TUTORIAL_ACTION_BUTTON_WIDTH = 130;
+export const TUTORIAL_ACTION_BUTTON_HEIGHT = 26;
+export const TUTORIAL_SKIP_WIDTH = 92;
+export const TUTORIAL_SKIP_HEIGHT = 18;
+
+export function getTutorialBannerRect(canvasWidth: number): Rect {
+  const width = Math.min(TUTORIAL_BANNER_WIDTH, canvasWidth - HUD_PANEL_MARGIN * 2);
+  return {
+    x: (canvasWidth - width) / 2,
+    y: HUD_BAR_HEIGHT + TUTORIAL_BANNER_MARGIN_TOP,
+    width,
+    height: TUTORIAL_BANNER_HEIGHT,
+  };
+}
+
+export function getTutorialActionButtonRect(canvasWidth: number): Rect {
+  const banner = getTutorialBannerRect(canvasWidth);
+  return {
+    x: banner.x + banner.width - TUTORIAL_ACTION_BUTTON_WIDTH - 12,
+    y: banner.y + banner.height - TUTORIAL_ACTION_BUTTON_HEIGHT - 10,
+    width: TUTORIAL_ACTION_BUTTON_WIDTH,
+    height: TUTORIAL_ACTION_BUTTON_HEIGHT,
+  };
+}
+
+export function getTutorialSkipRect(canvasWidth: number): Rect {
+  const banner = getTutorialBannerRect(canvasWidth);
+  return {
+    x: banner.x + banner.width - TUTORIAL_SKIP_WIDTH - 10,
+    y: banner.y + 8,
+    width: TUTORIAL_SKIP_WIDTH,
+    height: TUTORIAL_SKIP_HEIGHT,
+  };
 }
 
