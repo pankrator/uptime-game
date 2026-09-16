@@ -183,11 +183,16 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
     x += 36 + 20;
   }
 
-  // Cooling
+  // Cooling. Spelled out rather than left as a bare ❄ figure: this is the facility's cooling
+  // BUDGET — how much work the datacenter can run at once, enforced by resource.ts as a brownout
+  // cap exactly like power — and it has nothing to do with how hot any rack is. Rack temperature
+  // is local (flat baseline + CRACs in range + that rack's own heat) and is shown per rack on the
+  // floor in °C, so a lone snowflake here invited reading the two as the same thing. See
+  // .plans/thermal-and-cooling.md D5.
   if (x < rightLimit) {
     const overCooling = utilization.coolingDrawKw > coolingCapacity.kw;
     ctx.fillStyle = overCooling ? RED : TEXT_COLOR;
-    const coolingText = `❄ ${utilization.coolingDrawKw.toFixed(1)} / ${coolingCapacity.kw.toFixed(1)} kW`;
+    const coolingText = `❄ COOLING ${utilization.coolingDrawKw.toFixed(1)} / ${coolingCapacity.kw.toFixed(1)} kW`;
     ctx.fillText(coolingText, x, midY);
     x += ctx.measureText(coolingText).width + 6;
     drawInlineBar(
