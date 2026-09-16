@@ -23,9 +23,9 @@ import { createTutorialSystem, startTutorial } from './ecs/systems/tutorial';
 import { spawnPlayer, spawnFacility, applyStressPreset } from './entities';
 import { getRoomRect } from './ecs/room';
 import { gridToWorld, playerTags, facilityTags } from './ecs/components';
-import { showLanding, hideLanding } from './landing';
+import { showLanding, hideLanding, type SaveSlotSummary } from './landing';
 import { createAudio } from './audio';
-import { createSaveManager, MANUAL_SLOT, type SaveManager } from './save/manager';
+import { createSaveManager, SAVE_SLOT_IDS, DEV_SLOT, type SaveManager } from './save/manager';
 import { createLocalStorageSaveStorage } from './save/local-storage';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#game');
@@ -38,40 +38,62 @@ if (!landingContainer) {
   throw new Error('Landing element #landing not found');
 }
 
-// One SaveManager for the page's whole lifetime — the landing screen's "has a save?" check and
+// One SaveManager for the page's whole lifetime — the landing screen's slot picker and
 // runGame's load/quicksave path both go through it. See .plans/save-load.md D1: swapping in a
 // backend later is replacing this one line, nothing downstream of it changes.
 const saveManager = createSaveManager(createLocalStorageSaveStorage());
 
-const hasSave = await saveManager.hasSave(MANUAL_SLOT);
+// Reads all 5 slots and renders the landing screen's slot picker. Called once at startup —
+// there's currently no way back to the landing screen once a game starts (no in-game "quit to
+// menu"), so there's nothing yet that would need this called a second time.
+//
+// `canvas`/`landingContainer` are passed in rather than closed over: both are narrowed to
+// non-null above by the `if (!x) throw` guards, but that narrowing doesn't carry into a
+// separately-declared function's body (only into a closure literal checked at its call site),
+// so an explicit parameter is what actually gets them their non-null type here.
+async function refreshLanding(
+  canvas: HTMLCanvasElement,
+  landingContainer: HTMLElement,
+): Promise<void> {
+  const infos = await saveManager.describeSlots(SAVE_SLOT_IDS);
+  const slots: SaveSlotSummary[] = infos.map((info, index) => ({
+    slot: info.slot,
+    label: `Slot ${index + 1}`,
+    occupied: info.occupied,
+    savedAt: info.savedAt,
+  }));
 
-showLanding(
-  landingContainer,
-  () => {
-    hideLanding(landingContainer);
-    canvas.hidden = false;
-    void runGame(canvas, false, saveManager, false);
-  },
-  hasSave
-    ? () => {
-        hideLanding(landingContainer);
-        canvas.hidden = false;
-        void runGame(canvas, false, saveManager, true);
-      }
-    : undefined,
-  import.meta.env.DEV
-    ? () => {
-        hideLanding(landingContainer);
-        canvas.hidden = false;
-        void runGame(canvas, true, saveManager, false);
-      }
-    : undefined,
-);
+  showLanding(landingContainer, slots, {
+    onNewGame: (slot) => {
+      hideLanding(landingContainer);
+      canvas.hidden = false;
+      void runGame(canvas, false, saveManager, slot, false);
+    },
+    onContinue: (slot) => {
+      hideLanding(landingContainer);
+      canvas.hidden = false;
+      void runGame(canvas, false, saveManager, slot, true);
+    },
+    onStartStress: import.meta.env.DEV
+      ? () => {
+          hideLanding(landingContainer);
+          canvas.hidden = false;
+          // Dev stress-preset runs live in their own reserved slot (DEV_SLOT), never one of
+          // the 5 user-visible slots — so mashing this button while testing can never clobber
+          // a real save.
+          void runGame(canvas, true, saveManager, DEV_SLOT, false);
+        }
+      : undefined,
+  });
+}
+
+await refreshLanding(canvas, landingContainer);
 
 async function runGame(
   canvas: HTMLCanvasElement,
   stressPreset: boolean,
   saveManager: SaveManager,
+  slot: string,
   loadSave: boolean,
 ): Promise<void> {
   const renderer = createRenderer(canvas);
@@ -85,16 +107,17 @@ async function runGame(
   let player: EntityId | undefined;
 
   if (loadSave) {
-    const loaded = await saveManager.load(world, MANUAL_SLOT);
+    const loaded = await saveManager.load(world, slot);
     if (loaded) {
       facility = world.query(facilityTags)[0];
       player = world.query(playerTags)[0];
     }
     if (!loaded || facility === undefined || player === undefined) {
       // Corrupt/foreign save data (D6) — fall back to a fresh game rather than leaving the
-      // player stuck on an error. hasSave() already checked the slot was non-empty, so this
-      // path is only reached by a save that failed to parse/hydrate.
-      console.warn('[save] continue failed — starting a new game instead');
+      // player stuck on an error. The landing screen only offers "Continue" on a slot
+      // describeSlots() already found occupied, so this path is only reached by a save that
+      // failed to parse/hydrate.
+      console.warn(`[save] continue failed for "${slot}" — starting a new game instead`);
     }
   }
 
@@ -115,13 +138,15 @@ async function runGame(
   }
 
   // Quicksave — no in-game panel yet (see .plans/save-load.md D7/Non-goals; a Canvas-drawn
-  // pause/save panel is a follow-up), but the manual save slot needs SOME way to be written
-  // from inside a running game, or "Continue" on the landing screen never has anything to
-  // load. Mirrors camera.ts's own direct `input.onKeyDown(' ', ...)` — a key bound straight at
-  // the call site that owns it, not routed through ecs/systems/input.ts's click-priority chain.
+  // pause/save panel is a follow-up), but the slot this run started from needs SOME way to be
+  // written from inside a running game, or "Continue" on that slot never has anything to load.
+  // Always saves back to the SAME slot the run started in (`slot`, fixed for this runGame
+  // call) — there's no in-game slot switcher, only the landing screen's picker chooses a slot.
+  // Mirrors camera.ts's own direct `input.onKeyDown(' ', ...)` — a key bound straight at the
+  // call site that owns it, not routed through ecs/systems/input.ts's click-priority chain.
   input.onKeyDown('F5', () => {
-    void saveManager.save(world, MANUAL_SLOT).then(
-      () => console.info('[save] game saved'),
+    void saveManager.save(world, slot).then(
+      () => console.info(`[save] game saved to "${slot}"`),
       (err: unknown) => console.error('[save] failed to save', err),
     );
   });

@@ -291,10 +291,14 @@ export interface SaveEnvelope {
 
 ## Non-goals for this plan (explicitly out of scope)
 
-- Multiple named save slots and slot-management UI — ship with one manual slot
-  (`'manual'`) and reserve `'autosave'` as a key `SaveManager` knows about but nothing writes
-  yet. Expanding to N named slots is a UI-only change later; the storage/registry layer
-  already supports arbitrary slot strings.
+- ~~Multiple named save slots and slot-management UI~~ — **done as a follow-up**: 5 fixed
+  slots (`SAVE_SLOT_IDS` in `src/save/manager.ts`, `slot-1`..`slot-5`), a `DEV_SLOT` reserved
+  for the dev stress-preset button, and a slot-picker landing screen (`src/landing/index.ts`)
+  offering Continue/New Game per slot, confirming before New Game overwrites an occupied one.
+  Exactly the "UI-only change later" this line predicted — `SaveStorage`/`serialize.ts`/
+  `deserialize.ts` were untouched; only `manager.ts` (added `describeSlots`, dropped the single
+  `MANUAL_SLOT` default), `landing/index.ts`, and `main.ts`'s wiring changed. `'autosave'`
+  remains reserved and still unwritten.
 - Autosave itself (D7) — same reasoning: it's additive once manual save/load works, and
   shipping it alongside a first pass just increases the surface to get right at once.
 - Cloud sync, multi-device conflict resolution, auth — genuinely a backend-integration
