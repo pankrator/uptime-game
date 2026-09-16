@@ -253,11 +253,11 @@ export interface WorkloadArchetypeDef {
   payPerSecond: number;
   coolingBonusKw: number; // per assigned machine, while running
   minReputation: number;
-  scales: boolean; // false: demands/payPerSecond stay flat, ignoring getComputeScale
+  scales: boolean; // false: demands/payPerSecond stay flat, ignoring getValueScale/getDemandScale
   offerSeconds: number; // how long the OFFER sits before auto-declining (no penalty)
   // Money lost if an ACCEPTED workload's deadline passes. See .plans/contract-variety.md D1 —
   // this, not REPUTATION_ON_DECLINE, is what makes accept/decline a real bet. Scaled with
-  // getComputeScale in spawnOffer for `scales: true` archetypes, exactly like payPerSecond.
+  // getValueScale in spawnOffer for `scales: true` archetypes, exactly like payPerSecond.
   penaltyOnMiss: number;
   // [min, max] extra cycles after the first, rolled per offer in spawnOffer — see
   // .plans/contract-variety.md D2. [0, 0] means this archetype never recurs.
@@ -345,6 +345,42 @@ export const WORKLOAD_ARCHETYPES: Record<WorkloadArchetypeId, WorkloadArchetypeD
   },
 };
 
+// Largest factor `demands` can be multiplied by and still fit SOME machine tier on every trait
+// (same check traits.ts's `fits` does, solved for the multiplier instead of a yes/no). Computed
+// from the catalog itself — not hand-typed — so a future tier or archetype change can't
+// silently reintroduce .plans/playtest-findings.md B3's failure mode (an offer scaled past what
+// anything can serve) the way the "Step 9 tuning fix" comments above had to catch by hand for
+// the unscaled case. See .plans/compute-scale-fix.md D2.
+function computeMaxDemandScale(demands: Traits): number {
+  let best = 0;
+  for (const tier of Object.values(MACHINE_TIERS)) {
+    const fitRatio = Math.min(
+      ...TRAIT_KEYS.map((key) => (demands[key] > 0 ? tier.traits[key] / demands[key] : Infinity)),
+    );
+    best = Math.max(best, fitRatio);
+  }
+  return best;
+}
+
+// Precomputed once — MACHINE_TIERS and WORKLOAD_ARCHETYPES are both static. Irrelevant for
+// `scales: false` archetypes (their demands never scale at all — see spawnOffer), harmless to
+// compute anyway.
+export const MAX_DEMAND_SCALE: Record<WorkloadArchetypeId, number> = Object.fromEntries(
+  Object.values(WORKLOAD_ARCHETYPES).map((archetype) => [
+    archetype.id,
+    computeMaxDemandScale(archetype.demands),
+  ]),
+) as Record<WorkloadArchetypeId, number>;
+
+// The DEMAND scale — how big a scaled offer's `demands` actually grow to, clamped to whatever
+// still fits some tier (MAX_DEMAND_SCALE) regardless of how high valueScale (pay) has climbed.
+// See .plans/compute-scale-fix.md D2: once an archetype's demand scale hits this ceiling, its
+// size stops growing but valueScale keeps driving its pay up — "the same job pays more," not
+// "an unfittable job."
+export function getDemandScale(archetypeId: WorkloadArchetypeId, valueScale: number): number {
+  return Math.min(valueScale, MAX_DEMAND_SCALE[archetypeId]);
+}
+
 // Recurring offers pay less per second than a one-shot offer of the same archetype/scale — the
 // player is trading rate for certainty (D2). Applied once, in spawnOffer, when a rolled
 // repeatCount is nonzero.
@@ -372,13 +408,29 @@ export function getArrivalInterval(elapsedSeconds: number, reputation: number): 
   return (14 - Math.min(8, elapsedSeconds / 45)) * (1.6 - (reputation / 100) * 0.8);
 }
 
-// Bounded by both a time ramp and the player's demonstrated capacity (peakComputeServed), so
-// demand never outruns what an active player could plausibly serve, and a passive player's
-// requirements stop growing instead of spiraling into unfillable contracts. See
-// .plans/hud-and-escalation.md step 5 ("growth stays ahead of a passive player but behind an
-// active one").
-export function getComputeScale(elapsedSeconds: number, peakComputeServed: number): number {
+// Installed, ONLINE facility CPU (Utilization.traitsTotal.cpu — see capacity.ts) needed for
+// getValueScale's capacityScale to reach 1 (below this, an early/passive player sees flat,
+// unscaled offers) and to reach 3 (matching timeScale's own cap, at 3x this — roughly 3 Blade
+// Chassis or a dozen Servers). See .plans/compute-scale-fix.md D3.
+export const CAPACITY_SCALE_CPU_DIVISOR = 30;
+
+// Bounded by both a time ramp and the player's demonstrated capacity (installed, online
+// facility CPU — Utilization.traitsTotal.cpu), so demand never outruns what an active player
+// could plausibly serve, and a passive player's requirements stop growing instead of spiraling
+// into unfillable contracts. See .plans/hud-and-escalation.md step 5 ("growth stays ahead of a
+// passive player but behind an active one").
+//
+// Was keyed off peakComputeServed (the single largest COMPLETED job's cpu demand) instead of
+// facility capacity — the catalog's largest unscaled cpu demand is 12 (training), so
+// capacityScale could never exceed max(1, 12/30) = 1 no matter how long or how well the
+// facility played, permanently pinning this function at 1x. See .plans/playtest-findings.md B3
+// and .plans/compute-scale-fix.md D1 for the fix and the measured deadlock.
+//
+// This is the VALUE scale — it drives payPerSecond/penaltyOnMiss, uncapped by what any server
+// can actually hold. See getDemandScale below for the separately-capped size a scaled offer's
+// demands actually grow to; .plans/compute-scale-fix.md D2 explains why the two differ.
+export function getValueScale(elapsedSeconds: number, facilityCpu: number): number {
   const timeScale = 1 + Math.min(2, elapsedSeconds / 300); // ramps to 3x over 10 min, then flat
-  const capacityScale = Math.max(1, peakComputeServed / 30);
+  const capacityScale = Math.max(1, facilityCpu / CAPACITY_SCALE_CPU_DIVISOR);
   return Math.min(timeScale, capacityScale);
 }

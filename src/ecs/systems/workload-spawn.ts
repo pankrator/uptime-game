@@ -1,9 +1,9 @@
 import { type World, type EntityId } from '../world';
-import { demandClocks, reputations, offers } from '../components';
+import { demandClocks, reputations, offers, utilizations } from '../components';
 import {
   WORKLOAD_ARCHETYPES,
   getArrivalInterval,
-  getComputeScale,
+  getValueScale,
   MAX_OFFERS,
   type WorkloadArchetypeId,
 } from '../game-data';
@@ -34,7 +34,8 @@ export function createWorkloadSpawnSystem(world: World, facility: EntityId): Sys
     update(deltaSeconds: number) {
       const clock = world.getComponent(demandClocks, facility);
       const reputation = world.getComponent(reputations, facility);
-      if (!clock || !reputation) return;
+      const utilization = world.getComponent(utilizations, facility);
+      if (!clock || !reputation || !utilization) return;
 
       clock.elapsedSeconds += deltaSeconds;
       clock.nextArrivalInSeconds -= deltaSeconds;
@@ -49,8 +50,11 @@ export function createWorkloadSpawnSystem(world: World, facility: EntityId): Sys
       }
 
       const archetypeId = pickArchetype(reputation.value);
-      const scale = getComputeScale(clock.elapsedSeconds, clock.peakComputeServed);
-      spawnOffer(world, archetypeId, scale);
+      // Facility-wide installed/online CPU, not peakComputeServed — see
+      // .plans/compute-scale-fix.md D1. spawnOffer derives the separately-capped demand scale
+      // from this same value (D2).
+      const valueScale = getValueScale(clock.elapsedSeconds, utilization.traitsTotal.cpu);
+      spawnOffer(world, archetypeId, valueScale);
 
       clock.nextArrivalInSeconds = getArrivalInterval(clock.elapsedSeconds, reputation.value);
     },

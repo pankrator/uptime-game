@@ -28,6 +28,7 @@ from an agent.
 | Report | What it covers |
 | --- | --- |
 | [playtest-findings.md](playtest-findings.md) | Bugs, friction and proposals from a played session |
+| [compute-scale-fix.md](compute-scale-fix.md) | Fix for B3 (the demand-scaling deadlock) |
 
 ## Proposed
 
