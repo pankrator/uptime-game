@@ -1,10 +1,4 @@
-import {
-  WORLD_WIDTH,
-  WORLD_HEIGHT,
-  CAMERA_EDGE_PAN_MARGIN_PX,
-  CAMERA_EDGE_PAN_SPEED,
-  CAMERA_FOLLOW_EASE,
-} from '../ecs/game-data';
+import { WORLD_WIDTH, WORLD_HEIGHT, CAMERA_PAN_SPEED, CAMERA_FOLLOW_EASE } from '../ecs/game-data';
 import { type InputState } from '../input';
 import { getGameViewportRect } from '../ui/layout';
 
@@ -24,10 +18,6 @@ export interface Camera {
 }
 
 const PAN_KEYS: Record<string, Point> = {
-  ArrowUp: { x: 0, y: -1 },
-  ArrowDown: { x: 0, y: 1 },
-  ArrowLeft: { x: -1, y: 0 },
-  ArrowRight: { x: 1, y: 0 },
   w: { x: 0, y: -1 },
   s: { x: 0, y: 1 },
   a: { x: -1, y: 0 },
@@ -44,11 +34,11 @@ function clampAxis(value: number, viewportSize: number, worldSize: number): numb
 export function createCamera(input: InputState): Camera {
   let x = 0;
   let y = 0;
-  // Panning (edge-pan or arrow/WASD) suspends follow until re-centered — otherwise the two
-  // fight every frame (see .plans/facility-shop-inventory.md Step 1).
+  // WASD panning suspends follow until the player presses space to re-center — otherwise the
+  // two would fight every frame.
   let detached = false;
 
-  input.onKeyDown('c', () => {
+  input.onKeyDown(' ', () => {
     detached = false;
   });
 
@@ -89,20 +79,11 @@ export function createCamera(input: InputState): Camera {
         }
       }
 
-      const edgePanViewport = getGameViewportRect(canvas.width, canvas.height);
-      const pointer = inputState.getPointerPosition();
-      if (pointer) {
-        if (pointer.x <= edgePanViewport.x + CAMERA_EDGE_PAN_MARGIN_PX) panDx -= 1;
-        else if (pointer.x >= edgePanViewport.x + edgePanViewport.width - CAMERA_EDGE_PAN_MARGIN_PX) panDx += 1;
-        if (pointer.y <= edgePanViewport.y + CAMERA_EDGE_PAN_MARGIN_PX) panDy -= 1;
-        else if (pointer.y >= edgePanViewport.y + edgePanViewport.height - CAMERA_EDGE_PAN_MARGIN_PX) panDy += 1;
-      }
-
       if (panDx !== 0 || panDy !== 0) {
         detached = true;
         const length = Math.hypot(panDx, panDy) || 1;
-        x += (panDx / length) * CAMERA_EDGE_PAN_SPEED * deltaSeconds;
-        y += (panDy / length) * CAMERA_EDGE_PAN_SPEED * deltaSeconds;
+        x += (panDx / length) * CAMERA_PAN_SPEED * deltaSeconds;
+        y += (panDy / length) * CAMERA_PAN_SPEED * deltaSeconds;
       } else if (!detached) {
         // Center the target within the HUD-safe viewport, not the raw canvas — otherwise the
         // top bar and side panels permanently cover whatever world content falls under them
