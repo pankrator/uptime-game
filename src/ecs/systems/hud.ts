@@ -13,6 +13,7 @@ import {
   powereds,
   serverCapacities,
   inventories,
+  tutorialProgresses,
   type Workload,
   type Offer,
 } from '../components';
@@ -26,9 +27,13 @@ import {
   getOfferCardRect,
   getOfferButtonRect,
   getMuteButtonRect,
+  getTutorialBannerRect,
+  getTutorialActionButtonRect,
+  getTutorialSkipRect,
   HUD_PANEL_MAX_ROWS,
   HUD_PANEL_MARGIN,
 } from '../../ui/layout';
+import { isTutorialActionStep, getTutorialStepDef } from './tutorial';
 import { type Audio } from '../../audio';
 import { type System } from './system';
 
@@ -460,6 +465,73 @@ function drawOffersPanel(world: World, renderer: Renderer): void {
   });
 }
 
+// Guided-tutorial banner — a persistent overlay above everything else HUD draws (drawn last),
+// since it must stay legible over the rack/shop panels' full-screen dim too. See
+// systems/tutorial.ts for step-advance logic and input.ts for the button clicks this draws.
+function drawTutorialBanner(world: World, renderer: Renderer, facility: EntityId): void {
+  const progress = world.getComponent(tutorialProgresses, facility);
+  if (!progress || progress.skipped) return;
+
+  const ctx = renderer.context;
+  const banner = getTutorialBannerRect(renderer.canvas.width);
+  const step = getTutorialStepDef(progress.stepId);
+
+  ctx.fillStyle = 'rgba(14, 18, 20, 0.95)';
+  ctx.fillRect(banner.x, banner.y, banner.width, banner.height);
+  ctx.strokeStyle = '#3ddc97';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(banner.x, banner.y, banner.width, banner.height);
+
+  const padX = 14;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.fillStyle = '#3ddc97';
+  ctx.fillText(step.title, banner.x + padX, banner.y + 20);
+
+  ctx.font = '12px sans-serif';
+  ctx.fillStyle = TEXT_COLOR;
+  const maxWidth = banner.width - padX * 2;
+  const words = step.body.split(' ');
+  let line = '';
+  let lineY = banner.y + 40;
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (ctx.measureText(candidate).width > maxWidth && line) {
+      ctx.fillText(line, banner.x + padX, lineY);
+      line = word;
+      lineY += 16;
+    } else {
+      line = candidate;
+    }
+  }
+  if (line) ctx.fillText(line, banner.x + padX, lineY);
+
+  if (isTutorialActionStep(progress.stepId)) {
+    const buttonRect = getTutorialActionButtonRect(renderer.canvas.width);
+    ctx.fillStyle = '#2f6f4f';
+    ctx.fillRect(buttonRect.x, buttonRect.y, buttonRect.width, buttonRect.height);
+    ctx.strokeStyle = GREEN;
+    ctx.strokeRect(buttonRect.x, buttonRect.y, buttonRect.width, buttonRect.height);
+    ctx.fillStyle = TEXT_COLOR;
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(
+      progress.stepId === 'welcome' ? 'Got it →' : 'Start Playing →',
+      buttonRect.x + buttonRect.width / 2,
+      buttonRect.y + buttonRect.height / 2,
+    );
+    ctx.textAlign = 'left';
+  } else {
+    const skipRect = getTutorialSkipRect(renderer.canvas.width);
+    ctx.fillStyle = DIM_COLOR;
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText('Skip tutorial ✕', skipRect.x + skipRect.width, skipRect.y + skipRect.height / 2);
+    ctx.textAlign = 'left';
+  }
+}
+
 export function createHudSystem(world: World, renderer: Renderer, facility: EntityId, audio: Audio): System {
   return {
     update() {
@@ -467,6 +539,7 @@ export function createHudSystem(world: World, renderer: Renderer, facility: Enti
       drawMuteButton(renderer, audio);
       drawOffersPanel(world, renderer);
       drawWorkloadPanel(world, renderer, facility);
+      drawTutorialBanner(world, renderer, facility);
     },
   };
 }

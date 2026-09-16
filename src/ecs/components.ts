@@ -286,6 +286,27 @@ export interface Workload {
   state: WorkloadState;
 }
 
+// Facility singleton — guided-tutorial progress (see systems/tutorial.ts). moveOrigin is
+// captured once, when the tutorial starts, so the 'move' step can be checked as distance
+// travelled from a fixed point rather than a specific destination (the player can walk
+// anywhere). skipped short-circuits every remaining step's banner/advance check but is
+// otherwise identical to reaching 'done' the long way.
+export type TutorialStepId =
+  | 'welcome'
+  | 'move'
+  | 'build-rack'
+  | 'install-machine'
+  | 'open-rack-panel'
+  | 'accept-offer'
+  | 'place-workload'
+  | 'done';
+
+export interface TutorialProgress {
+  stepId: TutorialStepId;
+  moveOrigin: { x: number; y: number };
+  skipped: boolean;
+}
+
 export const positions = createComponentStore<Position>();
 export const moveTargets = createComponentStore<MoveTarget>();
 export const speeds = createComponentStore<Speed>();
@@ -319,3 +340,4 @@ export const shopOpens = createComponentStore<ShopOpen>();
 export const pendingDrops = createComponentStore<PendingDrop>();
 export const dragStates = createComponentStore<DragState>();
 export const rejectedDrops = createComponentStore<RejectedDrop>();
+export const tutorialProgresses = createComponentStore<TutorialProgress>();
