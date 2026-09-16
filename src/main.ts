@@ -5,7 +5,7 @@ import { createGameLoop } from './core';
 import { createWorld } from './ecs/world';
 import { createCamera } from './camera';
 import { createInputSystem } from './ecs/systems/input';
-import { createInstallProgressSystem } from './ecs/systems/install-progress';
+import { createMaintenanceSystem } from './ecs/systems/maintenance';
 import { createPathFollowSystem } from './ecs/systems/path-follow';
 import { createMovementSystem } from './ecs/systems/movement';
 import { createRackPanelSystem } from './ecs/systems/rack-panel';
@@ -15,6 +15,7 @@ import { createCapacitySystem } from './ecs/systems/capacity';
 import { createWorkloadSpawnSystem, createOfferExpirySystem } from './ecs/systems/workload-spawn';
 import { createWorkloadRunSystem } from './ecs/systems/workload-run';
 import { createThermalSystem } from './ecs/systems/thermal';
+import { createWearSystem } from './ecs/systems/wear';
 import { createRenderSystem } from './ecs/systems/render';
 import { createHudSystem } from './ecs/systems/hud';
 import { createCameraSystem } from './ecs/systems/camera';
@@ -73,9 +74,10 @@ function runGame(canvas: HTMLCanvasElement, stressPreset: boolean): void {
   const player = spawnPlayer(world, spawnPoint);
   startTutorial(world, facility, spawnPoint);
 
-  // ORDER IS LOAD-BEARING — see .plans/machines-and-racks.md, .plans/workload-economy.md, and
-  // .plans/workload-dispatch.md.
-  // - install-progress runs before movement (detects arrival on last frame's position).
+  // ORDER IS LOAD-BEARING — see .plans/machines-and-racks.md, .plans/workload-economy.md,
+  // .plans/workload-dispatch.md, and .plans/hardware-failure.md.
+  // - maintenance (renamed from install-progress) runs before movement (detects arrival on last
+  //   frame's position).
   // - resource runs before capacity/workload-run: it computes Powered.online, which both depend
   //   on. Running workload-run first would pay out for browned-out machines and the capacity
   //   wall would be cosmetic.
@@ -95,10 +97,17 @@ function runGame(canvas: HTMLCanvasElement, stressPreset: boolean): void {
   //   (never force them online) and otherwise signals via the ThermalTrip marker, which
   //   resource.ts reads as a veto on bringing a tripped rack back online — see
   //   .plans/thermal-and-cooling.md D7.
+  // - wear runs AFTER resource (wear only accrues while Powered.online, and a failure sets it
+  //   false) and AFTER thermal (heat accelerates wear, so it needs this tick's Temperature) —
+  //   see .plans/hardware-failure.md D3/Step 3. It runs BEFORE workload-run so a machine that
+  //   fails this frame doesn't also get paid this frame. Like thermal's ThermalTrip, wear.ts is
+  //   the sole writer of the Failed marker; resource.ts only reads it, as a third veto on
+  //   Powered.online alongside brownout and thermal trip (D7 of this plan) — never force a
+  //   failed machine back online anywhere but a completed repair (maintenance.ts).
   // - spawn runs before run so a contract's offer window starts the same frame it arrives.
   const updateSystems = [
     createInputSystem(world, input, renderer, player, facility, camera, audio),
-    createInstallProgressSystem(world, player, facility, audio),
+    createMaintenanceSystem(world, player, facility, audio),
     createPathFollowSystem(world),
     createMovementSystem(world),
     createRackPanelSystem(world, input, renderer, player, camera),
@@ -106,6 +115,7 @@ function runGame(canvas: HTMLCanvasElement, stressPreset: boolean): void {
     createResourceSystem(world, facility, audio),
     createCapacitySystem(world, facility),
     createThermalSystem(world, facility, audio),
+    createWearSystem(world, facility, audio),
     createWorkloadSpawnSystem(world, facility),
     createOfferExpirySystem(world),
     createWorkloadRunSystem(world, facility, audio),

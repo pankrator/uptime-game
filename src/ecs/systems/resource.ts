@@ -11,6 +11,7 @@ import {
   wallets,
   thermalTrips,
   coolingUnits,
+  faileds,
 } from '../components';
 import {
   MACHINE_TIERS,
@@ -120,11 +121,14 @@ export function createResourceSystem(world: World, facility: EntityId, audio: Au
       // thermally tripped is never a candidate — see .plans/thermal-and-cooling.md D7: thermal.ts
       // may only force offline, never force online, so this is the one place resource.ts (the
       // sole writer of Powered.online) reads that veto rather than thermal.ts writing the flag
-      // itself.
+      // itself. Likewise a Failed machine (.plans/hardware-failure.md D4/D7) is never a
+      // candidate — unlike a brownout/thermal trip, failure has no cooldown-based
+      // self-recovery; only a completed repair (maintenance.ts) clears Failed.
       const candidateIds = machineIds.filter((id) => {
         const powered = world.getComponent(powereds, id)!;
         const installedIn = world.getComponent(installedIns, id)!;
         if (world.getComponent(thermalTrips, installedIn.rackId)) return false;
+        if (world.getComponent(faileds, id)) return false;
         return powered.online || powered.offlineCooldown <= 0;
       });
 

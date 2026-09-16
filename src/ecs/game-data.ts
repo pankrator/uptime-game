@@ -345,6 +345,24 @@ export const WORKLOAD_ARCHETYPES: Record<WorkloadArchetypeId, WorkloadArchetypeD
   },
 };
 
+// See .plans/hardware-failure.md D1-D8. Wear only accrues while a machine is online (D1);
+// failure is a per-second probabilistic roll gated by wear (D2), steep only near the top of
+// the range (WEAR_FAILURE_EXPONENT) so a new machine almost never fails. Heat multiplies wear
+// accrual when thermal has shipped (D3) — HEAT_WEAR_MULTIPLIER_MAX is reached at TRIP_C, and
+// heatWearMultiplier is 1 below THROTTLE_C either way.
+export const WEAR_PER_SECOND = 0.0008; // ~20 min of continuous online runtime to fully wear
+export const BASE_FAILURE_RATE = 0.0004; // per second, at wear = 0
+export const WEAR_FAILURE_EXPONENT = 3; // steep only in the top third of the wear range
+export const HEAT_WEAR_MULTIPLIER_MAX = 3; // reached at TRIP_C
+export const REPAIR_WEAR_RECOVERY = 0.35; // a repair buys time, never resets to new (D6)
+export const REPAIR_BASE_SECONDS = 4;
+export const REPAIR_COST_FRACTION = 0.4; // of tier cost, scaled further by wear (D6)
+export const DECOMMISSION_REFUND_FRACTION = 0.3;
+export const DECOMMISSION_SECONDS = 2.0;
+// Wear at/below this reads as "nothing to repair yet" — a pristine machine's repair button
+// would otherwise show a nonzero cost for no benefit. See rack-panel button visibility, Step 6.
+export const REPAIRABLE_WEAR_THRESHOLD = 0.02;
+
 // Recurring offers pay less per second than a one-shot offer of the same archetype/scale — the
 // player is trading rate for certainty (D2). Applied once, in spawnOffer, when a rolled
 // repeatCount is nonzero.

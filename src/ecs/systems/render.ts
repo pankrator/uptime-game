@@ -13,7 +13,9 @@ import {
   machines,
   installedIns,
   powereds,
-  installTasks,
+  maintenanceTasks,
+  conditions,
+  faileds,
   workloads,
   serverCapacities,
   utilizations,
@@ -30,6 +32,7 @@ import {
   temperatures,
   thermalTrips,
   coolingUnits,
+  decommissionConfirms,
 } from '../components';
 import {
   RACK_SLOT_CAPACITY,
@@ -42,10 +45,12 @@ import {
   AMBIENT_C,
   THROTTLE_C,
   TRIP_C,
+  REPAIRABLE_WEAR_THRESHOLD,
   type Traits,
   type PurchasableId,
   type MachineTierId,
 } from '../game-data';
+import { repairCost } from '../wear';
 import { type Renderer } from '../../rendering';
 import { type Camera } from '../../camera';
 import { type InputState } from '../../input';
@@ -67,6 +72,8 @@ import {
   getPlacedChipRect,
   getTrayCardRect,
   getTrayTopY,
+  getServerRepairButtonRect,
+  getServerDecommissionButtonRect,
   RACK_PANEL_PADDING,
   getShopPanelRect,
   getShopCloseButtonRect,
@@ -246,7 +253,11 @@ const RACK_PADDING = 4;
 // has hit zero (see capacity.ts), partial means some but not all capacity is used. A server can
 // be 'online-idle' (nothing placed), 'partial', or 'full' without any single trait telling the
 // whole story — that's the point of showing traits at all.
-type SlotState = 'empty' | 'online-idle' | 'partial' | 'full' | 'offline';
+// 'failed' is distinct from plain 'offline' (a brownout/thermal trip, both self-recovering) —
+// see .plans/hardware-failure.md D7: a failed machine needs to be unmistakable at a glance,
+// because unlike the other offline states it never comes back without the player walking over
+// to repair it.
+type SlotState = 'empty' | 'online-idle' | 'partial' | 'full' | 'offline' | 'failed';
 
 const SLOT_SLAT_FILL: Record<SlotState, string> = {
   empty: '#22262b',
@@ -254,6 +265,7 @@ const SLOT_SLAT_FILL: Record<SlotState, string> = {
   partial: '#2e343b',
   full: '#2e343b',
   offline: '#22262b',
+  failed: '#3a2226',
 };
 
 const SLOT_LED_COLOR: Record<SlotState, string | null> = {
@@ -262,6 +274,7 @@ const SLOT_LED_COLOR: Record<SlotState, string | null> = {
   partial: '#4dabf7',
   full: '#3ddc84',
   offline: '#e5484d',
+  failed: '#e5484d',
 };
 
 function drawRack(renderer: Renderer, gridX: number, gridY: number, slots: SlotState[]): void {
@@ -295,6 +308,20 @@ function drawRack(renderer: Renderer, gridX: number, gridY: number, slots: SlotS
     if (ledColor) {
       ctx.fillStyle = ledColor;
       ctx.fillRect(x + size - unitGap - 5, unitY + unitHeight / 2 - 1.5, 3, 3);
+    }
+
+    // Failed slat gets a warning glyph too, not just the red LED (D7: "unmistakable at a
+    // glance") — a pulsing ⚠ so it reads differently from a merely-offline (brownout/thermal)
+    // slat, which shares the same red LED but never pulses.
+    if (state === 'failed') {
+      const pulse = (Math.sin(performance.now() / 220) + 1) / 2;
+      ctx.font = `${Math.max(8, unitHeight - 2)}px sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.globalAlpha = 0.6 + pulse * 0.4;
+      ctx.fillStyle = '#e5484d';
+      ctx.fillText('⚠', x + unitGap + 2, unitY + unitHeight / 2);
+      ctx.globalAlpha = 1;
     }
 
     // Faint vent lines
@@ -504,6 +531,57 @@ function drawShopHint(renderer: Renderer, facility: EntityId, world: World, play
   ctx.fillText('SHOP', arrowX, arrowY - 12);
 }
 
+// Points an arrow from the player toward the nearest failed machine's rack — the same "make it
+// legible without opening anything" treatment as drawShopHint, since the player is usually
+// somewhere else (possibly with the camera panned away, per .plans/thermal-and-cooling.md D8's
+// established pattern) when a machine dies. See .plans/hardware-failure.md D7.
+function drawFailureHint(renderer: Renderer, world: World, playerPosition: { x: number; y: number }): void {
+  let nearestDistance = Infinity;
+  let nearestCenter: { x: number; y: number } | null = null;
+
+  for (const machineId of world.query(faileds, installedIns)) {
+    const rackId = world.getComponent(installedIns, machineId)!.rackId;
+    const grid = world.getComponent(gridPositions, rackId);
+    if (!grid) continue;
+    const center = gridToWorld(grid.gridX, grid.gridY);
+    const distance = Math.hypot(center.x - playerPosition.x, center.y - playerPosition.y);
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestCenter = center;
+    }
+  }
+
+  if (!nearestCenter || nearestDistance < 60) return;
+
+  const dx = nearestCenter.x - playerPosition.x;
+  const dy = nearestCenter.y - playerPosition.y;
+  const angle = Math.atan2(dy, dx);
+  const arrowDistance = 28;
+  const arrowX = playerPosition.x + Math.cos(angle) * arrowDistance;
+  const arrowY = playerPosition.y + Math.sin(angle) * arrowDistance - 20;
+
+  const ctx = renderer.context;
+  const pulse = (Math.sin(performance.now() / 220) + 1) / 2;
+  ctx.save();
+  ctx.translate(arrowX, arrowY);
+  ctx.rotate(angle);
+  ctx.globalAlpha = 0.7 + pulse * 0.3;
+  ctx.fillStyle = '#e5484d';
+  ctx.beginPath();
+  ctx.moveTo(8, 0);
+  ctx.lineTo(-6, -5);
+  ctx.lineTo(-6, 5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#e5484d';
+  ctx.fillText('FAILED', arrowX, arrowY - 12);
+}
+
 function drawPendingBorder(world: World, renderer: Renderer): void {
   let lowestDeadline = Infinity;
   for (const id of world.query(workloads)) {
@@ -607,8 +685,16 @@ function drawBuildPanel(
   }
 }
 
-function drawInstallIndicator(world: World, renderer: Renderer, controlled: EntityId): void {
-  const task = world.getComponent(installTasks, controlled);
+// .plans/hardware-failure.md Step 5: the progress ring/pulse is identical across install,
+// repair, and decommission — only the label says what's happening.
+const MAINTENANCE_JOB_LABEL: Record<'install' | 'repair' | 'decommission', string> = {
+  install: 'Installing…',
+  repair: 'Repairing…',
+  decommission: 'Removing…',
+};
+
+function drawMaintenanceIndicator(world: World, renderer: Renderer, controlled: EntityId): void {
+  const task = world.getComponent(maintenanceTasks, controlled);
   if (!task) return;
 
   const grid = world.getComponent(gridPositions, task.rackId);
@@ -648,6 +734,12 @@ function drawInstallIndicator(world: World, renderer: Renderer, controlled: Enti
   ctx.arc(center.x, center.y, radius, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
   ctx.stroke();
   ctx.restore();
+
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#e6e8eb';
+  ctx.fillText(MAINTENANCE_JOB_LABEL[task.job.kind], center.x, center.y - radius - 8);
 }
 
 // Compact "2c/4GB/50GB" form of a workload's demands, in TRAIT_KEYS order — used anywhere the
@@ -773,11 +865,16 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
     ctx.strokeStyle = '#2f333a';
     ctx.strokeRect(row.x, row.y, row.width, row.height);
 
+    const failed = world.getComponent(faileds, serverId) !== undefined;
+
     ctx.font = 'bold 12px sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = online ? RACK_PANEL_TEXT : RACK_PANEL_RED;
-    ctx.fillText(online ? tier.label : `${tier.label} (offline)`, row.x + 6, getServerRowLabelY(row));
+    // D7: a failed machine reads differently from a merely-offline (brownout/thermal) one —
+    // it's the one offline state that never comes back on its own.
+    const statusLabel = online ? tier.label : failed ? `${tier.label} (FAILED)` : `${tier.label} (offline)`;
+    ctx.fillText(statusLabel, row.x + 6, getServerRowLabelY(row));
 
     // This server's own draw: tier baseline plus each placed workload's cooling bonus on top
     // (same per-workload heat math resource.ts's drawFor uses to decide brownouts) — lets the
@@ -831,6 +928,58 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
         ctx.strokeRect(barRect.x - 1, barRect.y - 9, barRect.width + 2, barRect.height + 10);
       }
     });
+
+    // Wear bar — same bar shape as the traits above, in the next slot down (traitIndex ===
+    // TRAIT_KEYS.length reuses getServerTraitBarRect's layout for free). Green -> amber -> red
+    // as wear climbs (D7).
+    const condition = world.getComponent(conditions, serverId);
+    if (condition) {
+      const wearRect = getServerTraitBarRect(index, TRAIT_KEYS.length, canvasWidth, canvasHeight, serverIds.length, trayIds.length);
+      const wearColor = condition.wear > 0.7 ? RACK_PANEL_RED : condition.wear > 0.4 ? RACK_PANEL_AMBER : RACK_PANEL_GREEN;
+
+      ctx.font = '9px sans-serif';
+      ctx.fillStyle = failed ? RACK_PANEL_RED : RACK_PANEL_DIM;
+      ctx.fillText(`WEAR ${Math.round(condition.wear * 100)}%`, wearRect.x, wearRect.y - 6);
+
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+      ctx.fillRect(wearRect.x, wearRect.y, wearRect.width, wearRect.height);
+      ctx.fillStyle = wearColor;
+      ctx.fillRect(wearRect.x, wearRect.y, wearRect.width * Math.min(1, condition.wear), wearRect.height);
+    }
+
+    // Repair/decommission buttons (Step 6). Repair only shown once there's something worth
+    // fixing; decommission is always offered (D5's "no way to get rid of a machine" gap).
+    if (condition && (condition.wear > REPAIRABLE_WEAR_THRESHOLD || failed)) {
+      const repairRect = getServerRepairButtonRect(index, canvasWidth, canvasHeight, serverIds.length, trayIds.length);
+      const cost = repairCost(tier.cost, condition.wear);
+      ctx.fillStyle = '#2f4f6f';
+      ctx.fillRect(repairRect.x, repairRect.y, repairRect.width, repairRect.height);
+      ctx.strokeStyle = '#4dabf7';
+      ctx.strokeRect(repairRect.x, repairRect.y, repairRect.width, repairRect.height);
+      ctx.font = '10px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = RACK_PANEL_TEXT;
+      ctx.fillText(`Repair $${cost}`, repairRect.x + repairRect.width / 2, repairRect.y + repairRect.height / 2);
+    }
+
+    const decommissionRect = getServerDecommissionButtonRect(index, canvasWidth, canvasHeight, serverIds.length, trayIds.length);
+    const decommissionConfirm = world.getComponent(decommissionConfirms, controlled);
+    const confirmingThis = decommissionConfirm?.serverId === serverId && performance.now() < decommissionConfirm.expiresAtMs;
+    ctx.fillStyle = confirmingThis ? '#6f2f2f' : '#3a3f47';
+    ctx.fillRect(decommissionRect.x, decommissionRect.y, decommissionRect.width, decommissionRect.height);
+    ctx.strokeStyle = confirmingThis ? RACK_PANEL_RED : '#666';
+    ctx.strokeRect(decommissionRect.x, decommissionRect.y, decommissionRect.width, decommissionRect.height);
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = RACK_PANEL_TEXT;
+    ctx.fillText(
+      confirmingThis ? 'Confirm ×' : 'Decommission',
+      decommissionRect.x + decommissionRect.width / 2,
+      decommissionRect.y + decommissionRect.height / 2,
+    );
+    ctx.textAlign = 'left';
 
     // Placed-workload chips, top-right of the row. The one currently being dragged is skipped
     // here — it's drawn once, following the cursor, at the end of this function instead.
@@ -1115,7 +1264,7 @@ export function createRenderSystem(
           const installedIn = world.getComponent(installedIns, machineId)!;
           const powered = world.getComponent(powereds, machineId);
           if (!powered?.online) {
-            slots[installedIn.slotIndex] = 'offline';
+            slots[installedIn.slotIndex] = world.getComponent(faileds, machineId) ? 'failed' : 'offline';
             continue;
           }
 
@@ -1178,7 +1327,7 @@ export function createRenderSystem(
         }
       }
 
-      drawInstallIndicator(world, renderer, controlled);
+      drawMaintenanceIndicator(world, renderer, controlled);
 
       for (const id of world.query(renderables, positions)) {
         const renderable = world.getComponent(renderables, id)!;
@@ -1187,6 +1336,7 @@ export function createRenderSystem(
         const position = world.getComponent(positions, id)!;
         drawManager(renderer, position.x, position.y);
         drawShopHint(renderer, facility, world, position);
+        drawFailureHint(renderer, world, position);
       }
 
       camera.resetTransform(renderer.context);
