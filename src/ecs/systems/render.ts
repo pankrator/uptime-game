@@ -1195,8 +1195,12 @@ export function createRenderSystem(
 
       // The rack panel and shop panel are both full-screen modals that replace the build panel
       // rather than drawing over/under it. Same priority order as input.ts's click chain: rack
-      // panel first, then shop.
-      if (world.getComponent(openRackPanels, controlled)) {
+      // panel first, then shop. A dispatching-mode rack panel draws nothing until the player
+      // arrives (see drawRackPanel's early return) — while still walking there, the build panel
+      // stays visible instead of leaving the corner blank.
+      const rackPanel = world.getComponent(openRackPanels, controlled);
+      const rackPanelVisible = rackPanel !== undefined && (rackPanel.mode !== 'dispatching' || rackPanel.arrived);
+      if (rackPanelVisible) {
         drawRackPanel(world, renderer, controlled);
       } else if (world.getComponent(shopOpens, controlled)) {
         drawShopPanel(world, renderer, controlled, facility);
