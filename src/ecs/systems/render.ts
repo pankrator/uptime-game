@@ -374,7 +374,7 @@ function drawPendingBorder(world: World, renderer: Renderer): void {
   }
   if (lowestDeadline === Infinity) return;
 
-  const { width, height } = renderer.canvas;
+  const { width, height } = renderer;
   const ctx = renderer.context;
   const pulse = (Math.sin(performance.now() / 300) + 1) / 2;
   const escalated = lowestDeadline < 5;
@@ -431,7 +431,7 @@ function drawBuildPanel(
   let hoveredTraits: Traits | null = null;
 
   BUILDABLES.forEach((buildable, index) => {
-    const rect = getBuildPanelEntryRect(index, renderer.canvas.height);
+    const rect = getBuildPanelEntryRect(index, renderer.height);
     const isSelected = buildMode?.buildableId === buildable.id;
     const owned = countOf(world, facility, buildable.id as PurchasableId);
     const hasStock = owned > 0;
@@ -538,7 +538,7 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
   if (panel.mode === 'dispatching' && !panel.arrived) return;
 
   const ctx = renderer.context;
-  const { width: canvasWidth, height: canvasHeight } = renderer.canvas;
+  const { width: canvasWidth, height: canvasHeight } = renderer;
 
   const serverIds = serversOn(world, panel.rackId);
   const trayIds = trayWorkloadIds(world);
@@ -810,7 +810,7 @@ function drawShopPanel(world: World, renderer: Renderer, controlled: EntityId, f
   if (!world.getComponent(shopOpens, controlled)) return;
 
   const ctx = renderer.context;
-  const { width: canvasWidth, height: canvasHeight } = renderer.canvas;
+  const { width: canvasWidth, height: canvasHeight } = renderer;
 
   const categories = shopCategories();
   const rows = shopCatalogForTab(shopTab.current);
