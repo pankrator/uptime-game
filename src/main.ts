@@ -121,7 +121,7 @@ function runGame(canvas: HTMLCanvasElement, stressPreset: boolean): void {
   // pause without affecting gameplay.
   // Camera update goes first — it must update before the render systems read it this frame.
   const renderSystems = [
-    createCameraSystem(world, renderer, input, player, facility, camera),
+    createCameraSystem(world, renderer, input, player, camera),
     createRenderSystem(world, renderer, player, facility, camera, input),
     createHudSystem(world, renderer, facility, audio, camera),
   ];

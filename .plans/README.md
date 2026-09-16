@@ -23,6 +23,12 @@ from an agent.
 | — | [hud-and-escalation.md](hud-and-escalation.md) | HUD, alerts, difficulty curve |
 | — | [facility-shop-inventory.md](facility-shop-inventory.md) | Camera, world map, shop, inventory, room tiers |
 
+## Playtest reports
+
+| Report | What it covers |
+| --- | --- |
+| [playtest-findings.md](playtest-findings.md) | Bugs, friction and proposals from a played session |
+
 ## Proposed
 
 Recommended build order. Each is independently shippable; the dependency notes say what

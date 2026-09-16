@@ -7,7 +7,6 @@ import {
   openRackPanels,
   shopOpens,
   offers,
-  tutorialProgresses,
 } from '../components';
 import { type Renderer } from '../../rendering';
 import { type Camera } from '../../camera';
@@ -23,16 +22,17 @@ import { type System } from './system';
 // anyServerFits: this only needs a yes/no "is anything else claiming this gesture" check, not
 // the full ordered chain, and it only ever affects camera framing (presentation), never game
 // state, so a stale answer for one frame has no real consequence.
+//
+// No tutorial-banner check here: the banner isn't part of pointerInHud's blocking region (see
+// .plans/playtest-findings.md B1) — dragging over it pans the camera same as dragging any other
+// empty floor, consistent with a click there falling through to the ordinary click chain.
 function canPanCamera(
   world: World,
   renderer: Renderer,
   controlled: EntityId,
-  facility: EntityId,
   pointer: { x: number; y: number },
 ): boolean {
-  const tutorialProgress = world.getComponent(tutorialProgresses, facility);
-  const tutorialBannerVisible = !!tutorialProgress && !tutorialProgress.skipped;
-  if (pointerInHud(pointer, renderer.canvas, world.query(offers).length, tutorialBannerVisible)) {
+  if (pointerInHud(pointer, renderer.canvas, world.query(offers).length)) {
     return false;
   }
 
@@ -56,7 +56,6 @@ export function createCameraSystem(
   renderer: Renderer,
   input: InputState,
   controlled: EntityId,
-  facility: EntityId,
   camera: Camera,
 ): System {
   let lastTime = 0;
@@ -83,7 +82,7 @@ export function createCameraSystem(
       const pointer = input.getPointerPosition();
       if (pointerDown && pointer) {
         if (dragPointer === null) {
-          dragEligible = canPanCamera(world, renderer, controlled, facility, pointer);
+          dragEligible = canPanCamera(world, renderer, controlled, pointer);
         } else if (dragEligible) {
           const dxScreen = pointer.x - dragPointer.x;
           const dyScreen = pointer.y - dragPointer.y;

@@ -296,6 +296,12 @@ export interface Offer {
   deadlineSeconds: number;
   payPerSecond: number;
   secondsRemaining: number; // offer auto-declines at 0, no reputation penalty
+  // Which offers-panel card (0..MAX_OFFERS-1) this offer draws/hit-tests in, assigned once at
+  // spawn (entities.ts's spawnOffer) and fixed for the offer's whole lifetime. Positional
+  // indexing into a sorted-by-id array used to make every later offer's card shift up — and the
+  // pointer land on the wrong one — the instant an earlier offer expired; see
+  // .plans/playtest-findings.md F6.
+  slot: number;
   // See .plans/contract-variety.md D1/D2 — carried straight into the Workload on accept.
   penaltyOnMiss: number;
   repeatCount: number; // extra cycles after the first; 0 = one-shot

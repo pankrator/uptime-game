@@ -708,7 +708,9 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
   ctx.textBaseline = 'middle';
   ctx.fillStyle = RACK_PANEL_TEXT;
   const headerY = rect.y + RACK_PANEL_PADDING + 8;
-  const modeLabel = panel.mode === 'viewing' ? 'VIEWING (walk there to dispatch)' : 'DISPATCHING';
+  // Player-facing labels, not the internal 'dispatching' state-machine name — see
+  // .plans/playtest-findings.md F9.
+  const modeLabel = panel.mode === 'viewing' ? 'VIEWING (walk there to place work)' : 'PLACING WORK';
   ctx.fillText(`Rack — ${modeLabel}`, rect.x + 14, headerY);
 
   // Close button ("×").

@@ -71,13 +71,15 @@ function hitTestOfferButtons(
   world: World,
   point: { x: number; y: number },
 ): OfferButtonHit | null {
-  const offerIds = world.query(offers).sort((a, b) => a - b);
-  for (let index = 0; index < offerIds.length; index++) {
-    if (pointerInRect(point, getOfferButtonRect(index, 'accept'))) {
-      return { offerId: offerIds[index], kind: 'accept' };
+  // Hit-test against each offer's own stable slot (see Offer.slot), not its position in a
+  // sorted-by-id array — see getOfferCardRect's comment and .plans/playtest-findings.md F6.
+  for (const offerId of world.query(offers)) {
+    const offer = world.getComponent(offers, offerId)!;
+    if (pointerInRect(point, getOfferButtonRect(offer.slot, 'accept'))) {
+      return { offerId, kind: 'accept' };
     }
-    if (pointerInRect(point, getOfferButtonRect(index, 'decline'))) {
-      return { offerId: offerIds[index], kind: 'decline' };
+    if (pointerInRect(point, getOfferButtonRect(offer.slot, 'decline'))) {
+      return { offerId, kind: 'decline' };
     }
   }
   return null;
@@ -290,13 +292,16 @@ export function createInputSystem(
       }
 
       // -0.5. Tutorial banner — always reachable, checked early like the mute button, since the
-      // banner sits above every other panel (see hud.ts's drawTutorialBanner).
+      // banner sits above every other panel (see hud.ts's drawTutorialBanner). Its own hit
+      // targets are checked directly here; the banner is NOT part of pointerInHud's blocking
+      // region below (see .plans/playtest-findings.md B1) — clicking anywhere else on it falls
+      // through to the ordinary click chain, same as clicking empty floor.
       const tutorialProgress = world.getComponent(tutorialProgresses, facility);
       const tutorialBannerVisible = !!tutorialProgress && !tutorialProgress.skipped;
       if (tutorialProgress && tutorialBannerVisible) {
         if (
           isTutorialActionStep(tutorialProgress.stepId) &&
-          pointerInRect(pointer, getTutorialActionButtonRect(renderer.width))
+          pointerInRect(pointer, getTutorialActionButtonRect(renderer.width, renderer.height))
         ) {
           audio.play('uiClick');
           if (tutorialProgress.stepId === 'welcome') {
@@ -308,7 +313,7 @@ export function createInputSystem(
         }
         if (
           !isTutorialActionStep(tutorialProgress.stepId) &&
-          pointerInRect(pointer, getTutorialSkipRect(renderer.width))
+          pointerInRect(pointer, getTutorialSkipRect(renderer.width, renderer.height))
         ) {
           audio.play('uiClick');
           skipTutorial(world, facility);
@@ -330,7 +335,7 @@ export function createInputSystem(
         return;
       }
 
-      if (pointerInHud(pointer, renderer.canvas, world.query(offers).length, tutorialBannerVisible)) return;
+      if (pointerInHud(pointer, renderer.canvas, world.query(offers).length)) return;
 
       // 1. Install in progress → any click cancels and refunds.
       if (world.getComponent(installTasks, controlled)) {
