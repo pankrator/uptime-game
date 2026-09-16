@@ -265,6 +265,10 @@ export interface Offer {
   deadlineSeconds: number;
   payPerSecond: number;
   secondsRemaining: number; // offer auto-declines at 0, no reputation penalty
+  // See .plans/contract-variety.md D1/D2 — carried straight into the Workload on accept.
+  penaltyOnMiss: number;
+  repeatCount: number; // extra cycles after the first; 0 = one-shot
+  repeatTotal: number; // repeatCount + 1, fixed at roll time, for "current/total" display
 }
 
 // Workloads — their own entities, with no Position and no Renderable. 'accepted' means
@@ -284,6 +288,20 @@ export interface Workload {
   payPerSecond: number;
   deadlineRemainingSeconds: number;
   state: WorkloadState;
+  // See .plans/contract-variety.md D1/D2.
+  penaltyOnMiss: number; // money lost, on top of the reputation hit, if this deadline is missed
+  repeatCount: number; // cycles left AFTER the current one; on completion with repeatCount > 0,
+  // the workload resets and stays placed instead of being destroyed (D2/D3 — survives
+  // unplace/re-place with this intact).
+  repeatTotal: number; // fixed at accept time; current cycle = repeatTotal - repeatCount
+}
+
+// Cycle suffix for a recurring workload — '' for a one-shot, ' 3/5' once repeatTotal > 1.
+// Shared by render.ts (tray card, placed chip) and hud.ts (workload panel rows) so the
+// current/total math lives in one place. See .plans/contract-variety.md D2.
+export function cycleLabel(workload: Workload): string {
+  if (workload.repeatTotal <= 1) return '';
+  return ` ${workload.repeatTotal - workload.repeatCount}/${workload.repeatTotal}`;
 }
 
 // Facility singleton — guided-tutorial progress (see systems/tutorial.ts). moveOrigin is

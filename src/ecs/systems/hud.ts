@@ -14,6 +14,7 @@ import {
   serverCapacities,
   inventories,
   tutorialProgresses,
+  cycleLabel,
   type Workload,
   type Offer,
 } from '../components';
@@ -308,7 +309,7 @@ function drawWorkloadPanel(world: World, renderer: Renderer, facility: EntityId)
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = TEXT_COLOR;
-      ctx.fillText(archetype.label, rect.x + padX, labelY);
+      ctx.fillText(archetype.label + cycleLabel(workload), rect.x + padX, labelY);
 
       const barWidth = 70;
       const barX = rect.x + rect.width - padX - barWidth - 34;
@@ -341,7 +342,7 @@ function drawWorkloadPanel(world: World, renderer: Renderer, facility: EntityId)
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = escalated ? RED : AMBER;
-    ctx.fillText(`⚠ ${archetype.label}`, rect.x + padX, labelY);
+    ctx.fillText(`⚠ ${archetype.label}${cycleLabel(workload)}`, rect.x + padX, labelY);
 
     ctx.textAlign = 'right';
     ctx.fillText(
@@ -358,7 +359,9 @@ function drawWorkloadPanel(world: World, renderer: Renderer, facility: EntityId)
       const free = utilization.traitsFree[key];
       return `${TRAIT_LABELS[key]} ${need}${free < need ? '!' : ''}`;
     }).join(' · ');
-    ctx.fillText(shortfallText, rect.x + padX, shortfallY);
+    // .plans/contract-variety.md D1: the workload panel is where an accepted-but-unplaced
+    // contract's risk is most visible, so the miss penalty rides along with the shortfall.
+    ctx.fillText(`${shortfallText} · -$${workload.penaltyOnMiss.toFixed(0)}`, rect.x + padX, shortfallY);
 
     rowIndex += 2;
   }
@@ -427,6 +430,22 @@ function drawOfferCard(world: World, renderer: Renderer, index: number, offer: O
     card.x + padX,
     textY,
   );
+
+  // .plans/contract-variety.md D1: the number the accept/decline decision actually turns on —
+  // must be at least as visible as the pay it's weighed against.
+  textY += 14;
+  ctx.fillStyle = RED;
+  ctx.font = 'bold 10px sans-serif';
+  ctx.fillText(`-$${offer.penaltyOnMiss.toFixed(0)} if missed`, card.x + padX, textY);
+
+  // D2: recurring contracts commit capacity for repeatTotal cycles — flag that up front, since
+  // it's the main thing being evaluated alongside the penalty.
+  if (offer.repeatTotal > 1) {
+    textY += 12;
+    ctx.fillStyle = AMBER;
+    ctx.font = '9px sans-serif';
+    ctx.fillText(`recurring · ${offer.repeatTotal} cycles`, card.x + padX, textY);
+  }
 
   if (!servable) {
     textY += 12;

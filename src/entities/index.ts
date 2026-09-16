@@ -25,6 +25,7 @@ import {
   STARTING_COOLING_KW,
   STARTING_REPUTATION,
   WORKLOAD_ARCHETYPES,
+  RECURRING_PAY_MULTIPLIER,
   type MachineTierId,
   type WorkloadArchetypeId,
   type PurchasableId,
@@ -105,14 +106,26 @@ export function spawnFacility(world: World): EntityId {
 export function spawnOffer(world: World, archetypeId: WorkloadArchetypeId, scale: number): EntityId {
   const archetype = WORKLOAD_ARCHETYPES[archetypeId];
   const appliedScale = archetype.scales ? scale : 1;
+
+  // D2: roll how many extra cycles this offer commits to, then apply the recurring pay
+  // discount (D2's "trading rate for certainty") only when it actually recurs.
+  const [minRepeat, maxRepeat] = archetype.repeatRange;
+  const repeatCount = minRepeat + Math.floor(Math.random() * (maxRepeat - minRepeat + 1));
+  const payMultiplier = repeatCount > 0 ? RECURRING_PAY_MULTIPLIER : 1;
+
   const id = world.createEntity();
   world.addComponent(offers, id, {
     archetypeId,
     demands: scaleTraits(archetype.demands, appliedScale),
     workSeconds: archetype.workSeconds,
     deadlineSeconds: archetype.deadlineSeconds,
-    payPerSecond: archetype.payPerSecond * appliedScale,
+    payPerSecond: archetype.payPerSecond * appliedScale * payMultiplier,
     secondsRemaining: archetype.offerSeconds,
+    // D1: scaled the same way payPerSecond/demands are for `scales: true` archetypes, so
+    // late-game penalties don't fall behind late-game pay.
+    penaltyOnMiss: archetype.penaltyOnMiss * appliedScale,
+    repeatCount,
+    repeatTotal: repeatCount + 1,
   });
   return id;
 }

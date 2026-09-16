@@ -1,6 +1,6 @@
 import { type World, type EntityId } from '../world';
 import { workloads, placedOns, powereds, wallets, reputations, demandClocks, utilizations } from '../components';
-import { REPUTATION_ON_MISSED_DEADLINE, REPUTATION_ON_COMPLETION } from '../game-data';
+import { REPUTATION_ON_MISSED_DEADLINE, REPUTATION_ON_COMPLETION, WORKLOAD_ARCHETYPES } from '../game-data';
 import { type Audio } from '../../audio';
 import { type System } from './system';
 
@@ -42,18 +42,34 @@ export function createWorkloadRunSystem(world: World, facility: EntityId, audio:
 
         if (workload.workRemainingSeconds <= 0) {
           reputation.value = clampReputation(reputation.value + REPUTATION_ON_COMPLETION);
-          clock.contractsServed += 1;
           // D1: one workload occupies exactly one server, so its own demands.cpu IS what it
           // was served with — no fold across machines needed.
           clock.peakComputeServed = Math.max(clock.peakComputeServed, workload.demands.cpu);
+          audio.play('contractCompleted');
+
+          // .plans/contract-variety.md D2: a recurring workload resets and stays placed on the
+          // same server instead of being destroyed. Only the FINAL cycle counts toward
+          // contractsServed — counting every cycle would inflate that score relative to what it
+          // means for a one-shot contract (see the plan's step-2 note).
+          if (workload.repeatCount > 0) {
+            workload.repeatCount -= 1;
+            workload.workRemainingSeconds = workload.workSeconds;
+            workload.deadlineRemainingSeconds = WORKLOAD_ARCHETYPES[workload.archetypeId].deadlineSeconds;
+            continue;
+          }
+
+          clock.contractsServed += 1;
           world.removeComponent(placedOns, workloadId);
           world.destroyEntity(workloadId);
-          audio.play('contractCompleted');
           continue;
         }
 
         if (workload.deadlineRemainingSeconds <= 0) {
           reputation.value = clampReputation(reputation.value + REPUTATION_ON_MISSED_DEADLINE);
+          // D1: penalty applies only here — an ACCEPTED workload missing its deadline. An
+          // expired OFFER never reaches this loop (it's destroyed by createOfferExpirySystem
+          // before ever becoming a Workload), so a silent decline still costs nothing.
+          wallet.money -= workload.penaltyOnMiss;
           world.removeComponent(placedOns, workloadId);
           world.destroyEntity(workloadId);
           audio.play('contractMissed');

@@ -64,6 +64,9 @@ export function acceptOffer(world: World, offerId: EntityId): EntityId {
     payPerSecond: offer.payPerSecond,
     deadlineRemainingSeconds: offer.deadlineSeconds,
     state: 'accepted',
+    penaltyOnMiss: offer.penaltyOnMiss,
+    repeatCount: offer.repeatCount,
+    repeatTotal: offer.repeatTotal,
   };
   world.addComponent(workloads, id, workload);
   world.destroyEntity(offerId);
