@@ -406,7 +406,7 @@ export function createInputSystem(
         if (offerHit.kind === 'accept') {
           acceptOffer(world, offerHit.offerId);
         } else {
-          declineOffer(world, offerHit.offerId);
+          declineOffer(world, facility, offerHit.offerId);
         }
         return;
       }

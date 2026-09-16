@@ -255,6 +255,13 @@ export interface WorkloadArchetypeDef {
   minReputation: number;
   scales: boolean; // false: demands/payPerSecond stay flat, ignoring getComputeScale
   offerSeconds: number; // how long the OFFER sits before auto-declining (no penalty)
+  // Money lost if an ACCEPTED workload's deadline passes. See .plans/contract-variety.md D1 —
+  // this, not REPUTATION_ON_DECLINE, is what makes accept/decline a real bet. Scaled with
+  // getComputeScale in spawnOffer for `scales: true` archetypes, exactly like payPerSecond.
+  penaltyOnMiss: number;
+  // [min, max] extra cycles after the first, rolled per offer in spawnOffer — see
+  // .plans/contract-variety.md D2. [0, 0] means this archetype never recurs.
+  repeatRange: [number, number];
 }
 
 // Each archetype leans on a different trait — that's the whole reason traits exist (see
@@ -276,6 +283,11 @@ export const WORKLOAD_ARCHETYPES: Record<WorkloadArchetypeId, WorkloadArchetypeD
     minReputation: 0,
     scales: false,
     offerSeconds: 20,
+    // payPerSecond * workSeconds * 0.5, per D1 — roughly half the gross a completed run pays.
+    penaltyOnMiss: 20,
+    // Small, cheap, low-stakes — the archetype most worth locking down as steady, low-attention
+    // income (D2).
+    repeatRange: [0, 3],
   },
   batch: {
     id: 'batch',
@@ -288,6 +300,8 @@ export const WORKLOAD_ARCHETYPES: Record<WorkloadArchetypeId, WorkloadArchetypeD
     minReputation: 20,
     scales: true,
     offerSeconds: 18,
+    penaltyOnMiss: 40,
+    repeatRange: [0, 2],
   },
   render: {
     id: 'render',
@@ -305,6 +319,10 @@ export const WORKLOAD_ARCHETYPES: Record<WorkloadArchetypeId, WorkloadArchetypeD
     minReputation: 40,
     scales: true,
     offerSeconds: 16,
+    penaltyOnMiss: 100,
+    // Occasionally recurring, never more than one extra cycle — a locked storage-heavy slot
+    // is expensive capacity to commit for long.
+    repeatRange: [0, 1],
   },
   training: {
     id: 'training',
@@ -320,6 +338,10 @@ export const WORKLOAD_ARCHETYPES: Record<WorkloadArchetypeId, WorkloadArchetypeD
     minReputation: 60,
     scales: true,
     offerSeconds: 15,
+    penaltyOnMiss: 330,
+    // Highest stakes, one-shot only — a recurring training contract would lock down the
+    // facility's scarcest capacity indefinitely.
+    repeatRange: [0, 0],
   },
 };
 
@@ -341,11 +363,28 @@ export const DECOMMISSION_SECONDS = 2.0;
 // would otherwise show a nonzero cost for no benefit. See rack-panel button visibility, Step 6.
 export const REPAIRABLE_WEAR_THRESHOLD = 0.02;
 
+// Recurring offers pay less per second than a one-shot offer of the same archetype/scale — the
+// player is trading rate for certainty (D2). Applied once, in spawnOffer, when a rolled
+// repeatCount is nonzero.
+export const RECURRING_PAY_MULTIPLIER = 0.85;
+
 export const REPUTATION_ON_MISSED_DEADLINE = -8; // renamed from REPUTATION_ON_EXPIRY (D2)
 export const REPUTATION_ON_COMPLETION = 3;
-export const REPUTATION_ON_DECLINE = 0; // declining is free — see the D-note in the plan
+// .plans/contract-variety.md step 3: was 0 ("declining is free") back when accepting had no
+// downside beyond opportunity cost — the D-note this used to cite argued zero was correct only
+// in that world. Now that accepting carries penaltyOnMiss (D1), a flat -1 gives pure
+// cherry-picking (decline everything but the best offers, forever) a real cost via
+// getArrivalInterval, without making any single well-reasoned decline — e.g. a no-fit
+// offer — a meaningful hit on its own. A silent EXPIRY (createOfferExpirySystem in
+// workload-spawn.ts) is not this: it never calls declineOffer, so an ignored offer still costs
+// nothing, per D1's "never punish the player for a decision they did not make."
+export const REPUTATION_ON_DECLINE = -1;
 export const MAX_OFFERS = 3; // concurrent offers on screen
 export const BROWNOUT_COOLDOWN_SECONDS = 1.0;
+
+export function clampReputation(value: number): number {
+  return Math.max(0, Math.min(100, value));
+}
 
 export function getArrivalInterval(elapsedSeconds: number, reputation: number): number {
   return (14 - Math.min(8, elapsedSeconds / 45)) * (1.6 - (reputation / 100) * 0.8);
