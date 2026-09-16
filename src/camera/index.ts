@@ -1,4 +1,11 @@
-import { WORLD_WIDTH, WORLD_HEIGHT, CAMERA_PAN_SPEED, CAMERA_FOLLOW_EASE } from '../ecs/game-data';
+import {
+  WORLD_WIDTH,
+  WORLD_HEIGHT,
+  CAMERA_PAN_SPEED,
+  CAMERA_FOLLOW_EASE,
+  CAMERA_ZOOM_MIN,
+  CAMERA_ZOOM_MAX,
+} from '../ecs/game-data';
 import { type InputState } from '../input';
 import { getGameViewportRect } from '../ui/layout';
 
@@ -10,6 +17,17 @@ export interface Point {
 export interface Camera {
   x: number;
   y: number;
+  scale: number;
+  // Whether the camera is currently manually panned away from following the controlled entity
+  // (WASD, or a drag on the floor — see .plans/mobile-touch-support.md D3). Read-only from the
+  // outside; only `pan`/`recenter`/WASD panning inside `update` change it.
+  readonly detached: boolean;
+  // Manual pan in world units — sets `detached`, same as WASD panning. Used by
+  // ecs/systems/camera.ts for drag-to-pan (the touch equivalent of WASD, since a touchscreen has
+  // no keyboard).
+  pan(dxWorld: number, dyWorld: number): void;
+  // Resumes following the controlled entity — the touch/UI equivalent of pressing Space.
+  recenter(): void;
   worldToScreen(p: Point): Point;
   screenToWorld(p: Point): Point;
   applyTransform(ctx: CanvasRenderingContext2D): void;
@@ -34,13 +52,10 @@ function clampAxis(value: number, viewportSize: number, worldSize: number): numb
 export function createCamera(input: InputState): Camera {
   let x = 0;
   let y = 0;
-  // WASD panning suspends follow until the player presses space to re-center — otherwise the
-  // two would fight every frame.
+  let scale = 1;
+  // WASD panning (and, on touch, dragging the floor — see ecs/systems/camera.ts) suspends
+  // follow until the player recenters — otherwise pan/drag and follow would fight every frame.
   let detached = false;
-
-  input.onKeyDown(' ', () => {
-    detached = false;
-  });
 
   const camera: Camera = {
     get x() {
@@ -55,20 +70,45 @@ export function createCamera(input: InputState): Camera {
     set y(value: number) {
       y = value;
     },
+    get scale() {
+      return scale;
+    },
+    set scale(value: number) {
+      scale = value;
+    },
+    get detached() {
+      return detached;
+    },
+    pan(dxWorld: number, dyWorld: number): void {
+      detached = true;
+      x += dxWorld;
+      y += dyWorld;
+    },
+    recenter(): void {
+      detached = false;
+    },
+    // (world - camera) * scale — the inverse of screenToWorld below, and the same math
+    // applyTransform sets up on the canvas context (scale, then translate by -camera).
     worldToScreen(p: Point): Point {
-      return { x: p.x - x, y: p.y - y };
+      return { x: (p.x - x) * scale, y: (p.y - y) * scale };
     },
     screenToWorld(p: Point): Point {
-      return { x: p.x + x, y: p.y + y };
+      return { x: p.x / scale + x, y: p.y / scale + y };
     },
     applyTransform(ctx: CanvasRenderingContext2D): void {
       ctx.save();
+      ctx.scale(scale, scale);
       ctx.translate(-x, -y);
     },
     resetTransform(ctx: CanvasRenderingContext2D): void {
       ctx.restore();
     },
     update(deltaSeconds: number, target: Point, canvas: HTMLCanvasElement, inputState: InputState): void {
+      const zoomDelta = inputState.getZoomDelta();
+      if (zoomDelta !== 0) {
+        scale = Math.min(Math.max(scale + zoomDelta, CAMERA_ZOOM_MIN), CAMERA_ZOOM_MAX);
+      }
+
       let panDx = 0;
       let panDy = 0;
 
@@ -87,10 +127,12 @@ export function createCamera(input: InputState): Camera {
       } else if (!detached) {
         // Center the target within the HUD-safe viewport, not the raw canvas — otherwise the
         // top bar and side panels permanently cover whatever world content falls under them
-        // (see .plans/facility-shop-inventory.md).
-        const viewport = getGameViewportRect(canvas.width, canvas.height);
-        const desiredX = target.x - viewport.x - viewport.width / 2;
-        const desiredY = target.y - viewport.y - viewport.height / 2;
+        // (see .plans/facility-shop-inventory.md). The viewport rect is screen-space (HUD chrome
+        // doesn't scale with zoom), so its anchor is divided by `scale` to land back in world
+        // units before comparing against `target`, which is already world-space.
+        const viewport = getGameViewportRect(canvas.clientWidth, canvas.clientHeight);
+        const desiredX = target.x - (viewport.x + viewport.width / 2) / scale;
+        const desiredY = target.y - (viewport.y + viewport.height / 2) / scale;
         const ease = 1 - Math.exp(-CAMERA_FOLLOW_EASE * deltaSeconds);
         x += (desiredX - x) * ease;
         y += (desiredY - y) * ease;
@@ -98,12 +140,22 @@ export function createCamera(input: InputState): Camera {
 
       // Clamp so the SAFE VIEWPORT's world-space extent (not the raw canvas's) stays within
       // world bounds — x/y are the world coordinate at screen (0,0), so the viewport's visible
-      // slice is offset by viewport.x/y from that.
-      const viewport = getGameViewportRect(canvas.width, canvas.height);
-      x = clampAxis(x + viewport.x, viewport.width, WORLD_WIDTH) - viewport.x;
-      y = clampAxis(y + viewport.y, viewport.height, WORLD_HEIGHT) - viewport.y;
+      // slice is offset by viewport.x/y from that. Both the offset and the extent are screen-space
+      // (raw canvas pixels) and must be divided by `scale` to become world-space before clamping,
+      // same reasoning as the follow-target calc above.
+      const viewport = getGameViewportRect(canvas.clientWidth, canvas.clientHeight);
+      const viewportWorldX = viewport.x / scale;
+      const viewportWorldY = viewport.y / scale;
+      const viewportWorldWidth = viewport.width / scale;
+      const viewportWorldHeight = viewport.height / scale;
+      x = clampAxis(x + viewportWorldX, viewportWorldWidth, WORLD_WIDTH) - viewportWorldX;
+      y = clampAxis(y + viewportWorldY, viewportWorldHeight, WORLD_HEIGHT) - viewportWorldY;
     },
   };
+
+  input.onKeyDown(' ', () => {
+    camera.recenter();
+  });
 
   return camera;
 }

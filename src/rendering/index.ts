@@ -1,8 +1,19 @@
 export interface Renderer {
   readonly canvas: HTMLCanvasElement;
   readonly context: CanvasRenderingContext2D;
+  // Logical (CSS-pixel) canvas size — what every layout/hit-test function in ui/layout.ts
+  // expects, and NOT the same as canvas.width/height once devicePixelRatio scaling is applied
+  // below (see .plans/mobile-touch-support.md D5). Always mirrors canvas.clientWidth/Height.
+  readonly width: number;
+  readonly height: number;
   clear(): void;
 }
+
+// Caps how far the backing buffer scales up on very high-DPR devices — a 2D canvas this
+// drawing-call-heavy (HUD text, panels, the floor) redraws every frame, and pixel count grows
+// with the square of the cap, so an uncapped devicePixelRatio (3 or more on some phones) would
+// cost real frame time for sharpness beyond what's visibly distinguishable.
+const MAX_DEVICE_PIXEL_RATIO = 2;
 
 export function createRenderer(canvas: HTMLCanvasElement): Renderer {
   const context = canvas.getContext('2d');
@@ -10,18 +21,33 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
     throw new Error('Failed to acquire 2D rendering context');
   }
 
+  // Backing-buffer resolution matches devicePixelRatio (capped) so text/lines stay sharp on
+  // high-DPI screens — every current phone/tablet — instead of being upscaled blurry by the
+  // browser (see .plans/mobile-touch-support.md D5). setTransform (not scale) so a resize later
+  // in the session never compounds the dpr factor onto itself. Every drawing call elsewhere
+  // keeps working in CSS-pixel coordinates — this is the one place that changes.
   function resize(): void {
-    canvas.width = canvas.clientWidth;
-    canvas.height = canvas.clientHeight;
+    const dpr = Math.min(window.devicePixelRatio || 1, MAX_DEVICE_PIXEL_RATIO);
+    canvas.width = canvas.clientWidth * dpr;
+    canvas.height = canvas.clientHeight * dpr;
+    context!.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
   window.addEventListener('resize', resize);
+  // Some mobile browsers don't fire a timely 'resize' on rotation.
+  window.addEventListener('orientationchange', resize);
   resize();
 
   return {
     canvas,
     context,
+    get width() {
+      return canvas.clientWidth;
+    },
+    get height() {
+      return canvas.clientHeight;
+    },
     clear() {
-      context.clearRect(0, 0, canvas.width, canvas.height);
+      context.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
     },
   };
 }
