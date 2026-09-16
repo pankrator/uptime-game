@@ -37,7 +37,8 @@ Systems run in this order every tick; several depend on it (noted below):
 8. `capacity` — recomputes free capacity per server/rack/facility (must run after `resource`, before `workload-run`)
 9. `workload-spawn` — spawns new offers, ticks offer expiry
 10. `workload-run` — advances placed workloads, pays out, resolves completion/deadline miss (must run after `capacity`)
-11. `tutorial` — advances the guided-tutorial step (must run last: reads this frame's mutations from every system above)
+11. `effects` — expires `FloatingText`/`Toast` entities spawned by `resource`/`workload-run` (timestamp-based, no ordering dependency)
+12. `tutorial` — advances the guided-tutorial step (must run last: reads this frame's mutations from every system above)
 
 **`renderSystems`** (presentation only, skipped when tab hidden):
 1. `camera` — eases camera toward the player
@@ -57,6 +58,7 @@ Systems run in this order every tick; several depend on it (noted below):
 - [capacity](./capacity.md) — derived per-server/per-rack/facility free-capacity cache
 - [workload-spawn](./workload-spawn.md) — offer arrival cadence and offer expiry
 - [workload-run](./workload-run.md) — ticks placed/unplaced workloads: payout, completion, deadline miss
+- [effects](./effects.md) — floating text / toast banners: spawn-where-it-happens, expire centrally
 - [render](./render.md) — all Canvas drawing of the floor, racks, panels, build UI (presentation only)
 - [hud](./hud.md) — top bar, workload panel, offers panel (presentation only)
 - [tutorial](./tutorial.md) — first-time guided-tutorial step advance (banner drawn by hud.ts)

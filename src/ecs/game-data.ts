@@ -240,7 +240,16 @@ export const PURCHASABLES: PurchasableDef[] = [
 export const STARTING_MONEY = 750;
 export const STARTING_POWER_KW = 3;
 export const STARTING_COOLING_KW = 3;
-export const STARTING_REPUTATION = 50;
+// Was 50 — at that reputation, `pickArchetype`'s minReputation filter (workload-spawn.ts)
+// already unlocks batch (20) and render (40) alongside web (0), and its index-weighted roll
+// favors the LATEST-unlocked archetype most heavily (weight = 1 + index within the eligible
+// list) — so a fresh facility on its 2x-Budget-Box starting hardware saw Render Farm (needs 6
+// CPU / 20 GB / 800 GB storage, nothing the starting hardware holds) roughly half the time.
+// See .plans/playtest-findings.md F2: "83% of opening offers cannot run on the hardware the
+// game hands you." 10 keeps only web (minReputation 0) eligible at the start — every offer in
+// the opening minute is guaranteed servable — and ~4 completed web contracts
+// (REPUTATION_ON_COMPLETION = 3 each) unlocks batch from there.
+export const STARTING_REPUTATION = 10;
 
 export type WorkloadArchetypeId = 'web' | 'batch' | 'render' | 'training';
 
@@ -415,8 +424,39 @@ export const REPUTATION_ON_COMPLETION = 3;
 // workload-spawn.ts) is not this: it never calls declineOffer, so an ignored offer still costs
 // nothing, per D1's "never punish the player for a decision they did not make."
 export const REPUTATION_ON_DECLINE = -1;
+// .plans/playtest-findings.md F3: "no way to abandon" an accepted-but-doomed contract meant it
+// just sat in the tray draining toward a full miss (REPUTATION_ON_MISSED_DEADLINE, 100% of
+// penaltyOnMiss). Abandoning (dispatch.ts's abandonWorkload) costs more than an up-front
+// decline — you already committed the capacity/attention a decline never spends — but strictly
+// less than letting it rot into a miss, so cutting losses early is always the better move once
+// a contract is clearly unservable.
+export const ABANDON_REPUTATION_COST = -4; // between REPUTATION_ON_DECLINE and a full miss's -8
+export const ABANDON_PENALTY_FRACTION = 0.5; // of penaltyOnMiss, vs. 100% on an actual miss
 export const MAX_OFFERS = 3; // concurrent offers on screen
 export const BROWNOUT_COOLDOWN_SECONDS = 1.0;
+// .plans/playtest-findings.md F4: a brownout/thermal-trip used to drop every workload on the
+// affected server straight back to the tray with no memory of where it had been running,
+// forcing a walk-there-and-re-drag even for a capacity dip that resolves itself a tick later.
+// resource.ts's unplaceAllOn now tags each unplaced workload with the server it came from; if
+// that SAME server comes back online again within this window, resource.ts re-places it there
+// automatically. Generous enough to smooth over a brief power/cooling squeeze (the actual
+// self-recovery path — BROWNOUT_COOLDOWN_SECONDS, or thermal's own hysteresis) without reading
+// as free insurance against a real, sustained shortage.
+export const BROWNOUT_RESTORE_GRACE_SECONDS = 10;
+// F4's other half — "warn before the brownout." Fires a one-shot toast (see effects.ts) the
+// first tick draw crosses this fraction of capacity, before anything is actually taken
+// offline; RESOURCE_WARNING_CLEAR_FRACTION is the lower hysteresis line draw must fall back
+// under before the SAME warning can fire again, so a draw hovering right at the line doesn't
+// spam a toast every tick.
+export const RESOURCE_WARNING_FRACTION = 0.9;
+export const RESOURCE_WARNING_CLEAR_FRACTION = 0.75;
+// .plans/playtest-findings.md F5: power was billed on draw whether or not a machine was doing
+// anything, so an idle Blade Chassis cost more per second than a completed Web Hosting
+// contract paid in total — buying capacity ahead of demand (the fun part of a tycoon game) was
+// strictly punished. An ONLINE machine with nothing PLACED on it now draws this fraction of its
+// full power/cooling instead of the full amount — see resource.ts's drawFor (also reused by
+// capacity.ts for the rack panel's own draw readout, so the two never disagree).
+export const IDLE_POWER_FRACTION = 0.35;
 
 export function clampReputation(value: number): number {
   return Math.max(0, Math.min(100, value));

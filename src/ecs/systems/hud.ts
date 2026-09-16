@@ -20,6 +20,8 @@ import {
   rackSlots,
   gridPositions,
   faileds,
+  acceptConfirms,
+  toasts,
   type Workload,
   type Offer,
 } from '../components';
@@ -40,6 +42,7 @@ import {
   getTutorialSkipRect,
   HUD_PANEL_MAX_ROWS,
   HUD_PANEL_MARGIN,
+  getToastRect,
 } from '../../ui/layout';
 import { isTutorialActionStep, getTutorialStepDef } from './tutorial';
 import { type Audio } from '../../audio';
@@ -470,8 +473,10 @@ function drawWorkloadPanel(world: World, renderer: Renderer, facility: EntityId)
 
 // Whether ANY online, installed server currently has enough free capacity for these demands —
 // used to dim an offer the player can't currently serve. Informative, not blocking: they may
-// be about to install a bigger box, so the offer stays acceptable either way.
-function anyServerFits(world: World, demands: Offer['demands']): boolean {
+// be about to install a bigger box, so the offer stays acceptable either way. Exported so
+// input.ts's accept-confirm gate (.plans/playtest-findings.md F3) uses this exact same check
+// rather than a second, possibly-diverging one.
+export function anyServerFits(world: World, demands: Offer['demands']): boolean {
   return world.query(machines, installedIns, powereds, serverCapacities).some((id) => {
     if (!world.getComponent(powereds, id)!.online) return false;
     const capacity = world.getComponent(serverCapacities, id)!;
@@ -479,7 +484,13 @@ function anyServerFits(world: World, demands: Offer['demands']): boolean {
   });
 }
 
-function drawOfferCard(world: World, renderer: Renderer, offer: Offer): void {
+function drawOfferCard(
+  world: World,
+  renderer: Renderer,
+  offerId: EntityId,
+  offer: Offer,
+  controlled: EntityId,
+): void {
   const ctx = renderer.context;
   const card = getOfferCardRect(offer.slot);
   const archetype = WORKLOAD_ARCHETYPES[offer.archetypeId];
@@ -553,15 +564,26 @@ function drawOfferCard(world: World, renderer: Renderer, offer: Offer): void {
     ctx.globalAlpha = cardAlpha;
   }
 
+  // .plans/playtest-findings.md F3: an unservable offer's Accept button shows a "Confirm?" state
+  // once AcceptConfirm is set for THIS offer (input.ts) — the same "second click on the same
+  // button, within a window" shape as DecommissionConfirm's own visual.
+  const acceptConfirm = world.getComponent(acceptConfirms, controlled);
+  const confirmingAccept =
+    !servable && acceptConfirm?.offerId === offerId && performance.now() < acceptConfirm.expiresAtMs;
+
   const acceptRect = getOfferButtonRect(offer.slot, 'accept');
-  ctx.fillStyle = '#2f6f4f';
+  ctx.fillStyle = confirmingAccept ? '#6f3a2f' : '#2f6f4f';
   ctx.fillRect(acceptRect.x, acceptRect.y, acceptRect.width, acceptRect.height);
-  ctx.strokeStyle = GREEN;
+  ctx.strokeStyle = confirmingAccept ? AMBER : GREEN;
   ctx.strokeRect(acceptRect.x, acceptRect.y, acceptRect.width, acceptRect.height);
   ctx.fillStyle = TEXT_COLOR;
   ctx.font = '11px sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('Accept', acceptRect.x + acceptRect.width / 2, acceptRect.y + acceptRect.height / 2);
+  ctx.fillText(
+    confirmingAccept ? 'Confirm ×' : 'Accept',
+    acceptRect.x + acceptRect.width / 2,
+    acceptRect.y + acceptRect.height / 2,
+  );
 
   const declineRect = getOfferButtonRect(offer.slot, 'decline');
   ctx.fillStyle = '#3a3f47';
@@ -575,13 +597,44 @@ function drawOfferCard(world: World, renderer: Renderer, offer: Offer): void {
   ctx.textAlign = 'left';
 }
 
-function drawOffersPanel(world: World, renderer: Renderer): void {
+function drawOffersPanel(world: World, renderer: Renderer, controlled: EntityId): void {
   // Each offer carries its own stable slot (see Offer.slot) — no positional indexing here, so
   // an earlier offer expiring doesn't shift a later one's card into a different slot mid-read.
   for (const offerId of world.query(offers)) {
     const offer = world.getComponent(offers, offerId)!;
-    drawOfferCard(world, renderer, offer);
+    drawOfferCard(world, renderer, offerId, offer, controlled);
   }
+}
+
+// Toast stack (F4/F7) — stacked in spawn order, newest at the bottom (offers/hud precedent is
+// top-to-bottom for stable-slotted content; toasts have no slot, so spawn order is the only
+// stable ordering). Fades over the back half of its lifetime rather than a hard cutoff.
+function drawToasts(world: World, renderer: Renderer): void {
+  const ctx = renderer.context;
+  const now = performance.now();
+  const ids = world.query(toasts).sort((a, b) => a - b);
+
+  ids.forEach((id, index) => {
+    const toast = world.getComponent(toasts, id)!;
+    const rect = getToastRect(index, renderer.width);
+    const total = toast.expiresAtMs - toast.spawnedAtMs;
+    const remaining = toast.expiresAtMs - now;
+    const alpha = total > 0 ? Math.min(1, Math.max(0, remaining / (total * 0.4))) : 1;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = 'rgba(20, 22, 25, 0.95)';
+    ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+    ctx.strokeStyle = toast.color;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = TEXT_COLOR;
+    ctx.fillText(toast.text, rect.x + rect.width / 2, rect.y + rect.height / 2, rect.width - 16);
+    ctx.restore();
+  });
 }
 
 // Guided-tutorial banner — a persistent overlay above everything else HUD draws (drawn last),
@@ -657,14 +710,16 @@ export function createHudSystem(
   facility: EntityId,
   audio: Audio,
   camera: Camera,
+  controlled: EntityId,
 ): System {
   return {
     update() {
       drawTopBar(world, renderer, facility);
       drawMuteButton(renderer, audio);
       drawRecenterButton(renderer, camera);
-      drawOffersPanel(world, renderer);
+      drawOffersPanel(world, renderer, controlled);
       drawWorkloadPanel(world, renderer, facility);
+      drawToasts(world, renderer);
       drawTutorialBanner(world, renderer, facility);
     },
   };

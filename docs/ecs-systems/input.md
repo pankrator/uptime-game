@@ -29,11 +29,15 @@ Then, only if `wasClicked()` (and not already consumed by a drag), in strict ord
 -1. Mute button (`getMuteButtonRect`) — always reachable, checked before anything else can
    swallow the click. See [audio](./audio.md).
 0. Offer accept/decline buttons (checked before general HUD-blocking, since offer cards
-   live inside the HUD but must not be swallowed by an in-progress install or build mode)
+   live inside the HUD but must not be swallowed by an in-progress install or build mode).
+   Accepting an offer nothing currently fits requires a second click within a window to
+   confirm (`AcceptConfirm`, same "second click on the same button" shape as
+   `DecommissionConfirm` below) — see `.plans/playtest-findings.md` F3.
 1. `pointerInHud` check — HUD-region clicks otherwise fall through to nothing
 2. Install task active → any click cancels + refunds to inventory (`cancelInstallTask`)
 3. Rack panel visible (viewing, or dispatching-and-arrived) → **absorbs every click**
-   except its close button (full-screen modal)
+   except its close button, repair/decommission buttons, and each tray card's small
+   abandon-contract button (`dispatch.ts`'s `abandonWorkload` — F3) (full-screen modal)
 4. Shop panel open → **absorbs every click**: close button, category tabs, buy buttons
 5. Build panel entry hit → toggles that buildable's build mode
 6. Build mode active → place a rack (`'empty-cell'`) or start an install
@@ -56,3 +60,8 @@ path, and attaches it as a `PathFollow`.
   the build panel would swallow input incorrectly.
 - See [rack-panel](./rack-panel.md) for why drag/click ownership is centralized here
   rather than split across systems.
+- `src/input/index.ts`'s `InputState.getPointerPosition()` now also tracks continuous
+  mouse-hover position (no button held) — previously it only updated during an active
+  press/drag, so `getPointerPosition()` returned stale/null between clicks. Needed for
+  [render](./render.md)'s hover-gated rack labels (F8); does not change press/click/drag
+  behavior, since it only fires when no primary pointer is currently down.
