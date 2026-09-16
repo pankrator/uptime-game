@@ -34,6 +34,7 @@ import {
   type PurchasableId,
 } from '../ecs/game-data';
 import { scaleTraits, zeroTraits } from '../ecs/traits';
+import { acceptOffer, placeWorkload } from '../ecs/dispatch';
 
 const FIRST_ARRIVAL_SECONDS = 15;
 
@@ -133,4 +134,70 @@ export function spawnOffer(world: World, archetypeId: WorkloadArchetypeId, scale
     secondsRemaining: archetype.offerSeconds,
   });
   return id;
+}
+
+// Dev-only shortcut (see landing/index.ts's DEV-gated "big setup" button) for testing a
+// built-out facility without grinding to it — built entirely from the same spawn/dispatch
+// helpers a real playthrough hits, just compressed into one call, so it can't drift from the
+// real economy rules (costs, capacity, fit checks).
+const STRESS_ROOM_TIER_INDEX = 2; // ROOM_TIERS[2] = 'medium-room' (15x10)
+const STRESS_MONEY = 12000;
+const STRESS_POWER_KW = 40;
+const STRESS_COOLING_KW = 40;
+
+// Two rows of racks with an aisle between and around them, inside medium-room's bounds
+// (ROOM_ORIGIN.gridX=1..15, gridY=6..15 — see room.ts/game-data.ts).
+const STRESS_RACK_POSITIONS: { gridX: number; gridY: number }[] = [
+  { gridX: 3, gridY: 8 },
+  { gridX: 6, gridY: 8 },
+  { gridX: 9, gridY: 8 },
+  { gridX: 12, gridY: 8 },
+  { gridX: 3, gridY: 12 },
+  { gridX: 6, gridY: 12 },
+  { gridX: 9, gridY: 12 },
+  { gridX: 12, gridY: 12 },
+];
+
+const STRESS_MACHINE_TIERS: MachineTierId[] = ['basic', 'dense', 'storage', 'memory'];
+const STRESS_MACHINES_PER_RACK = 3;
+
+// archetype -> tier pairing chosen so each contract comfortably fits the server it's placed on
+// (see MACHINE_TIERS/WORKLOAD_ARCHETYPES in game-data.ts) without needing a fit check here.
+const STRESS_RUNNING_CONTRACTS: { archetypeId: WorkloadArchetypeId; tierId: MachineTierId }[] = [
+  { archetypeId: 'web', tierId: 'basic' },
+  { archetypeId: 'batch', tierId: 'dense' },
+  { archetypeId: 'render', tierId: 'storage' },
+  { archetypeId: 'training', tierId: 'memory' },
+];
+
+const STRESS_PENDING_OFFERS: WorkloadArchetypeId[] = ['web', 'batch'];
+
+export function applyStressPreset(world: World, facility: EntityId): void {
+  world.addComponent(roomTiers, facility, { index: STRESS_ROOM_TIER_INDEX });
+  world.addComponent(wallets, facility, { money: STRESS_MONEY });
+  world.addComponent(powerCapacities, facility, { kw: STRESS_POWER_KW });
+  world.addComponent(coolingCapacities, facility, { kw: STRESS_COOLING_KW });
+
+  const firstMachineByTier = new Map<MachineTierId, EntityId>();
+  STRESS_RACK_POSITIONS.forEach(({ gridX, gridY }, rackIndex) => {
+    const rackId = spawnRack(world, gridX, gridY);
+    for (let slotIndex = 0; slotIndex < STRESS_MACHINES_PER_RACK; slotIndex++) {
+      const tierId =
+        STRESS_MACHINE_TIERS[(rackIndex * STRESS_MACHINES_PER_RACK + slotIndex) % STRESS_MACHINE_TIERS.length];
+      const machineId = spawnMachine(world, rackId, tierId, slotIndex);
+      if (!firstMachineByTier.has(tierId)) firstMachineByTier.set(tierId, machineId);
+    }
+  });
+
+  for (const { archetypeId, tierId } of STRESS_RUNNING_CONTRACTS) {
+    const serverId = firstMachineByTier.get(tierId);
+    if (!serverId) continue;
+    const offerId = spawnOffer(world, archetypeId, 1);
+    const workloadId = acceptOffer(world, offerId);
+    placeWorkload(world, workloadId, serverId);
+  }
+
+  for (const archetypeId of STRESS_PENDING_OFFERS) {
+    spawnOffer(world, archetypeId, 1);
+  }
 }

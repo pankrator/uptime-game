@@ -19,7 +19,7 @@ import { createRenderSystem } from './ecs/systems/render';
 import { createHudSystem } from './ecs/systems/hud';
 import { createCameraSystem } from './ecs/systems/camera';
 import { createTutorialSystem, startTutorial } from './ecs/systems/tutorial';
-import { spawnPlayer, spawnFacility } from './entities';
+import { spawnPlayer, spawnFacility, applyStressPreset } from './entities';
 import { getRoomRect } from './ecs/room';
 import { gridToWorld } from './ecs/components';
 import { showLanding, hideLanding } from './landing';
@@ -35,13 +35,23 @@ if (!landingContainer) {
   throw new Error('Landing element #landing not found');
 }
 
-showLanding(landingContainer, () => {
-  hideLanding(landingContainer);
-  canvas.hidden = false;
-  runGame(canvas);
-});
+showLanding(
+  landingContainer,
+  () => {
+    hideLanding(landingContainer);
+    canvas.hidden = false;
+    runGame(canvas, false);
+  },
+  import.meta.env.DEV
+    ? () => {
+        hideLanding(landingContainer);
+        canvas.hidden = false;
+        runGame(canvas, true);
+      }
+    : undefined,
+);
 
-function runGame(canvas: HTMLCanvasElement): void {
+function runGame(canvas: HTMLCanvasElement, stressPreset: boolean): void {
   const renderer = createRenderer(canvas);
   const input = createInput(canvas);
   const state = createGameState();
@@ -50,6 +60,11 @@ function runGame(canvas: HTMLCanvasElement): void {
   const audio = createAudio();
 
   const facility = spawnFacility(world);
+  if (stressPreset) {
+    // Must run before the room-center spawn point is computed below — it grows the room past
+    // the default closet tier, and the racks it places sit inside that larger room.
+    applyStressPreset(world, facility);
+  }
   const room = getRoomRect(world, facility);
   const spawnPoint = gridToWorld(
     Math.floor((room.minGridX + room.maxGridX) / 2),

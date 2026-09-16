@@ -1,6 +1,13 @@
 // Pre-game landing screen: plain DOM/CSS, not canvas — it exists entirely before the ECS
 // world/game loop starts, so it isn't a "game entity" the render system needs to own.
-export function showLanding(container: HTMLElement, onStart: () => void): void {
+//
+// onStartStress is optional and caller-gated (main.ts only passes it in dev builds) — the
+// landing module itself stays free of env checks so it's usable/testable on its own.
+export function showLanding(
+  container: HTMLElement,
+  onStart: () => void,
+  onStartStress?: () => void,
+): void {
   container.innerHTML = '';
   container.className = 'landing';
 
@@ -35,6 +42,16 @@ export function showLanding(container: HTMLElement, onStart: () => void): void {
   panel.appendChild(logo);
   panel.appendChild(tagline);
   panel.appendChild(startButton);
+
+  if (onStartStress) {
+    const stressButton = document.createElement('button');
+    stressButton.type = 'button';
+    stressButton.className = 'landing-start-stress';
+    stressButton.textContent = 'DEV: START WITH BIG SETUP';
+    stressButton.addEventListener('click', onStartStress);
+    panel.appendChild(stressButton);
+  }
+
   container.appendChild(panel);
 
   startButton.focus();
