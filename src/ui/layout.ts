@@ -1,4 +1,5 @@
 import { BUILDABLES } from '../ecs/components';
+import { MAX_OFFERS } from '../ecs/game-data';
 
 export const BUILD_PANEL_MARGIN = 12;
 export const BUILD_PANEL_ENTRY_WIDTH = 120;
@@ -21,10 +22,14 @@ export function pointerInRect(point: { x: number; y: number }, rect: Rect): bool
   );
 }
 
+// Total height of the build panel's stacked entries — shared with getTutorialBannerRect below,
+// which anchors above this panel rather than risk overlapping it.
+function getBuildPanelHeight(): number {
+  return BUILDABLES.length * BUILD_PANEL_ENTRY_HEIGHT + (BUILDABLES.length - 1) * BUILD_PANEL_ENTRY_GAP;
+}
+
 export function getBuildPanelEntryRect(index: number, canvasHeight: number): Rect {
-  const totalHeight =
-    BUILDABLES.length * BUILD_PANEL_ENTRY_HEIGHT + (BUILDABLES.length - 1) * BUILD_PANEL_ENTRY_GAP;
-  const startY = canvasHeight - BUILD_PANEL_MARGIN - totalHeight;
+  const startY = canvasHeight - BUILD_PANEL_MARGIN - getBuildPanelHeight();
   return {
     x: BUILD_PANEL_MARGIN,
     y: startY + index * (BUILD_PANEL_ENTRY_HEIGHT + BUILD_PANEL_ENTRY_GAP),
@@ -87,25 +92,37 @@ export function getWorkloadRowRect(index: number, canvasWidth: number, rowCount:
 // Offers panel — up to MAX_OFFERS cards, stacked below the top HUD bar on the LEFT (the
 // workload panel above occupies the right), each with its own Accept/Decline hit rects. See
 // .plans/workload-dispatch.md step 5.
+//
+// `index` below is really a stable SLOT (0..MAX_OFFERS-1), assigned to an offer once at spawn
+// (see entities.ts's spawnOffer / Offer.slot) and kept for that offer's whole lifetime — not
+// its position in a sorted-by-id array. Positional indexing used to make every other card
+// shift up (and the pointer land on the wrong card) the instant an earlier offer expired; see
+// .plans/playtest-findings.md F6.
+//
+// Tall enough for title/countdown, demands, pay, and — only on an unservable offer — a "no
+// server fits this" warning line above the buttons (see hud.ts's drawOfferCard and
+// .plans/playtest-findings.md B2: that warning used to be drawn UNDER the Accept button).
+// Servable cards just leave that line's space blank, same as a pending workload row always
+// reserving its shortfall line whether or not there's a shortfall to show.
 export const OFFER_CARD_WIDTH = 220;
-export const OFFER_CARD_HEIGHT = 76;
+export const OFFER_CARD_HEIGHT = 96;
 export const OFFER_CARD_GAP = 8;
 export const OFFER_BUTTON_HEIGHT = 22;
 export const OFFER_BUTTON_GAP = 6;
 
 // Left-anchored, fixed width — unlike the workload panel (right-anchored, sized to canvas
 // width), so neither function needs a canvasWidth parameter.
-export function getOfferCardRect(index: number): Rect {
+export function getOfferCardRect(slot: number): Rect {
   return {
     x: HUD_PANEL_MARGIN,
-    y: HUD_BAR_HEIGHT + HUD_PANEL_MARGIN + index * (OFFER_CARD_HEIGHT + OFFER_CARD_GAP),
+    y: HUD_BAR_HEIGHT + HUD_PANEL_MARGIN + slot * (OFFER_CARD_HEIGHT + OFFER_CARD_GAP),
     width: OFFER_CARD_WIDTH,
     height: OFFER_CARD_HEIGHT,
   };
 }
 
-export function getOfferButtonRect(index: number, kind: 'accept' | 'decline'): Rect {
-  const card = getOfferCardRect(index);
+export function getOfferButtonRect(slot: number, kind: 'accept' | 'decline'): Rect {
+  const card = getOfferCardRect(slot);
   const buttonWidth = (card.width - HUD_PANEL_MARGIN - OFFER_BUTTON_GAP) / 2;
   const x = kind === 'accept' ? card.x + HUD_PANEL_MARGIN / 2 : card.x + card.width / 2 + OFFER_BUTTON_GAP / 2;
   return {
@@ -116,9 +133,14 @@ export function getOfferButtonRect(index: number, kind: 'accept' | 'decline'): R
   };
 }
 
-function getOffersPanelRect(offerCount: number): Rect {
-  const count = Math.max(offerCount, 0);
-  const height = count === 0 ? 0 : count * OFFER_CARD_HEIGHT + (count - 1) * OFFER_CARD_GAP;
+// Always the full MAX_OFFERS-slot column, regardless of how many offers are currently alive —
+// same "generous upper bound" reasoning as getWorkloadPanelRect's HUD_PANEL_MAX_ROWS use below.
+// Sizing this to the live offer COUNT (as it used to) assumed offers always occupy a contiguous
+// run of slots starting at 0, which stable per-offer slots (see getOfferCardRect) no longer
+// guarantee — an offer alive only in slot 2 needs slot 2's card blocked, not a slot-0-sized
+// rect that happens to hold the same count.
+function getOffersPanelRect(): Rect {
+  const height = MAX_OFFERS * OFFER_CARD_HEIGHT + (MAX_OFFERS - 1) * OFFER_CARD_GAP;
   return {
     x: HUD_PANEL_MARGIN,
     y: HUD_BAR_HEIGHT + HUD_PANEL_MARGIN,
@@ -459,7 +481,6 @@ export function pointerInHud(
   point: { x: number; y: number },
   canvas: HTMLCanvasElement,
   offerCount = 0,
-  tutorialBannerVisible = false,
 ): boolean {
   if (pointerInRect(point, getHudBarRect(canvas.width))) return true;
 
@@ -469,45 +490,57 @@ export function pointerInHud(
   const panelRect = getWorkloadPanelRect(canvas.width, HUD_PANEL_MAX_ROWS * 2 + 1);
   if (pointerInRect(point, panelRect)) return true;
 
-  if (offerCount > 0 && pointerInRect(point, getOffersPanelRect(offerCount))) {
+  if (offerCount > 0 && pointerInRect(point, getOffersPanelRect())) {
     return true;
   }
 
-  if (tutorialBannerVisible && pointerInRect(point, getTutorialBannerRect(canvas.width))) {
-    return true;
-  }
-
+  // The tutorial banner is deliberately NOT blocked here (see .plans/playtest-findings.md B1):
+  // it's an overlay, not an interactive panel, and its own two hit targets (action button, skip
+  // link) are already checked ahead of everything else in input.ts's click chain. Blocking the
+  // world underneath it used to make anything the banner happened to sit over — including, once,
+  // the shop door — unreachable by click for as long as the banner was up.
   return false;
 }
 
 // Tutorial banner — a persistent, always-on-top overlay (drawn last, by hud.ts) explaining the
-// current guided-tutorial step. Centered under the HUD bar, in the gap between the offers
-// column (left) and workload panel column (right) — see getGameViewportRect. Its own
-// action/skip buttons are hit-tested in input.ts, ahead of everything else in the priority
-// chain, same treatment as the mute button.
+// current guided-tutorial step. Anchored to the BOTTOM of the canvas, above the build panel
+// (see getBuildPanelHeight) — not centered under the HUD bar, where it used to sit directly on
+// top of the shop door (the camera clamps the world's top edge to a fixed screen position, so
+// anything docked under the HUD bar covers the same world location for the whole tutorial; see
+// .plans/playtest-findings.md B1). Its own action/skip buttons are hit-tested in input.ts,
+// ahead of everything else in the priority chain, same treatment as the mute button.
 export const TUTORIAL_BANNER_WIDTH = 460;
 // Generous height for up to 3 wrapped body lines plus the title and (on welcome/done) a
 // primary button — see hud.ts's drawTutorialBanner, the only place that measures actual text
 // width to wrap it.
 export const TUTORIAL_BANNER_HEIGHT = 118;
-export const TUTORIAL_BANNER_MARGIN_TOP = 8;
+export const TUTORIAL_BANNER_MARGIN_BOTTOM = 8;
 export const TUTORIAL_ACTION_BUTTON_WIDTH = 130;
 export const TUTORIAL_ACTION_BUTTON_HEIGHT = 26;
 export const TUTORIAL_SKIP_WIDTH = 92;
 export const TUTORIAL_SKIP_HEIGHT = 18;
 
-export function getTutorialBannerRect(canvasWidth: number): Rect {
-  const width = Math.min(TUTORIAL_BANNER_WIDTH, canvasWidth - HUD_PANEL_MARGIN * 2);
+export function getTutorialBannerRect(canvasWidth: number, canvasHeight: number): Rect {
+  // Width and horizontal position both fit within the game viewport's gap between the offers
+  // column (left) and the workload panel column (right) — see getGameViewportRect — rather
+  // than centering against the raw canvas, which could still overlap a tall offers column on
+  // a short/narrow canvas even after the vertical (build-panel) fix below. See
+  // .plans/playtest-findings.md B5.
+  const viewport = getGameViewportRect(canvasWidth, canvasHeight);
+  const width = Math.min(TUTORIAL_BANNER_WIDTH, Math.max(0, viewport.width - HUD_PANEL_MARGIN * 2));
+  // Reserve the build panel's full column (not just its current width) so the banner never
+  // overlaps it regardless of canvas width — same "reserve the column" reasoning as above.
+  const bottomReserved = BUILD_PANEL_MARGIN + getBuildPanelHeight() + TUTORIAL_BANNER_MARGIN_BOTTOM;
   return {
-    x: (canvasWidth - width) / 2,
-    y: HUD_BAR_HEIGHT + TUTORIAL_BANNER_MARGIN_TOP,
+    x: viewport.x + (viewport.width - width) / 2,
+    y: canvasHeight - bottomReserved - TUTORIAL_BANNER_HEIGHT,
     width,
     height: TUTORIAL_BANNER_HEIGHT,
   };
 }
 
-export function getTutorialActionButtonRect(canvasWidth: number): Rect {
-  const banner = getTutorialBannerRect(canvasWidth);
+export function getTutorialActionButtonRect(canvasWidth: number, canvasHeight: number): Rect {
+  const banner = getTutorialBannerRect(canvasWidth, canvasHeight);
   return {
     x: banner.x + banner.width - TUTORIAL_ACTION_BUTTON_WIDTH - 12,
     y: banner.y + banner.height - TUTORIAL_ACTION_BUTTON_HEIGHT - 10,
@@ -516,8 +549,8 @@ export function getTutorialActionButtonRect(canvasWidth: number): Rect {
   };
 }
 
-export function getTutorialSkipRect(canvasWidth: number): Rect {
-  const banner = getTutorialBannerRect(canvasWidth);
+export function getTutorialSkipRect(canvasWidth: number, canvasHeight: number): Rect {
+  const banner = getTutorialBannerRect(canvasWidth, canvasHeight);
   return {
     x: banner.x + banner.width - TUTORIAL_SKIP_WIDTH - 10,
     y: banner.y + 8,

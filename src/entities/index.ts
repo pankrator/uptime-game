@@ -25,6 +25,7 @@ import {
   STARTING_COOLING_KW,
   STARTING_REPUTATION,
   WORKLOAD_ARCHETYPES,
+  MAX_OFFERS,
   type MachineTierId,
   type WorkloadArchetypeId,
   type PurchasableId,
@@ -99,6 +100,20 @@ export function spawnFacility(world: World): EntityId {
   return id;
 }
 
+// Lowest offers-panel slot (0..MAX_OFFERS-1) not currently held by a live offer — see Offer.slot
+// in components.ts. The spawn system never calls this while at MAX_OFFERS concurrent offers
+// (workload-spawn.ts checks the cap first), so a free slot always exists here.
+function lowestFreeOfferSlot(world: World): number {
+  const used = new Set<number>();
+  for (const id of world.query(offers)) {
+    used.add(world.getComponent(offers, id)!.slot);
+  }
+  for (let slot = 0; slot < MAX_OFFERS; slot++) {
+    if (!used.has(slot)) return slot;
+  }
+  return 0; // unreachable given the caller's cap check; a safe fallback rather than a throw
+}
+
 // Spawns an Offer awaiting accept/decline — NOT a live Workload. Accepting (dispatch.ts's
 // acceptOffer) is what turns an offer into a Workload entity; see .plans/workload-dispatch.md
 // step 5.
@@ -113,6 +128,7 @@ export function spawnOffer(world: World, archetypeId: WorkloadArchetypeId, scale
     deadlineSeconds: archetype.deadlineSeconds,
     payPerSecond: archetype.payPerSecond * appliedScale,
     secondsRemaining: archetype.offerSeconds,
+    slot: lowestFreeOfferSlot(world),
   });
   return id;
 }

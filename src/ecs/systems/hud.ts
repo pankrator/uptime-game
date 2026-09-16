@@ -107,6 +107,14 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
 
   let x = 12;
 
+  // Below this, an item would start drawing under (or push past) the mute button — always
+  // reachable regardless of window width (see getMuteButtonRect's own comment). Items are
+  // listed most- to least-important; each is skipped once x reaches this budget, and since
+  // skipping leaves x unmoved, every item after the first skip is skipped too — a narrow
+  // window truncates the tail of the bar instead of overlapping the mute button or running off
+  // the canvas. See .plans/playtest-findings.md B5.
+  const rightLimit = getMuteButtonRect(renderer.canvas.width).x - 10;
+
   // Money — red with a minus sign once negative (.plans/power-billing.md D4/D5).
   const negative = wallet.money < 0;
   ctx.font = 'bold 14px sans-serif';
@@ -125,50 +133,57 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
   x += ctx.measureText(netText).width + 20;
 
   // Power
-  const overPower = utilization.powerDrawKw > powerCapacity.kw;
-  ctx.font = '13px sans-serif';
-  ctx.fillStyle = overPower ? RED : TEXT_COLOR;
-  const powerText = `⚡ ${utilization.powerDrawKw.toFixed(1)} / ${powerCapacity.kw.toFixed(1)} kW  (-${utilization.powerCostPerSecond.toFixed(2)}/s)`;
-  ctx.fillText(powerText, x, midY);
-  x += ctx.measureText(powerText).width + 6;
-  drawInlineBar(
-    ctx,
-    x,
-    midY - 4,
-    36,
-    8,
-    utilization.powerDrawKw / powerCapacity.kw,
-    overPower ? RED : GREEN,
-  );
-  x += 36 + 20;
+  if (x < rightLimit) {
+    const overPower = utilization.powerDrawKw > powerCapacity.kw;
+    ctx.font = '13px sans-serif';
+    ctx.fillStyle = overPower ? RED : TEXT_COLOR;
+    const powerText = `⚡ ${utilization.powerDrawKw.toFixed(1)} / ${powerCapacity.kw.toFixed(1)} kW  (-${utilization.powerCostPerSecond.toFixed(2)}/s)`;
+    ctx.fillText(powerText, x, midY);
+    x += ctx.measureText(powerText).width + 6;
+    drawInlineBar(
+      ctx,
+      x,
+      midY - 4,
+      36,
+      8,
+      utilization.powerDrawKw / powerCapacity.kw,
+      overPower ? RED : GREEN,
+    );
+    x += 36 + 20;
+  }
 
   // Cooling
-  const overCooling = utilization.coolingDrawKw > coolingCapacity.kw;
-  ctx.fillStyle = overCooling ? RED : TEXT_COLOR;
-  const coolingText = `❄ ${utilization.coolingDrawKw.toFixed(1)} / ${coolingCapacity.kw.toFixed(1)} kW`;
-  ctx.fillText(coolingText, x, midY);
-  x += ctx.measureText(coolingText).width + 6;
-  drawInlineBar(
-    ctx,
-    x,
-    midY - 4,
-    36,
-    8,
-    utilization.coolingDrawKw / coolingCapacity.kw,
-    overCooling ? RED : GREEN,
-  );
-  x += 36 + 20;
+  if (x < rightLimit) {
+    const overCooling = utilization.coolingDrawKw > coolingCapacity.kw;
+    ctx.fillStyle = overCooling ? RED : TEXT_COLOR;
+    const coolingText = `❄ ${utilization.coolingDrawKw.toFixed(1)} / ${coolingCapacity.kw.toFixed(1)} kW`;
+    ctx.fillText(coolingText, x, midY);
+    x += ctx.measureText(coolingText).width + 6;
+    drawInlineBar(
+      ctx,
+      x,
+      midY - 4,
+      36,
+      8,
+      utilization.coolingDrawKw / coolingCapacity.kw,
+      overCooling ? RED : GREEN,
+    );
+    x += 36 + 20;
+  }
 
   // Reputation
-  ctx.fillStyle = repColor(reputation.value);
-  const repText = `★ ${Math.round(reputation.value)}`;
-  ctx.fillText(repText, x, midY);
-  x += ctx.measureText(repText).width + 20;
+  if (x < rightLimit) {
+    ctx.fillStyle = repColor(reputation.value);
+    const repText = `★ ${Math.round(reputation.value)}`;
+    ctx.fillText(repText, x, midY);
+    x += ctx.measureText(repText).width + 20;
+  }
 
   // Per-trait capacity (D5: compute alone hid RAM/storage pressure that could bottleneck
   // placement even while CPU still had headroom).
   ctx.font = '13px sans-serif';
   for (const key of TRAIT_KEYS) {
+    if (x >= rightLimit) break;
     const total = utilization.traitsTotal[key];
     const used = total - utilization.traitsFree[key];
     const over = used > total;
@@ -182,7 +197,7 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
 
   // Inventory summary — total owned-but-unplaced stock (D5), bought at the shop.
   const inventory = world.getComponent(inventories, facility);
-  if (inventory) {
+  if (inventory && x < rightLimit) {
     const totalStock = Object.values(inventory.counts).reduce((sum: number, count) => sum + (count ?? 0), 0);
     ctx.fillStyle = totalStock > 0 ? TEXT_COLOR : DIM_COLOR;
     const inventoryText = `📦 ${totalStock} in stock`;
@@ -190,9 +205,9 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
     x += ctx.measureText(inventoryText).width + 20;
   }
 
-  // Personal-best counters (cheap, already tracked)
+  // Personal-best counters (cheap, already tracked) — lowest priority, first to drop.
   const clock = world.getComponent(demandClocks, facility);
-  if (clock) {
+  if (clock && x < rightLimit) {
     ctx.fillStyle = DIM_COLOR;
     ctx.fillText(
       `served ${clock.contractsServed}  peak ${clock.peakComputeServed}`,
@@ -299,33 +314,45 @@ function drawWorkloadPanel(world: World, renderer: Renderer, facility: EntityId)
     const archetype = WORKLOAD_ARCHETYPES[workload.archetypeId];
 
     if (line.kind === 'active') {
+      // A running workload's deadline never stops ticking (workload-run.ts), independent of
+      // its work-remaining countdown — a job can be provably doomed (deadline will hit zero
+      // before the work finishes) while still showing a healthy green progress bar, if only
+      // work-remaining is on screen. See .plans/playtest-findings.md B4.
+      const doomed = workload.workRemainingSeconds > workload.deadlineRemainingSeconds;
       const fraction = 1 - workload.workRemainingSeconds / workload.workSeconds;
       const remaining = Math.max(0, Math.ceil(workload.workRemainingSeconds));
+      const deadlineRemaining = Math.max(0, Math.ceil(workload.deadlineRemainingSeconds));
       const labelY = rect.y + rect.height * 0.32;
       const statsY = rect.y + rect.height * 1.0;
 
       ctx.font = '12px sans-serif';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = TEXT_COLOR;
+      ctx.fillStyle = doomed ? RED : TEXT_COLOR;
       ctx.fillText(archetype.label, rect.x + padX, labelY);
 
       const barWidth = 70;
       const barX = rect.x + rect.width - padX - barWidth - 34;
-      drawInlineBar(ctx, barX, labelY - 4, barWidth, 8, fraction, GREEN);
+      drawInlineBar(ctx, barX, labelY - 4, barWidth, 8, fraction, doomed ? RED : GREEN);
 
       ctx.textAlign = 'right';
-      ctx.fillStyle = DIM_COLOR;
+      ctx.fillStyle = doomed ? RED : DIM_COLOR;
       ctx.fillText(`${remaining}s`, rect.x + rect.width - padX, labelY);
 
       ctx.font = '11px sans-serif';
       ctx.textAlign = 'left';
-      ctx.fillStyle = GREEN;
+      ctx.fillStyle = doomed ? RED : GREEN;
       ctx.fillText(
         `$${workload.payPerSecond.toFixed(2)}/s · ▦ ${workload.demands.cpu}`,
         rect.x + padX,
         statsY,
       );
+
+      // Deadline countdown, right-aligned on the same line as pay/compute — the number that
+      // actually decides whether this job survives, previously shown only while unplaced.
+      ctx.textAlign = 'right';
+      ctx.fillStyle = doomed ? RED : AMBER;
+      ctx.fillText(`⏱ ${deadlineRemaining}s`, rect.x + rect.width - padX, statsY);
 
       rowIndex += 2;
       continue;
@@ -384,13 +411,14 @@ function anyServerFits(world: World, demands: Offer['demands']): boolean {
   });
 }
 
-function drawOfferCard(world: World, renderer: Renderer, index: number, offer: Offer): void {
+function drawOfferCard(world: World, renderer: Renderer, offer: Offer): void {
   const ctx = renderer.context;
-  const card = getOfferCardRect(index);
+  const card = getOfferCardRect(offer.slot);
   const archetype = WORKLOAD_ARCHETYPES[offer.archetypeId];
   const servable = anyServerFits(world, offer.demands);
 
-  ctx.globalAlpha = servable ? 1 : 0.55;
+  const cardAlpha = servable ? 1 : 0.55;
+  ctx.globalAlpha = cardAlpha;
 
   ctx.fillStyle = 'rgba(20, 22, 25, 0.92)';
   ctx.fillRect(card.x, card.y, card.width, card.height);
@@ -429,13 +457,19 @@ function drawOfferCard(world: World, renderer: Renderer, index: number, offer: O
   );
 
   if (!servable) {
-    textY += 12;
+    textY += 14;
+    // Full opacity regardless of the card's own dimming — this is the one line that explains
+    // WHY the card is dimmed, so dimming it along with the rest defeats the point. Drawn on its
+    // own line (not squeezed into the 6px gap above the buttons, which is not this space) —
+    // see OFFER_CARD_HEIGHT's comment and .plans/playtest-findings.md B2.
+    ctx.globalAlpha = 1;
     ctx.fillStyle = RED;
-    ctx.font = '9px sans-serif';
-    ctx.fillText('no server fits this', card.x + padX, textY);
+    ctx.font = 'bold 10px sans-serif';
+    ctx.fillText('⚠ no server fits this', card.x + padX, textY);
+    ctx.globalAlpha = cardAlpha;
   }
 
-  const acceptRect = getOfferButtonRect(index, 'accept');
+  const acceptRect = getOfferButtonRect(offer.slot, 'accept');
   ctx.fillStyle = '#2f6f4f';
   ctx.fillRect(acceptRect.x, acceptRect.y, acceptRect.width, acceptRect.height);
   ctx.strokeStyle = GREEN;
@@ -445,7 +479,7 @@ function drawOfferCard(world: World, renderer: Renderer, index: number, offer: O
   ctx.textAlign = 'center';
   ctx.fillText('Accept', acceptRect.x + acceptRect.width / 2, acceptRect.y + acceptRect.height / 2);
 
-  const declineRect = getOfferButtonRect(index, 'decline');
+  const declineRect = getOfferButtonRect(offer.slot, 'decline');
   ctx.fillStyle = '#3a3f47';
   ctx.fillRect(declineRect.x, declineRect.y, declineRect.width, declineRect.height);
   ctx.strokeStyle = '#666';
@@ -458,11 +492,12 @@ function drawOfferCard(world: World, renderer: Renderer, index: number, offer: O
 }
 
 function drawOffersPanel(world: World, renderer: Renderer): void {
-  const offerIds = world.query(offers).sort((a, b) => a - b);
-  offerIds.forEach((offerId, index) => {
+  // Each offer carries its own stable slot (see Offer.slot) — no positional indexing here, so
+  // an earlier offer expiring doesn't shift a later one's card into a different slot mid-read.
+  for (const offerId of world.query(offers)) {
     const offer = world.getComponent(offers, offerId)!;
-    drawOfferCard(world, renderer, index, offer);
-  });
+    drawOfferCard(world, renderer, offer);
+  }
 }
 
 // Guided-tutorial banner — a persistent overlay above everything else HUD draws (drawn last),
@@ -473,7 +508,7 @@ function drawTutorialBanner(world: World, renderer: Renderer, facility: EntityId
   if (!progress || progress.skipped) return;
 
   const ctx = renderer.context;
-  const banner = getTutorialBannerRect(renderer.canvas.width);
+  const banner = getTutorialBannerRect(renderer.canvas.width, renderer.canvas.height);
   const step = getTutorialStepDef(progress.stepId);
 
   ctx.fillStyle = 'rgba(14, 18, 20, 0.95)';
@@ -508,7 +543,7 @@ function drawTutorialBanner(world: World, renderer: Renderer, facility: EntityId
   if (line) ctx.fillText(line, banner.x + padX, lineY);
 
   if (isTutorialActionStep(progress.stepId)) {
-    const buttonRect = getTutorialActionButtonRect(renderer.canvas.width);
+    const buttonRect = getTutorialActionButtonRect(renderer.canvas.width, renderer.canvas.height);
     ctx.fillStyle = '#2f6f4f';
     ctx.fillRect(buttonRect.x, buttonRect.y, buttonRect.width, buttonRect.height);
     ctx.strokeStyle = GREEN;
@@ -523,7 +558,7 @@ function drawTutorialBanner(world: World, renderer: Renderer, facility: EntityId
     );
     ctx.textAlign = 'left';
   } else {
-    const skipRect = getTutorialSkipRect(renderer.canvas.width);
+    const skipRect = getTutorialSkipRect(renderer.canvas.width, renderer.canvas.height);
     ctx.fillStyle = DIM_COLOR;
     ctx.font = '10px sans-serif';
     ctx.textAlign = 'right';

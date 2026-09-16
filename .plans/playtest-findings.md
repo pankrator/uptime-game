@@ -7,6 +7,10 @@
 > Entries are grouped by kind and ordered by severity within each group. Section 3's proposals
 > are sized but deliberately under-specified — promote one to its own `.plans/<name>.md`
 > before implementing, per `ideas-backlog.md`'s convention.
+>
+> **Status:** B1, B2, B4, B5, F6, and F9 are fixed (see each entry). Re-verified against the
+> real click chain the same way they were originally found — not just read back. Everything
+> else in this report is still open.
 
 ## How this was measured
 
@@ -50,6 +54,12 @@ checked ahead of everything else in the click chain, so removing the banner rect
 to the **bottom** of the viewport during the tutorial: the top strip is where the corridor and
 shop live, and the build panel already owns the bottom-left.
 
+**Fixed.** `pointerInHud` no longer blocks on the banner at all, and `getTutorialBannerRect`
+now anchors to the bottom of the canvas, above the build panel (reserving its full column, not
+just its current width, so they can never overlap). Re-ran the exact repro above: clicking the
+door at screen `(632, 56)` now opens the shop with the banner up, identically to with it
+skipped.
+
 ### B2 — "no server fits this" is drawn underneath the Accept button
 
 `drawOfferCard` lays text out at `card.y + 14`, `+28`, `+42`, then the warning at `+54`. The
@@ -63,6 +73,12 @@ invisible.** Only a red sliver peeks above the button.
 
 **Fix:** grow `OFFER_CARD_HEIGHT` for the unservable case (or move the warning to the
 right of the title, where there is free space), and exempt the warning text from the dimming.
+
+**Fixed.** `OFFER_CARD_HEIGHT` went from 76 to 96 (uniformly, not just for unservable cards —
+avoids variable-height stacking), giving the warning its own line clear of the buttons, and it
+now draws at `globalAlpha = 1` regardless of the card's own dimming. Re-screenshotted three
+unservable offers: the "⚠ no server fits this" line is fully legible above both buttons on
+every card.
 
 ### B3 — Demand scaling is mathematically dead; the game has no progression
 
@@ -117,6 +133,12 @@ displayed "21s" and a healthy green progress bar the whole time.
 **Fix:** show both on the active row, and colour the row red once
 `workRemainingSeconds > deadlineRemainingSeconds` (provably doomed).
 
+**Fixed.** The active row now shows `⏱ Ns` (deadline remaining) right-aligned on the stats
+line, amber normally, and the whole row (label, bar, both countdowns) turns red once
+`workRemainingSeconds > deadlineRemainingSeconds`. Verified in a live autoplay session's
+screenshot: a healthy job shows "16s" work / "49s ⏱" in amber, not the misleadingly-plain
+green-everything display from before.
+
 ### B5 — HUD top bar overflows and collides below ~1100px wide
 
 `drawTopBar` lays items out left-to-right with no width budget. At 820×600 the mute button is
@@ -127,6 +149,15 @@ the offers column (fixed 220px at `x = 12`), clipping the Decline button's label
 **Fix:** either drop low-priority top-bar items below a width threshold, or reserve the mute
 button's width and clip. The banner should clamp its width against the offers column, not just
 against `canvasWidth`.
+
+**Fixed.** `drawTopBar` now tracks a `rightLimit` (the mute button's left edge, minus a margin)
+and skips each remaining section — power, cooling, reputation, the per-trait bars, inventory,
+served/peak, in that priority order — once `x` would cross it; skipping leaves `x` unmoved, so
+one skip cascades to every lower-priority item after it rather than leaving a gap. Separately,
+`getTutorialBannerRect` (touched by the B1 fix above) now centers within the actual game
+viewport gap between the offers and workload columns instead of the raw canvas, which also
+closes the offers-column overlap: re-tested the worst case (3 stacked offer cards, 820×600) and
+the banner no longer reaches the offers column at all. Re-screenshotted both.
 
 ### B6 — Install abort refunds cash for an item taken from inventory
 
@@ -235,6 +266,14 @@ often.
 
 **Fix:** keep a stable slot per offer for its lifetime, or animate/hold the gap briefly.
 
+**Fixed.** `Offer` now carries its own `slot` (0..MAX_OFFERS-1), assigned once at spawn to the
+lowest slot not currently held by a live offer, and both drawing and hit-testing key off
+`offer.slot` instead of position in a freshly-sorted array. `getOffersPanelRect` (used by
+`pointerInHud` to block clicks on the offers region) also switched from sizing to the live
+offer count to always reserving the full `MAX_OFFERS`-slot column, since a lone survivor can
+now sit in slot 2 with slots 0–1 empty. Verified: spawned three offers, forced slot 0 to expire,
+confirmed the other two kept slots 1 and 2 rather than collapsing to 0 and 1.
+
 ### F7 — Success and failure have no visual feedback
 
 `contractCompleted`, `contractMissed` and `brownout` play sounds, and nothing else happens. No
@@ -264,25 +303,30 @@ tier installed in it.
 The rack panel header reads `Rack — DISPATCHING`, an internal state-machine name. The player
 was never taught the word. `Rack — placing work` (or just the rack's name) says the same thing.
 
+**Fixed.** Header now reads `Rack — PLACING WORK` (and `VIEWING (walk there to place work)` for
+the read-only mode), matching the wording the tutorial itself uses ("Dispatch it... drag the
+workload... onto an online server").
+
 ---
 
 ## 3. Proposals, sized
 
 Ordered by value per unit of work. Each needs its own plan file before implementation.
 
-| # | Change | Fixes | Cost |
-| --- | --- | --- | --- |
-| P1 | Banner out of `pointerInHud`, move banner to bottom | B1 | trivial |
-| P2 | Offer-card layout: warning above buttons, undimmed | B2 | trivial |
-| P3 | Active row shows deadline; red when doomed | B4 | small |
-| P4 | `capacityScale` from facility capacity, not `peak` | B3 | small |
-| P5 | `STARTING_REPUTATION` → 10; re-tune the unlock ladder | F2 | small |
-| P6 | Confirm-on-unservable-accept + drop-contract button | F3 | small |
-| P7 | Completion/miss visual feedback (float + banner) | F7 | small |
-| P8 | Shop stays open until dismissed, or remote ordering | F1 | medium |
-| P9 | Idle vs active power split; rack power switch | F5 | medium |
-| P10 | Brownout auto-restore within a grace window + pre-warning | F4 | medium |
-| P11 | Outdoor art pass; rack label decluttering; tier-varied racks | F8 | medium |
+| # | Change | Fixes | Cost | Status |
+| --- | --- | --- | --- | --- |
+| P1 | Banner out of `pointerInHud`, move banner to bottom | B1 | trivial | **Done** |
+| P2 | Offer-card layout: warning above buttons, undimmed | B2 | trivial | **Done** |
+| P3 | Active row shows deadline; red when doomed | B4 | small | **Done** |
+| P4 | `capacityScale` from facility capacity, not `peak` | B3 | small | open |
+| P5 | `STARTING_REPUTATION` → 10; re-tune the unlock ladder | F2 | small | open |
+| P6 | Confirm-on-unservable-accept + drop-contract button | F3 | small | open |
+| P7 | Completion/miss visual feedback (float + banner) | F7 | small | open |
+| P8 | Shop stays open until dismissed, or remote ordering | F1 | medium | open |
+| P9 | Idle vs active power split; rack power switch | F5 | medium | open |
+| P10 | Brownout auto-restore within a grace window + pre-warning | F4 | medium | open |
+| P11 | Outdoor art pass; rack label decluttering; tier-varied racks | F8 | medium | open |
+| — | Stable offer slots (see F6); rack panel label wording (see F9) | F6, F9 | trivial | **Done** |
 
 ### The one that matters most
 
