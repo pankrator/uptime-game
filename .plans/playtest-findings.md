@@ -8,9 +8,9 @@
 > are sized but deliberately under-specified — promote one to its own `.plans/<name>.md`
 > before implementing, per `ideas-backlog.md`'s convention.
 >
-> **Status:** B1, B2, B4, B5, F6, and F9 are fixed (see each entry). Re-verified against the
-> real click chain the same way they were originally found — not just read back. Everything
-> else in this report is still open.
+> **Status:** B1, B2, B3, B4, B5, F6, and F9 are fixed (see each entry). Re-verified against the
+> real click chain (or, for B3, the scaling math directly) the same way each was originally
+> found — not just read back. Everything else in this report is still open.
 
 ## How this was measured
 
@@ -112,6 +112,17 @@ system can ever consume.**
 **Fix:** decouple the two terms. `capacityScale` should track installed/served *facility*
 capacity (e.g. `utilization.traitsTotal.cpu / 30`), not the single largest completed workload.
 That makes the "behind an active player, ahead of a passive one" intent actually hold.
+
+**Fixed** — see `.plans/compute-scale-fix.md` for the full design writeup. `capacityScale` now
+keys off `Utilization.traitsTotal.cpu` (installed, online facility CPU) instead of
+`peakComputeServed`. Doing that naively surfaced a second bug the deadlock had been hiding:
+letting the achieved scale climb toward `timeScale`'s existing 3x ceiling breaks catalog fit —
+`training`'s demands stop fitting any server tier past ~1.33x, `render` past ~2.5x. Fixed by
+splitting the one `scale` into a VALUE scale (drives `payPerSecond`/`penaltyOnMiss`, uncapped by
+fit, reaches the intended 3x) and a DEMAND scale (drives `demands`, clamped to
+`MAX_DEMAND_SCALE[archetypeId]` — computed from the catalog itself, not hand-typed). Once an
+archetype's demand hits its fit ceiling, its size stops growing but its pay keeps climbing —
+late game becomes "the same job pays more," not "an unfittable job."
 
 ### B4 — A running workload's deadline is invisible
 
@@ -318,7 +329,7 @@ Ordered by value per unit of work. Each needs its own plan file before implement
 | P1 | Banner out of `pointerInHud`, move banner to bottom | B1 | trivial | **Done** |
 | P2 | Offer-card layout: warning above buttons, undimmed | B2 | trivial | **Done** |
 | P3 | Active row shows deadline; red when doomed | B4 | small | **Done** |
-| P4 | `capacityScale` from facility capacity, not `peak` | B3 | small | open |
+| P4 | `capacityScale` from facility capacity, not `peak` | B3 | small (grew to medium — see `.plans/compute-scale-fix.md`) | **Done** |
 | P5 | `STARTING_REPUTATION` → 10; re-tune the unlock ladder | F2 | small | open |
 | P6 | Confirm-on-unservable-accept + drop-contract button | F3 | small | open |
 | P7 | Completion/miss visual feedback (float + banner) | F7 | small | open |
@@ -328,14 +339,16 @@ Ordered by value per unit of work. Each needs its own plan file before implement
 | P11 | Outdoor art pass; rack label decluttering; tier-varied racks | F8 | medium | open |
 | — | Stable offer slots (see F6); rack panel label wording (see F9) | F6, F9 | trivial | **Done** |
 
-### The one that matters most
+### The one that mattered most
 
-**P4 is the difference between a game and a demo.** Everything else on this list is polish on
-a loop that currently has no second act: the contracts a player sees in minute 20 are
-identical to minute 1, and a facility can out-scale total demand by 100×. Fixing the scaling
-deadlock is what makes the money, the room tiers, and the machine catalog mean anything.
+**P4 was the difference between a game and a demo, and it's now fixed** (see
+`.plans/compute-scale-fix.md`). Everything else on this list was polish on a loop that had no
+second act: the contracts a player saw in minute 20 were identical to minute 1, and a facility
+could out-scale total demand by 100×. With the deadlock gone, the money, the room tiers, and the
+machine catalog actually mean something across a session — worth a fresh playtest to confirm it
+*feels* right now that it's mathematically possible, not just to re-check the numbers.
 
-Two candidates worth a plan each, once P4 lands:
+Two candidates worth a plan each, now that P4's landed:
 
 - **Milestones/objectives** — already the top entry in `ideas-backlog.md`, and the playtest
   supports it: the opening minutes have no stated goal and (per F2) often no legal move.

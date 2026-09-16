@@ -32,6 +32,7 @@ import {
   RECURRING_PAY_MULTIPLIER,
   AMBIENT_C,
   CRAC_UNIT,
+  getDemandScale,
   type MachineTierId,
   type WorkloadArchetypeId,
   type PurchasableId,
@@ -140,9 +141,15 @@ function lowestFreeOfferSlot(world: World): number {
 // Spawns an Offer awaiting accept/decline — NOT a live Workload. Accepting (dispatch.ts's
 // acceptOffer) is what turns an offer into a Workload entity; see .plans/workload-dispatch.md
 // step 5.
-export function spawnOffer(world: World, archetypeId: WorkloadArchetypeId, scale: number): EntityId {
+export function spawnOffer(world: World, archetypeId: WorkloadArchetypeId, valueScale: number): EntityId {
   const archetype = WORKLOAD_ARCHETYPES[archetypeId];
-  const appliedScale = archetype.scales ? scale : 1;
+  // Two different scales past this point — see .plans/compute-scale-fix.md D2. PAY (and the
+  // miss penalty, which tracks it) keeps climbing with valueScale, uncapped by what any server
+  // can hold — late-game growth is "the same job pays more." Demand SIZE is separately clamped
+  // to whatever still fits some tier (getDemandScale), so an offer can never scale past what
+  // the catalog can serve.
+  const appliedValueScale = archetype.scales ? valueScale : 1;
+  const appliedDemandScale = archetype.scales ? getDemandScale(archetypeId, valueScale) : 1;
 
   // D2: roll how many extra cycles this offer commits to, then apply the recurring pay
   // discount (D2's "trading rate for certainty") only when it actually recurs.
@@ -153,15 +160,15 @@ export function spawnOffer(world: World, archetypeId: WorkloadArchetypeId, scale
   const id = world.createEntity();
   world.addComponent(offers, id, {
     archetypeId,
-    demands: scaleTraits(archetype.demands, appliedScale),
+    demands: scaleTraits(archetype.demands, appliedDemandScale),
     workSeconds: archetype.workSeconds,
     deadlineSeconds: archetype.deadlineSeconds,
-    payPerSecond: archetype.payPerSecond * appliedScale * payMultiplier,
+    payPerSecond: archetype.payPerSecond * appliedValueScale * payMultiplier,
     secondsRemaining: archetype.offerSeconds,
     slot: lowestFreeOfferSlot(world),
-    // D1: scaled the same way payPerSecond/demands are for `scales: true` archetypes, so
-    // late-game penalties don't fall behind late-game pay.
-    penaltyOnMiss: archetype.penaltyOnMiss * appliedScale,
+    // D1: scaled the same way payPerSecond is (value, not demand) for `scales: true`
+    // archetypes, so late-game penalties don't fall behind late-game pay.
+    penaltyOnMiss: archetype.penaltyOnMiss * appliedValueScale,
     repeatCount,
     repeatTotal: repeatCount + 1,
   });

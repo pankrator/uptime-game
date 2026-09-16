@@ -10,12 +10,15 @@ when new `Offer` entities arrive, and when an ignored offer auto-expires.
 
 ## `createWorkloadSpawnSystem`
 
-- Reads/writes `DemandClock` (`elapsedSeconds`, `nextArrivalInSeconds`) and `Reputation`
-  on `facility`; reads existing `offers` count.
+- Reads/writes `DemandClock` (`elapsedSeconds`, `nextArrivalInSeconds`); reads `Reputation`
+  and `Utilization.traitsTotal.cpu` on `facility`; reads existing `offers` count.
 - Ticks the clock down; when it hits zero, picks a weighted-random archetype
   (`pickArchetype` — weights toward larger unlocked archetypes so unlocking a new one is
   noticeable) and calls `spawnOffer` (`src/entities.ts`), scaled by
-  `getComputeScale(elapsedSeconds, peakComputeServed)`.
+  `getValueScale(elapsedSeconds, traitsTotal.cpu)` — installed/online facility CPU, not a
+  completed job's own demand (see `.plans/compute-scale-fix.md` D1). `spawnOffer` itself
+  derives a separately-capped demand scale from this same value (D2), so the offer's size
+  never grows past what some machine tier can hold even once its pay keeps climbing.
 - Capped at `MAX_OFFERS` concurrent offers — at the cap the clock still resets/keeps
   running but spawning is suppressed, so an idle player doesn't accumulate a backlog past
   the cap.
