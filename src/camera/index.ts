@@ -1,4 +1,5 @@
-import { WORLD_WIDTH, WORLD_HEIGHT, CAMERA_FOLLOW_EASE } from '../ecs/game-data';
+import { WORLD_WIDTH, WORLD_HEIGHT, CAMERA_PAN_SPEED, CAMERA_FOLLOW_EASE } from '../ecs/game-data';
+import { type InputState } from '../input';
 import { getGameViewportRect } from '../ui/layout';
 
 export interface Point {
@@ -13,8 +14,15 @@ export interface Camera {
   screenToWorld(p: Point): Point;
   applyTransform(ctx: CanvasRenderingContext2D): void;
   resetTransform(ctx: CanvasRenderingContext2D): void;
-  update(deltaSeconds: number, target: Point, canvas: HTMLCanvasElement): void;
+  update(deltaSeconds: number, target: Point, canvas: HTMLCanvasElement, input: InputState): void;
 }
+
+const PAN_KEYS: Record<string, Point> = {
+  w: { x: 0, y: -1 },
+  s: { x: 0, y: 1 },
+  a: { x: -1, y: 0 },
+  d: { x: 1, y: 0 },
+};
 
 function clampAxis(value: number, viewportSize: number, worldSize: number): number {
   if (worldSize <= viewportSize) {
@@ -23,9 +31,16 @@ function clampAxis(value: number, viewportSize: number, worldSize: number): numb
   return Math.min(Math.max(value, 0), worldSize - viewportSize);
 }
 
-export function createCamera(): Camera {
+export function createCamera(input: InputState): Camera {
   let x = 0;
   let y = 0;
+  // WASD panning suspends follow until the player presses space to re-center — otherwise the
+  // two would fight every frame.
+  let detached = false;
+
+  input.onKeyDown(' ', () => {
+    detached = false;
+  });
 
   const camera: Camera = {
     get x() {
@@ -53,20 +68,38 @@ export function createCamera(): Camera {
     resetTransform(ctx: CanvasRenderingContext2D): void {
       ctx.restore();
     },
-    update(deltaSeconds: number, target: Point, canvas: HTMLCanvasElement): void {
-      // Center the target within the HUD-safe viewport, not the raw canvas — otherwise the
-      // top bar and side panels permanently cover whatever world content falls under them
-      // (see .plans/facility-shop-inventory.md).
-      const viewport = getGameViewportRect(canvas.width, canvas.height);
-      const desiredX = target.x - viewport.x - viewport.width / 2;
-      const desiredY = target.y - viewport.y - viewport.height / 2;
-      const ease = 1 - Math.exp(-CAMERA_FOLLOW_EASE * deltaSeconds);
-      x += (desiredX - x) * ease;
-      y += (desiredY - y) * ease;
+    update(deltaSeconds: number, target: Point, canvas: HTMLCanvasElement, inputState: InputState): void {
+      let panDx = 0;
+      let panDy = 0;
+
+      for (const [key, dir] of Object.entries(PAN_KEYS)) {
+        if (inputState.isKeyDown(key)) {
+          panDx += dir.x;
+          panDy += dir.y;
+        }
+      }
+
+      if (panDx !== 0 || panDy !== 0) {
+        detached = true;
+        const length = Math.hypot(panDx, panDy) || 1;
+        x += (panDx / length) * CAMERA_PAN_SPEED * deltaSeconds;
+        y += (panDy / length) * CAMERA_PAN_SPEED * deltaSeconds;
+      } else if (!detached) {
+        // Center the target within the HUD-safe viewport, not the raw canvas — otherwise the
+        // top bar and side panels permanently cover whatever world content falls under them
+        // (see .plans/facility-shop-inventory.md).
+        const viewport = getGameViewportRect(canvas.width, canvas.height);
+        const desiredX = target.x - viewport.x - viewport.width / 2;
+        const desiredY = target.y - viewport.y - viewport.height / 2;
+        const ease = 1 - Math.exp(-CAMERA_FOLLOW_EASE * deltaSeconds);
+        x += (desiredX - x) * ease;
+        y += (desiredY - y) * ease;
+      }
 
       // Clamp so the SAFE VIEWPORT's world-space extent (not the raw canvas's) stays within
       // world bounds — x/y are the world coordinate at screen (0,0), so the viewport's visible
       // slice is offset by viewport.x/y from that.
+      const viewport = getGameViewportRect(canvas.width, canvas.height);
       x = clampAxis(x + viewport.x, viewport.width, WORLD_WIDTH) - viewport.x;
       y = clampAxis(y + viewport.y, viewport.height, WORLD_HEIGHT) - viewport.y;
     },

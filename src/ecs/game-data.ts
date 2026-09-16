@@ -98,6 +98,7 @@ export const RACK_SLOT_CAPACITY = 6;
 export const WORLD_WIDTH = 2400;
 export const WORLD_HEIGHT = 1600;
 
+export const CAMERA_PAN_SPEED = 700; // pixels/second while WASD-panning
 export const CAMERA_FOLLOW_EASE = 6; // higher = camera catches up to the player faster
 
 // Room tier ladder — anchored at a shared top-left origin so upgrading always grows the room

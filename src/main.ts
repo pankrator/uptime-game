@@ -45,7 +45,7 @@ function runGame(canvas: HTMLCanvasElement): void {
   const input = createInput(canvas);
   const state = createGameState();
   const world = createWorld();
-  const camera = createCamera();
+  const camera = createCamera(input);
   const audio = createAudio();
 
   const facility = spawnFacility(world);
@@ -97,7 +97,7 @@ function runGame(canvas: HTMLCanvasElement): void {
   // pause without affecting gameplay.
   // Camera update goes first — it must update before the render systems read it this frame.
   const renderSystems = [
-    createCameraSystem(world, renderer, player, camera),
+    createCameraSystem(world, renderer, input, player, camera),
     createRenderSystem(world, renderer, player, facility, camera, input),
     createHudSystem(world, renderer, facility, audio),
   ];
