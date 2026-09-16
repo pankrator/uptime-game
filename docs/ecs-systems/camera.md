@@ -1,11 +1,13 @@
 # camera
 
-`src/ecs/systems/camera.ts` — `createCameraSystem(world, renderer, input, controlled, camera)`
+`src/ecs/systems/camera.ts` — `createCameraSystem(world, renderer, controlled, camera)`
 
 ## Purpose
 
-Eases the `Camera` (see `src/camera.ts`) toward the controlled entity's `Position` every
-frame. Pure presentation — must never affect simulation state.
+Eases the `Camera` (see `src/camera/index.ts`) toward the controlled entity's `Position`
+every frame. Pure presentation — must never affect simulation state. The camera only ever
+tracks the controlled entity — there is no mouse-edge-pan or manual keyboard pan; it always
+follows.
 
 ## Reads / writes
 
