@@ -17,6 +17,8 @@ import {
   offers,
   roomTiers,
   inventories,
+  temperatures,
+  coolingUnits,
 } from '../ecs/components';
 import {
   RACK_SLOT_CAPACITY,
@@ -25,6 +27,8 @@ import {
   STARTING_COOLING_KW,
   STARTING_REPUTATION,
   WORKLOAD_ARCHETYPES,
+  AMBIENT_C,
+  CRAC_UNIT,
   type MachineTierId,
   type WorkloadArchetypeId,
   type PurchasableId,
@@ -48,6 +52,20 @@ export function spawnRack(world: World, gridX: number, gridY: number): EntityId 
   world.addComponent(gridPositions, id, { gridX, gridY });
   world.addComponent(renderables, id, { kind: 'rack' });
   world.addComponent(rackSlots, id, { capacity: RACK_SLOT_CAPACITY });
+  // See .plans/thermal-and-cooling.md D1/D2: starts at ambient, then owned solely by thermal.ts.
+  world.addComponent(temperatures, id, { celsius: AMBIENT_C, throttleFactor: 1 });
+  return id;
+}
+
+// A placed CRAC unit — mirrors spawnRack. See .plans/thermal-and-cooling.md D4/Step 6.
+export function spawnCoolingUnit(world: World, gridX: number, gridY: number): EntityId {
+  const id = world.createEntity();
+  world.addComponent(gridPositions, id, { gridX, gridY });
+  world.addComponent(renderables, id, { kind: 'crac' });
+  world.addComponent(coolingUnits, id, {
+    kwOutput: CRAC_UNIT.kwOutput,
+    radiusCells: CRAC_UNIT.radiusCells,
+  });
   return id;
 }
 

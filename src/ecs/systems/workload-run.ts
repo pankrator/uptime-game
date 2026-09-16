@@ -1,5 +1,15 @@
 import { type World, type EntityId } from '../world';
-import { workloads, placedOns, powereds, wallets, reputations, demandClocks, utilizations } from '../components';
+import {
+  workloads,
+  placedOns,
+  powereds,
+  wallets,
+  reputations,
+  demandClocks,
+  utilizations,
+  installedIns,
+  temperatures,
+} from '../components';
 import { REPUTATION_ON_MISSED_DEADLINE, REPUTATION_ON_COMPLETION } from '../game-data';
 import { type Audio } from '../../audio';
 import { type System } from './system';
@@ -35,9 +45,17 @@ export function createWorkloadRunSystem(world: World, facility: EntityId, audio:
         const placement = world.getComponent(placedOns, workloadId);
         const server = placement && world.getComponent(powereds, placement.serverId);
         if (placement && server?.online) {
-          wallet.money += workload.payPerSecond * deltaSeconds;
-          workload.workRemainingSeconds -= deltaSeconds;
-          revenuePerSecond += workload.payPerSecond;
+          // .plans/thermal-and-cooling.md Step 5: a throttled server does its work more slowly
+          // and earns proportionally less — the honest reading of "it is going slower". Slowing
+          // work while still paying full rate would make throttling free.
+          const rackId = world.getComponent(installedIns, placement.serverId)?.rackId;
+          const factor =
+            (rackId !== undefined
+              ? world.getComponent(temperatures, rackId)?.throttleFactor
+              : undefined) ?? 1;
+          wallet.money += workload.payPerSecond * factor * deltaSeconds;
+          workload.workRemainingSeconds -= deltaSeconds * factor;
+          revenuePerSecond += workload.payPerSecond * factor;
         }
 
         if (workload.workRemainingSeconds <= 0) {

@@ -14,6 +14,10 @@ import {
   serverCapacities,
   inventories,
   tutorialProgresses,
+  temperatures,
+  thermalTrips,
+  rackSlots,
+  gridPositions,
   type Workload,
   type Offer,
 } from '../components';
@@ -203,6 +207,29 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
     x += ctx.measureText(traitText).width + 6;
     drawInlineBar(ctx, x, midY - 4, 36, 8, total > 0 ? used / total : 0, over ? RED : GREEN);
     x += 36 + 16;
+  }
+
+  // Overheat alert — reuses the brownout path's "count of racks in trouble" shape (D8 point 4):
+  // count tripped (dark) and merely throttled (slowed) racks separately so the player can tell
+  // "losing money now" from "about to."
+  let trippedCount = 0;
+  let throttledCount = 0;
+  for (const rackId of world.query(rackSlots, gridPositions, temperatures)) {
+    if (world.getComponent(thermalTrips, rackId)) {
+      trippedCount += 1;
+    } else if (world.getComponent(temperatures, rackId)!.throttleFactor < 1) {
+      throttledCount += 1;
+    }
+  }
+  if (trippedCount > 0 || throttledCount > 0) {
+    ctx.font = 'bold 13px sans-serif';
+    ctx.fillStyle = trippedCount > 0 ? RED : AMBER;
+    const parts: string[] = [];
+    if (trippedCount > 0) parts.push(`⛔ ${trippedCount} overheated`);
+    if (throttledCount > 0) parts.push(`🌡 ${throttledCount} throttled`);
+    const overheatText = parts.join('  ');
+    ctx.fillText(overheatText, x, midY);
+    x += ctx.measureText(overheatText).width + 20;
   }
 
   // Inventory summary — total owned-but-unplaced stock (D5), bought at the shop.
