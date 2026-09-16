@@ -181,6 +181,22 @@ export const RACK_TRAY_CARD_GAP = 8;
 // 32px — touch-target floor (see .plans/mobile-touch-support.md D4), up from 24.
 export const RACK_CLOSE_BUTTON_SIZE = 32;
 
+// Tray cards wrap onto additional rows once a single row would overflow the panel's content
+// width — a rack can accept more workloads than fit on one line (see the game concept's
+// dispatch loop), and a single overflowing line hid everything past the first few cards.
+// `panelWidth` is the already-computed outer panel width (see getRackPanelRect), so this has
+// no circular dependency on the tray height it helps compute.
+function getTrayColumns(panelWidth: number): number {
+  const availWidth = panelWidth - RACK_PANEL_PADDING * 2;
+  return Math.max(1, Math.floor((availWidth + RACK_TRAY_CARD_GAP) / (RACK_TRAY_CARD_WIDTH + RACK_TRAY_CARD_GAP)));
+}
+
+function getTrayHeight(trayCount: number, panelWidth: number): number {
+  if (trayCount === 0) return RACK_TRAY_HEADER_HEIGHT + RACK_TRAY_CARD_HEIGHT;
+  const rows = Math.ceil(trayCount / getTrayColumns(panelWidth));
+  return RACK_TRAY_HEADER_HEIGHT + rows * RACK_TRAY_CARD_HEIGHT + (rows - 1) * RACK_TRAY_CARD_GAP;
+}
+
 export function getRackPanelRect(
   canvasWidth: number,
   canvasHeight: number,
@@ -189,11 +205,8 @@ export function getRackPanelRect(
 ): Rect {
   const serversHeight =
     serverCount > 0 ? serverCount * RACK_SERVER_ROW_HEIGHT + (serverCount - 1) * RACK_SERVER_ROW_GAP : 0;
-  const trayHeight =
-    RACK_TRAY_HEADER_HEIGHT +
-    (trayCount > 0 ? trayCount * RACK_TRAY_CARD_HEIGHT + (trayCount - 1) * RACK_TRAY_CARD_GAP : RACK_TRAY_CARD_HEIGHT);
-
   const width = Math.min(RACK_PANEL_WIDTH, canvasWidth - RACK_PANEL_PADDING * 2);
+  const trayHeight = getTrayHeight(trayCount, width);
   const height = Math.min(
     RACK_PANEL_HEADER_HEIGHT + RACK_PANEL_PADDING * 3 + serversHeight + trayHeight,
     canvasHeight - RACK_PANEL_PADDING * 2,
@@ -211,13 +224,11 @@ export function getRackPanelRect(
 // the tray) — as opposed to getRackPanelRect's height, which is clamped to fit the canvas. The
 // difference between this and getRackPanelContentRect's height is how far the panel can scroll;
 // see rack-panel.ts's scroll handling.
-export function getRackPanelContentHeight(serverCount: number, trayCount: number): number {
+export function getRackPanelContentHeight(canvasWidth: number, serverCount: number, trayCount: number): number {
   const serversHeight =
     serverCount > 0 ? serverCount * RACK_SERVER_ROW_HEIGHT + (serverCount - 1) * RACK_SERVER_ROW_GAP : 0;
-  const trayHeight =
-    RACK_TRAY_HEADER_HEIGHT +
-    (trayCount > 0 ? trayCount * RACK_TRAY_CARD_HEIGHT + (trayCount - 1) * RACK_TRAY_CARD_GAP : RACK_TRAY_CARD_HEIGHT);
-  return serversHeight + RACK_PANEL_PADDING + trayHeight;
+  const width = Math.min(RACK_PANEL_WIDTH, canvasWidth - RACK_PANEL_PADDING * 2);
+  return serversHeight + RACK_PANEL_PADDING + getTrayHeight(trayCount, width);
 }
 
 // The scrollable sub-region inside the panel: everything below the header, inset by the same
@@ -354,9 +365,15 @@ export function getTrayCardRect(
   trayCount: number,
 ): Rect {
   const panel = getRackPanelRect(canvasWidth, canvasHeight, serverCount, trayCount);
+  const columns = getTrayColumns(panel.width);
+  const column = index % columns;
+  const row = Math.floor(index / columns);
   return {
-    x: panel.x + RACK_PANEL_PADDING + index * (RACK_TRAY_CARD_WIDTH + RACK_TRAY_CARD_GAP),
-    y: getTrayTopY(canvasWidth, canvasHeight, serverCount, trayCount) + RACK_TRAY_HEADER_HEIGHT,
+    x: panel.x + RACK_PANEL_PADDING + column * (RACK_TRAY_CARD_WIDTH + RACK_TRAY_CARD_GAP),
+    y:
+      getTrayTopY(canvasWidth, canvasHeight, serverCount, trayCount) +
+      RACK_TRAY_HEADER_HEIGHT +
+      row * (RACK_TRAY_CARD_HEIGHT + RACK_TRAY_CARD_GAP),
     width: RACK_TRAY_CARD_WIDTH,
     height: RACK_TRAY_CARD_HEIGHT,
   };

@@ -747,7 +747,7 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
   // the right place on screen without needing scroll-awareness of its own. Restored before the
   // dragged card below, which must follow the raw cursor in screen space, not content space.
   const contentRect = getRackPanelContentRect(canvasWidth, canvasHeight, serverIds.length, trayIds.length);
-  const contentHeight = getRackPanelContentHeight(serverIds.length, trayIds.length);
+  const contentHeight = getRackPanelContentHeight(canvasWidth, serverIds.length, trayIds.length);
   const maxScroll = maxRackScroll(contentHeight, contentRect.height);
   const scrollOffsetPx = Math.min(world.getComponent(rackScrolls, controlled)?.offsetPx ?? 0, maxScroll);
 

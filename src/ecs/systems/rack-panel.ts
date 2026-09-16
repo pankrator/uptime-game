@@ -358,7 +358,7 @@ export function createRackPanelSystem(
           serverIds.length,
           trayIds.length,
         );
-        const contentHeight = getRackPanelContentHeight(serverIds.length, trayIds.length);
+        const contentHeight = getRackPanelContentHeight(renderer.width, serverIds.length, trayIds.length);
         const maxScroll = maxRackScroll(contentHeight, contentRect.height);
 
         const scroll = world.getComponent(rackScrolls, controlled) ?? { offsetPx: 0 };
