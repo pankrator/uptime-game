@@ -25,7 +25,9 @@ Applies a purchase per its `PURCHASABLES` kind (see `game-data.ts` D6):
 - `'room'` → `RoomTier.index` advances by one (the shop only ever offers the immediate
   next tier)
 
-No-op if the wallet can't cover the cost (`canAfford`, floored comparison).
+No-op if the wallet can't cover the cost (`canAfford`, floored comparison). Returns `true`
+iff a purchase was actually applied — `input.ts` uses this to tell a real buy from a
+rejected click (e.g. to advance the [tutorial](./tutorial.md)'s shop step).
 
 ## Shared UI state
 

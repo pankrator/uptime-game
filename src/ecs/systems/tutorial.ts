@@ -50,6 +50,11 @@ export const TUTORIAL_STEPS: TutorialStepDef[] = [
     body: "Click your rack to open its panel and see what's installed.",
   },
   {
+    id: 'visit-shop',
+    title: 'Visit the shop',
+    body: 'Walk to the shop building along the corridor, then buy anything — a rack, a machine, or a power/cooling upgrade.',
+  },
+  {
     id: 'accept-offer',
     title: 'Accept a contract',
     body: 'Offers appear on the left as they arrive. Click Accept — you need one running to earn money.',
@@ -83,8 +88,18 @@ export function startTutorial(world: World, facility: EntityId, playerPosition: 
   world.addComponent(tutorialProgresses, facility, {
     stepId: 'welcome',
     moveOrigin: { x: playerPosition.x, y: playerPosition.y },
+    shopPurchased: false,
     skipped: false,
   });
+}
+
+// Called from input.ts's buy-button click handler only when shop.ts's buy() reports the
+// purchase actually went through — a click that gets rejected (can't afford it) must not
+// silently advance the 'visit-shop' step.
+export function recordShopPurchase(world: World, facility: EntityId): void {
+  const progress = world.getComponent(tutorialProgresses, facility);
+  if (!progress) return;
+  progress.shopPurchased = true;
 }
 
 export function advanceTutorial(world: World, facility: EntityId): void {
@@ -109,7 +124,11 @@ export function skipTutorial(world: World, facility: EntityId): void {
 // the player can walk anywhere to satisfy the 'move' step.
 const MOVE_COMPLETE_DISTANCE_PX = GRID_CELL_SIZE * 2;
 
-function isCurrentStepComplete(world: World, controlled: EntityId, progress: { stepId: TutorialStepId; moveOrigin: { x: number; y: number } }): boolean {
+function isCurrentStepComplete(
+  world: World,
+  controlled: EntityId,
+  progress: { stepId: TutorialStepId; moveOrigin: { x: number; y: number }; shopPurchased: boolean },
+): boolean {
   switch (progress.stepId) {
     case 'move': {
       const position = world.getComponent(positions, controlled);
@@ -126,6 +145,8 @@ function isCurrentStepComplete(world: World, controlled: EntityId, progress: { s
       const panel = world.getComponent(openRackPanels, controlled);
       return !!panel && (panel.mode === 'viewing' || panel.arrived);
     }
+    case 'visit-shop':
+      return progress.shopPurchased;
     case 'accept-offer':
       return world.query(workloads).length >= 1;
     case 'place-workload':
