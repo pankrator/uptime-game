@@ -13,7 +13,8 @@ export interface InputState {
   isPointerDown(): boolean;
   // Right-click, used as the "view a rack" affordance (D4 — inspect without committing to
   // walk there). The browser's context menu is suppressed on the canvas so right-click is
-  // free to mean something in-game.
+  // free to mean something in-game. Also fires on a touch-and-hold (see LONG_PRESS_MS below) —
+  // touch's equivalent, since there's no second mouse button (mobile-touch-support.md D3).
   wasRightClicked(): boolean;
   // Accumulated vertical wheel delta since the last read, consumed on read (same one-shot
   // pattern as wasClicked/wasPressed/wasReleased) — used by the rack panel to scroll its
@@ -39,6 +40,12 @@ const WHEEL_ZOOM_SENSITIVITY = 0.0015;
 // .plans/mobile-touch-support.md D1). input.ts's drag-vs-click logic doesn't otherwise change:
 // it still just reads wasClicked()/wasPressed()/wasReleased().
 const TAP_MAX_MOVEMENT_PX = 10;
+// Touch-and-hold duration that fires wasRightClicked() on touch/pen — the touch equivalent of
+// right-click's "view a rack" affordance (D4), since touch has no second mouse button. Matches
+// typical OS long-press thresholds. Mouse is untouched: right-click already covers it, so the
+// timer is only armed for non-mouse pointers (see the pointerdown handler below) rather than
+// adding a second, surprising way to trigger the same thing while holding the left button.
+const LONG_PRESS_MS = 500;
 
 export function createInput(canvas: HTMLCanvasElement, target: Window = window): InputState {
   const keysDown = new Set<string>();
@@ -61,6 +68,14 @@ export function createInput(canvas: HTMLCanvasElement, target: Window = window):
   let primaryPointerId: number | null = null;
   let pressOrigin: { x: number; y: number } | null = null;
   let lastPinchDistance: number | null = null;
+  let longPressTimer: ReturnType<typeof setTimeout> | undefined;
+  let longPressFired = false;
+
+  function cancelLongPress(): void {
+    if (longPressTimer === undefined) return;
+    target.clearTimeout(longPressTimer);
+    longPressTimer = undefined;
+  }
 
   // Turns off the browser's own scroll/pinch-zoom/double-tap-zoom on the canvas so our own
   // tap/drag/pinch handling below is the only thing interpreting touches.
@@ -102,13 +117,32 @@ export function createInput(canvas: HTMLCanvasElement, target: Window = window):
 
     // Only the first finger (or the mouse) drives press/click/drag — a second finger touching
     // down mid-gesture must not look like a fresh press (it would restart tryStartDrag, or
-    // misfire a click when the pinch ends).
-    if (primaryPointerId !== null) return;
+    // misfire a click when the pinch ends). It does mean this is becoming a pinch, though, not
+    // a long-press, so cancel any timer armed for the primary pointer.
+    if (primaryPointerId !== null) {
+      cancelLongPress();
+      return;
+    }
     primaryPointerId = event.pointerId;
     pointerPosition = canvasPoint(event);
     pressOrigin = pointerPosition;
     pointerDown = true;
     pressed = true;
+    longPressFired = false;
+
+    // Touch-and-hold → wasRightClicked() (see LONG_PRESS_MS above). Mouse already has an
+    // explicit right-click for this, so the timer is only armed for touch/pen.
+    if (event.pointerType !== 'mouse') {
+      longPressTimer = target.setTimeout(() => {
+        longPressTimer = undefined;
+        if (!pointerDown || !pressOrigin || !pointerPosition) return;
+        const moved = Math.hypot(pointerPosition.x - pressOrigin.x, pointerPosition.y - pressOrigin.y);
+        if (moved <= TAP_MAX_MOVEMENT_PX) {
+          longPressFired = true;
+          rightClicked = true;
+        }
+      }, LONG_PRESS_MS);
+    }
   });
 
   canvas.addEventListener('pointermove', (event) => {
@@ -117,6 +151,14 @@ export function createInput(canvas: HTMLCanvasElement, target: Window = window):
     }
     if (event.pointerId === primaryPointerId) {
       pointerPosition = canvasPoint(event);
+
+      // A real drag/pan is in progress, not a hold in place — a long-press should never fire
+      // once the finger has clearly moved (the timer callback double-checks this anyway, but
+      // cancelling here avoids the wasted wait).
+      if (pressOrigin) {
+        const moved = Math.hypot(pointerPosition.x - pressOrigin.x, pointerPosition.y - pressOrigin.y);
+        if (moved > TAP_MAX_MOVEMENT_PX) cancelLongPress();
+      }
     }
 
     const distance = pinchDistance();
@@ -139,18 +181,22 @@ export function createInput(canvas: HTMLCanvasElement, target: Window = window):
 
     if (event.pointerId !== primaryPointerId) return;
     primaryPointerId = null;
+    cancelLongPress();
     if (!pointerDown) return;
     pointerDown = false;
     released = true;
 
     // Self-computed tap detection (see TAP_MAX_MOVEMENT_PX above) rather than the native
-    // `click` event — this is what actually makes a tap register as a click on touch.
-    if (pressOrigin) {
+    // `click` event — this is what actually makes a tap register as a click on touch. Skipped
+    // if a long-press already fired for this same press: releasing a finger that just opened
+    // a rack's viewing panel must not also walk there / open it in dispatching mode.
+    if (!longPressFired && pressOrigin) {
       const releasePoint = canvasPoint(event);
       const distance = Math.hypot(releasePoint.x - pressOrigin.x, releasePoint.y - pressOrigin.y);
       if (distance <= TAP_MAX_MOVEMENT_PX) clicked = true;
     }
     pressOrigin = null;
+    longPressFired = false;
   });
 
   // An OS-interrupted touch (an incoming call, the browser reassigning the gesture to
@@ -162,7 +208,9 @@ export function createInput(canvas: HTMLCanvasElement, target: Window = window):
 
     if (event.pointerId !== primaryPointerId) return;
     primaryPointerId = null;
+    cancelLongPress();
     pressOrigin = null;
+    longPressFired = false;
     if (pointerDown) {
       pointerDown = false;
       released = true;
