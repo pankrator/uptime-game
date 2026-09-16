@@ -25,6 +25,7 @@ import {
 import { WORKLOAD_ARCHETYPES, TRAIT_LABELS, TRAIT_KEYS } from '../game-data';
 import { fits } from '../traits';
 import { type Renderer } from '../../rendering';
+import { type Camera } from '../../camera';
 import {
   getHudBarRect,
   getWorkloadPanelRect,
@@ -32,6 +33,7 @@ import {
   getOfferCardRect,
   getOfferButtonRect,
   getMuteButtonRect,
+  getRecenterButtonRect,
   getTutorialBannerRect,
   getTutorialActionButtonRect,
   getTutorialSkipRect,
@@ -71,7 +73,7 @@ function drawInlineBar(
 
 function drawMuteButton(renderer: Renderer, audio: Audio): void {
   const ctx = renderer.context;
-  const rect = getMuteButtonRect(renderer.canvas.width);
+  const rect = getMuteButtonRect(renderer.width);
   const muted = audio.isMuted();
 
   ctx.fillStyle = muted ? '#3a3f47' : 'rgba(255, 255, 255, 0.08)';
@@ -85,9 +87,32 @@ function drawMuteButton(renderer: Renderer, audio: Audio): void {
   ctx.textAlign = 'left';
 }
 
+// Only drawn while the camera is manually panned away from following the player (WASD, or a
+// drag on the floor on touch — see .plans/mobile-touch-support.md D3) — the touch-reachable
+// equivalent of pressing Space. Same "always reachable" placement/hit-test treatment as the
+// mute button (see input.ts).
+function drawRecenterButton(renderer: Renderer, camera: Camera): void {
+  if (!camera.detached) return;
+
+  const ctx = renderer.context;
+  const rect = getRecenterButtonRect(renderer.width);
+
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+  ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+  ctx.strokeStyle = '#666';
+  ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = TEXT_COLOR;
+  ctx.fillText('Recenter', rect.x + rect.width / 2, rect.y + rect.height / 2);
+  ctx.textAlign = 'left';
+}
+
 function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void {
   const ctx = renderer.context;
-  const bar = getHudBarRect(renderer.canvas.width);
+  const bar = getHudBarRect(renderer.width);
 
   ctx.fillStyle = 'rgba(20, 22, 25, 0.92)';
   ctx.fillRect(bar.x, bar.y, bar.width, bar.height);
@@ -249,7 +274,7 @@ interface WorkloadRow {
 
 function drawWorkloadPanel(world: World, renderer: Renderer, facility: EntityId): void {
   const ctx = renderer.context;
-  const canvasWidth = renderer.canvas.width;
+  const canvasWidth = renderer.width;
 
   const utilization = world.getComponent(utilizations, facility);
   if (!utilization) return;
@@ -513,7 +538,7 @@ function drawTutorialBanner(world: World, renderer: Renderer, facility: EntityId
   if (!progress || progress.skipped) return;
 
   const ctx = renderer.context;
-  const banner = getTutorialBannerRect(renderer.canvas.width);
+  const banner = getTutorialBannerRect(renderer.width);
   const step = getTutorialStepDef(progress.stepId);
 
   ctx.fillStyle = 'rgba(14, 18, 20, 0.95)';
@@ -548,7 +573,7 @@ function drawTutorialBanner(world: World, renderer: Renderer, facility: EntityId
   if (line) ctx.fillText(line, banner.x + padX, lineY);
 
   if (isTutorialActionStep(progress.stepId)) {
-    const buttonRect = getTutorialActionButtonRect(renderer.canvas.width);
+    const buttonRect = getTutorialActionButtonRect(renderer.width);
     ctx.fillStyle = '#2f6f4f';
     ctx.fillRect(buttonRect.x, buttonRect.y, buttonRect.width, buttonRect.height);
     ctx.strokeStyle = GREEN;
@@ -563,7 +588,7 @@ function drawTutorialBanner(world: World, renderer: Renderer, facility: EntityId
     );
     ctx.textAlign = 'left';
   } else {
-    const skipRect = getTutorialSkipRect(renderer.canvas.width);
+    const skipRect = getTutorialSkipRect(renderer.width);
     ctx.fillStyle = DIM_COLOR;
     ctx.font = '10px sans-serif';
     ctx.textAlign = 'right';
@@ -572,11 +597,18 @@ function drawTutorialBanner(world: World, renderer: Renderer, facility: EntityId
   }
 }
 
-export function createHudSystem(world: World, renderer: Renderer, facility: EntityId, audio: Audio): System {
+export function createHudSystem(
+  world: World,
+  renderer: Renderer,
+  facility: EntityId,
+  audio: Audio,
+  camera: Camera,
+): System {
   return {
     update() {
       drawTopBar(world, renderer, facility);
       drawMuteButton(renderer, audio);
+      drawRecenterButton(renderer, camera);
       drawOffersPanel(world, renderer);
       drawWorkloadPanel(world, renderer, facility);
       drawTutorialBanner(world, renderer, facility);

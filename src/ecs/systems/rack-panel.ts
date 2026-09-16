@@ -106,8 +106,8 @@ function toContentSpace(
   rackId: EntityId,
   pointer: { x: number; y: number },
 ): { x: number; y: number } | null {
-  const canvasWidth = renderer.canvas.width;
-  const canvasHeight = renderer.canvas.height;
+  const canvasWidth = renderer.width;
+  const canvasHeight = renderer.height;
   const serverIds = serversOn(world, rackId);
   const trayIds = trayWorkloadIds(world);
   const contentRect = getRackPanelContentRect(canvasWidth, canvasHeight, serverIds.length, trayIds.length);
@@ -173,8 +173,8 @@ export function tryStartDrag(
   const contentPoint = toContentSpace(world, controlled, renderer, panel.rackId, pointer);
   if (!contentPoint) return false;
 
-  const canvasWidth = renderer.canvas.width;
-  const canvasHeight = renderer.canvas.height;
+  const canvasWidth = renderer.width;
+  const canvasHeight = renderer.height;
   const serverIds = serversOn(world, panel.rackId);
   const trayIds = trayWorkloadIds(world);
 
@@ -227,8 +227,8 @@ function hitTestServerRow(
   rackId: EntityId,
   pointer: { x: number; y: number },
 ): EntityId | null {
-  const canvasWidth = renderer.canvas.width;
-  const canvasHeight = renderer.canvas.height;
+  const canvasWidth = renderer.width;
+  const canvasHeight = renderer.height;
   const serverIds = serversOn(world, rackId);
   const trayIds = trayWorkloadIds(world);
 
@@ -269,8 +269,8 @@ export function resolveDrop(
   const contentPoint = toContentSpace(world, controlled, renderer, panel.rackId, pointer);
   if (!contentPoint) return;
 
-  const canvasWidth = renderer.canvas.width;
-  const canvasHeight = renderer.canvas.height;
+  const canvasWidth = renderer.width;
+  const canvasHeight = renderer.height;
   const serverIds = serversOn(world, panel.rackId);
   const trayIds = trayWorkloadIds(world);
 
@@ -328,6 +328,12 @@ export function createRackPanelSystem(
     }
   });
 
+  // Drag-to-scroll gesture tracking (touch has no wheel — see
+  // .plans/mobile-touch-support.md step 5). Presentation-only transient state, same reasoning
+  // as camera.ts's own drag-pan tracking for keeping it out of the ECS.
+  let dragScrollPointer: { x: number; y: number } | null = null;
+  let dragScrollEligible = false;
+
   return {
     update() {
       const panel = world.getComponent(openRackPanels, controlled);
@@ -347,20 +353,20 @@ export function createRackPanelSystem(
       // Scroll: only while a panel is visible (viewing, or dispatching-and-arrived — same
       // "actually on screen" gate tryStartDrag uses) and the pointer is over its content
       // viewport, so wheeling over the rest of the floor doesn't hijack the browser's own
-      // scroll-suppression for nothing. Clamped every frame (not just on wheel input) since
-      // content height changes underneath the panel — a workload finishing and disappearing
-      // from the tray, say — could leave a stale offset scrolled past the new max.
+      // scroll-suppression for nothing. Clamped every frame (not just on wheel/drag input)
+      // since content height changes underneath the panel — a workload finishing and
+      // disappearing from the tray, say — could leave a stale offset scrolled past the new max.
       const panelVisible = panel && (panel.mode === 'viewing' || panel.arrived);
       if (panelVisible) {
         const serverIds = serversOn(world, panel.rackId);
         const trayIds = trayWorkloadIds(world);
         const contentRect = getRackPanelContentRect(
-          renderer.canvas.width,
-          renderer.canvas.height,
+          renderer.width,
+          renderer.height,
           serverIds.length,
           trayIds.length,
         );
-        const contentHeight = getRackPanelContentHeight(serverIds.length, trayIds.length);
+        const contentHeight = getRackPanelContentHeight(renderer.width, serverIds.length, trayIds.length);
         const maxScroll = maxRackScroll(contentHeight, contentRect.height);
 
         const scroll = world.getComponent(rackScrolls, controlled) ?? { offsetPx: 0 };
@@ -371,7 +377,31 @@ export function createRackPanelSystem(
         if (wheelDeltaY !== 0 && pointer && pointerInRect(pointer, contentRect)) {
           scroll.offsetPx += wheelDeltaY;
         }
+
+        // Drag-to-scroll: a press that lands on the content viewport but didn't hit a chip or
+        // tray card (tryStartDrag, called from input.ts's wasPressed() handling earlier this
+        // same frame — input.ts runs before rack-panel.ts in updateSystems, see main.ts — would
+        // already have set DragState if it had) scrolls the panel by the drag's vertical delta
+        // instead. Eligibility is decided once per press so a drag that starts on a chip keeps
+        // dragging that chip even if it later crosses empty background.
+        const pointerDown = input.isPointerDown();
+        if (pointerDown && pointer) {
+          if (dragScrollPointer === null) {
+            dragScrollEligible =
+              pointerInRect(pointer, contentRect) && !world.getComponent(dragStates, controlled);
+          } else if (dragScrollEligible) {
+            scroll.offsetPx -= pointer.y - dragScrollPointer.y;
+          }
+          dragScrollPointer = pointer;
+        } else {
+          dragScrollPointer = null;
+          dragScrollEligible = false;
+        }
+
         scroll.offsetPx = Math.min(Math.max(scroll.offsetPx, 0), maxScroll);
+      } else {
+        dragScrollPointer = null;
+        dragScrollEligible = false;
       }
 
       // Arrival check for an open, not-yet-arrived dispatching panel.

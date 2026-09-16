@@ -101,6 +101,12 @@ export const WORLD_HEIGHT = 1600;
 export const CAMERA_PAN_SPEED = 700; // pixels/second while WASD-panning
 export const CAMERA_FOLLOW_EASE = 6; // higher = camera catches up to the player faster
 
+// Pinch/ctrl+wheel zoom range (see .plans/mobile-touch-support.md D2) — clamped so click-to-grid
+// math and pathing stay sane at both extremes, and so the HUD-safe viewport can never show less
+// floor than a rack's width at max zoom-in.
+export const CAMERA_ZOOM_MIN = 0.6;
+export const CAMERA_ZOOM_MAX = 2;
+
 // Room tier ladder — anchored at a shared top-left origin so upgrading always grows the room
 // right and down (see .plans/facility-shop-inventory.md D4). Grid cells, not pixels. gridY
 // leaves room above for the corridor strip (world-map.ts) that runs along the room's fixed

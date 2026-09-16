@@ -58,6 +58,7 @@ import {
   getShopTabRect,
   getShopBuyButtonRect,
   getMuteButtonRect,
+  getRecenterButtonRect,
   getTutorialActionButtonRect,
   getTutorialSkipRect,
   getServerRepairButtonRect,
@@ -357,8 +358,15 @@ export function createInputSystem(
 
       // -1. Mute toggle — always reachable, checked before anything else can swallow the click
       // (an install task, build mode, or a full-screen panel should never block it).
-      if (pointerInRect(pointer, getMuteButtonRect(renderer.canvas.width))) {
+      if (pointerInRect(pointer, getMuteButtonRect(renderer.width))) {
         audio.setMuted(!audio.isMuted());
+        return;
+      }
+
+      // -0.95. Recenter camera — only reachable while manually panned away (see
+      // .plans/mobile-touch-support.md D3); same always-reachable treatment as the mute button.
+      if (camera.detached && pointerInRect(pointer, getRecenterButtonRect(renderer.width))) {
+        camera.recenter();
         return;
       }
 
@@ -369,7 +377,7 @@ export function createInputSystem(
       if (tutorialProgress && tutorialBannerVisible) {
         if (
           isTutorialActionStep(tutorialProgress.stepId) &&
-          pointerInRect(pointer, getTutorialActionButtonRect(renderer.canvas.width))
+          pointerInRect(pointer, getTutorialActionButtonRect(renderer.width))
         ) {
           audio.play('uiClick');
           if (tutorialProgress.stepId === 'welcome') {
@@ -381,7 +389,7 @@ export function createInputSystem(
         }
         if (
           !isTutorialActionStep(tutorialProgress.stepId) &&
-          pointerInRect(pointer, getTutorialSkipRect(renderer.canvas.width))
+          pointerInRect(pointer, getTutorialSkipRect(renderer.width))
         ) {
           audio.play('uiClick');
           skipTutorial(world, facility);
@@ -424,8 +432,8 @@ export function createInputSystem(
         const serverCount = serverIds.length;
         const trayCount = trayWorkloadIds(world).length;
         const closeRect = getRackPanelCloseButtonRect(
-          renderer.canvas.width,
-          renderer.canvas.height,
+          renderer.width,
+          renderer.height,
           serverCount,
           trayCount,
         );
@@ -446,7 +454,7 @@ export function createInputSystem(
           const condition = world.getComponent(conditions, serverId);
           const repairable = condition && (condition.wear > REPAIRABLE_WEAR_THRESHOLD || world.getComponent(faileds, serverId));
           if (repairable) {
-            const repairRect = getServerRepairButtonRect(index, renderer.canvas.width, renderer.canvas.height, serverCount, trayCount);
+            const repairRect = getServerRepairButtonRect(index, renderer.width, renderer.height, serverCount, trayCount);
             if (pointerInRect(pointer, repairRect)) {
               audio.play('uiClick');
               tryStartRepair(world, controlled, facility, serverId);
@@ -454,7 +462,7 @@ export function createInputSystem(
             }
           }
 
-          const decommissionRect = getServerDecommissionButtonRect(index, renderer.canvas.width, renderer.canvas.height, serverCount, trayCount);
+          const decommissionRect = getServerDecommissionButtonRect(index, renderer.width, renderer.height, serverCount, trayCount);
           if (pointerInRect(pointer, decommissionRect)) {
             const confirm = world.getComponent(decommissionConfirms, controlled);
             if (confirm && confirm.serverId === serverId && performance.now() < confirm.expiresAtMs) {
@@ -480,7 +488,7 @@ export function createInputSystem(
       // it's currently open.
       if (world.getComponent(shopOpens, controlled)) {
         const rowCount = shopCatalogForTab(shopTab.current).length;
-        const closeRect = getShopCloseButtonRect(renderer.canvas.width, renderer.canvas.height, rowCount);
+        const closeRect = getShopCloseButtonRect(renderer.width, renderer.height, rowCount);
         if (pointerInRect(pointer, closeRect)) {
           world.removeComponent(shopOpens, controlled);
           dismissShop();
@@ -489,7 +497,7 @@ export function createInputSystem(
 
         const categories = shopCategories();
         for (let tabIndex = 0; tabIndex < categories.length; tabIndex++) {
-          const tabRect = getShopTabRect(tabIndex, categories.length, renderer.canvas.width, renderer.canvas.height, rowCount);
+          const tabRect = getShopTabRect(tabIndex, categories.length, renderer.width, renderer.height, rowCount);
           if (pointerInRect(pointer, tabRect)) {
             shopTab.current = categories[tabIndex];
             return;
@@ -498,7 +506,7 @@ export function createInputSystem(
 
         const rows = shopCatalogForTab(shopTab.current);
         for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
-          const buyRect = getShopBuyButtonRect(rowIndex, renderer.canvas.width, renderer.canvas.height, rowCount);
+          const buyRect = getShopBuyButtonRect(rowIndex, renderer.width, renderer.height, rowCount);
           if (pointerInRect(pointer, buyRect)) {
             audio.play('uiClick');
             if (buy(world, facility, rows[rowIndex].id)) {
@@ -511,7 +519,7 @@ export function createInputSystem(
         return;
       }
 
-      const panelIndex = hitTestPanel(pointer, renderer.canvas.height);
+      const panelIndex = hitTestPanel(pointer, renderer.height);
       const buildMode = world.getComponent(buildModes, controlled);
 
       // 2. Panel hit.

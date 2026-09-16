@@ -2,7 +2,9 @@ import { BUILDABLES } from '../ecs/components';
 
 export const BUILD_PANEL_MARGIN = 12;
 export const BUILD_PANEL_ENTRY_WIDTH = 120;
-export const BUILD_PANEL_ENTRY_HEIGHT = 32;
+// 40px — touch-target floor (see .plans/mobile-touch-support.md D4). Desktop mouse users lose
+// nothing from the larger button; one shared geometry beats a second, mobile-only layout.
+export const BUILD_PANEL_ENTRY_HEIGHT = 40;
 export const BUILD_PANEL_ENTRY_GAP = 6;
 
 export interface Rect {
@@ -33,7 +35,10 @@ export function getBuildPanelEntryRect(index: number, canvasHeight: number): Rec
   };
 }
 
-export const HUD_BAR_HEIGHT = 36;
+// 44px — touch-target floor (see .plans/mobile-touch-support.md D4), up from 36. Every offset
+// below that reads HUD_BAR_HEIGHT (drawTopBar's midY, getGameViewportRect's top, the offers/
+// workload panels' y) shifts consistently since none of them hardcode the old value.
+export const HUD_BAR_HEIGHT = 44;
 export const HUD_PANEL_WIDTH = 240;
 export const HUD_PANEL_MARGIN = 12;
 export const HUD_ROW_HEIGHT = 28;
@@ -45,7 +50,8 @@ export function getHudBarRect(canvasWidth: number): Rect {
 
 // Mute toggle — top-right corner of the HUD bar itself, so it's always reachable regardless
 // of build mode/panels (checked first in input.ts's click chain, same as offer buttons).
-export const MUTE_BUTTON_SIZE = 24;
+// 34px fits comfortably within the 44px HUD_BAR_HEIGHT with margin to spare (see D4).
+export const MUTE_BUTTON_SIZE = 34;
 export const MUTE_BUTTON_MARGIN = 6;
 
 export function getMuteButtonRect(canvasWidth: number): Rect {
@@ -53,6 +59,22 @@ export function getMuteButtonRect(canvasWidth: number): Rect {
     x: canvasWidth - MUTE_BUTTON_MARGIN - MUTE_BUTTON_SIZE,
     y: (HUD_BAR_HEIGHT - MUTE_BUTTON_SIZE) / 2,
     width: MUTE_BUTTON_SIZE,
+    height: MUTE_BUTTON_SIZE,
+  };
+}
+
+// Recenter camera — only reachable while the camera is manually panned away (WASD, or a drag on
+// the floor on touch — see .plans/mobile-touch-support.md D3), the touch equivalent of pressing
+// Space. Left of the mute button, same row/size family.
+export const RECENTER_BUTTON_WIDTH = 84;
+export const RECENTER_BUTTON_GAP = 6;
+
+export function getRecenterButtonRect(canvasWidth: number): Rect {
+  const mute = getMuteButtonRect(canvasWidth);
+  return {
+    x: mute.x - RECENTER_BUTTON_GAP - RECENTER_BUTTON_WIDTH,
+    y: mute.y,
+    width: RECENTER_BUTTON_WIDTH,
     height: MUTE_BUTTON_SIZE,
   };
 }
@@ -88,9 +110,12 @@ export function getWorkloadRowRect(index: number, canvasWidth: number, rowCount:
 // workload panel above occupies the right), each with its own Accept/Decline hit rects. See
 // .plans/workload-dispatch.md step 5.
 export const OFFER_CARD_WIDTH = 220;
-export const OFFER_CARD_HEIGHT = 76;
+// Tall enough for the accept/decline buttons at OFFER_BUTTON_HEIGHT (touch-target floor, see
+// .plans/mobile-touch-support.md D4) plus a clear gap below the card's own text, which runs to
+// a 54px offset in the worst case (drawOfferCard's "no server fits this" line) — was 76.
+export const OFFER_CARD_HEIGHT = 104;
 export const OFFER_CARD_GAP = 8;
-export const OFFER_BUTTON_HEIGHT = 22;
+export const OFFER_BUTTON_HEIGHT = 32;
 export const OFFER_BUTTON_GAP = 6;
 
 // Left-anchored, fixed width — unlike the workload panel (right-anchored, sized to canvas
@@ -134,7 +159,9 @@ function getOffersPanelRect(offerCount: number): Rect {
 // any existing HUD panel. See .plans/workload-dispatch.md step 7.
 export const RACK_PANEL_WIDTH = 460;
 export const RACK_PANEL_PADDING = 16;
-export const RACK_PANEL_HEADER_HEIGHT = 30;
+// 34px, up from 30 — just enough extra to fit RACK_CLOSE_BUTTON_SIZE's touch-target bump
+// without the button poking past the header/padding region into the content area below.
+export const RACK_PANEL_HEADER_HEIGHT = 34;
 // Was 54, then 100, then 116 — 116 was sized for three trait rows only. .plans/hardware-failure.md
 // Step 6 adds a 4th bar-shaped row (wear, reusing getServerTraitBarRect at traitIndex ===
 // TRAIT_KEYS.length — see render.ts) plus a row of repair/decommission buttons beneath it.
@@ -153,7 +180,24 @@ export const RACK_TRAY_HEADER_HEIGHT = 20;
 export const RACK_TRAY_CARD_WIDTH = 110;
 export const RACK_TRAY_CARD_HEIGHT = 38;
 export const RACK_TRAY_CARD_GAP = 8;
-export const RACK_CLOSE_BUTTON_SIZE = 24;
+// 32px — touch-target floor (see .plans/mobile-touch-support.md D4), up from 24.
+export const RACK_CLOSE_BUTTON_SIZE = 32;
+
+// Tray cards wrap onto additional rows once a single row would overflow the panel's content
+// width — a rack can accept more workloads than fit on one line (see the game concept's
+// dispatch loop), and a single overflowing line hid everything past the first few cards.
+// `panelWidth` is the already-computed outer panel width (see getRackPanelRect), so this has
+// no circular dependency on the tray height it helps compute.
+function getTrayColumns(panelWidth: number): number {
+  const availWidth = panelWidth - RACK_PANEL_PADDING * 2;
+  return Math.max(1, Math.floor((availWidth + RACK_TRAY_CARD_GAP) / (RACK_TRAY_CARD_WIDTH + RACK_TRAY_CARD_GAP)));
+}
+
+function getTrayHeight(trayCount: number, panelWidth: number): number {
+  if (trayCount === 0) return RACK_TRAY_HEADER_HEIGHT + RACK_TRAY_CARD_HEIGHT;
+  const rows = Math.ceil(trayCount / getTrayColumns(panelWidth));
+  return RACK_TRAY_HEADER_HEIGHT + rows * RACK_TRAY_CARD_HEIGHT + (rows - 1) * RACK_TRAY_CARD_GAP;
+}
 
 export function getRackPanelRect(
   canvasWidth: number,
@@ -163,11 +207,8 @@ export function getRackPanelRect(
 ): Rect {
   const serversHeight =
     serverCount > 0 ? serverCount * RACK_SERVER_ROW_HEIGHT + (serverCount - 1) * RACK_SERVER_ROW_GAP : 0;
-  const trayHeight =
-    RACK_TRAY_HEADER_HEIGHT +
-    (trayCount > 0 ? trayCount * RACK_TRAY_CARD_HEIGHT + (trayCount - 1) * RACK_TRAY_CARD_GAP : RACK_TRAY_CARD_HEIGHT);
-
   const width = Math.min(RACK_PANEL_WIDTH, canvasWidth - RACK_PANEL_PADDING * 2);
+  const trayHeight = getTrayHeight(trayCount, width);
   const height = Math.min(
     RACK_PANEL_HEADER_HEIGHT + RACK_PANEL_PADDING * 3 + serversHeight + trayHeight,
     canvasHeight - RACK_PANEL_PADDING * 2,
@@ -185,13 +226,11 @@ export function getRackPanelRect(
 // the tray) — as opposed to getRackPanelRect's height, which is clamped to fit the canvas. The
 // difference between this and getRackPanelContentRect's height is how far the panel can scroll;
 // see rack-panel.ts's scroll handling.
-export function getRackPanelContentHeight(serverCount: number, trayCount: number): number {
+export function getRackPanelContentHeight(canvasWidth: number, serverCount: number, trayCount: number): number {
   const serversHeight =
     serverCount > 0 ? serverCount * RACK_SERVER_ROW_HEIGHT + (serverCount - 1) * RACK_SERVER_ROW_GAP : 0;
-  const trayHeight =
-    RACK_TRAY_HEADER_HEIGHT +
-    (trayCount > 0 ? trayCount * RACK_TRAY_CARD_HEIGHT + (trayCount - 1) * RACK_TRAY_CARD_GAP : RACK_TRAY_CARD_HEIGHT);
-  return serversHeight + RACK_PANEL_PADDING + trayHeight;
+  const width = Math.min(RACK_PANEL_WIDTH, canvasWidth - RACK_PANEL_PADDING * 2);
+  return serversHeight + RACK_PANEL_PADDING + getTrayHeight(trayCount, width);
 }
 
 // The scrollable sub-region inside the panel: everything below the header, inset by the same
@@ -371,9 +410,15 @@ export function getTrayCardRect(
   trayCount: number,
 ): Rect {
   const panel = getRackPanelRect(canvasWidth, canvasHeight, serverCount, trayCount);
+  const columns = getTrayColumns(panel.width);
+  const column = index % columns;
+  const row = Math.floor(index / columns);
   return {
-    x: panel.x + RACK_PANEL_PADDING + index * (RACK_TRAY_CARD_WIDTH + RACK_TRAY_CARD_GAP),
-    y: getTrayTopY(canvasWidth, canvasHeight, serverCount, trayCount) + RACK_TRAY_HEADER_HEIGHT,
+    x: panel.x + RACK_PANEL_PADDING + column * (RACK_TRAY_CARD_WIDTH + RACK_TRAY_CARD_GAP),
+    y:
+      getTrayTopY(canvasWidth, canvasHeight, serverCount, trayCount) +
+      RACK_TRAY_HEADER_HEIGHT +
+      row * (RACK_TRAY_CARD_HEIGHT + RACK_TRAY_CARD_GAP),
     width: RACK_TRAY_CARD_WIDTH,
     height: RACK_TRAY_CARD_HEIGHT,
   };
@@ -419,13 +464,15 @@ export function getTrayDropRect(
 // .plans/facility-shop-inventory.md Step 5.
 export const SHOP_PANEL_WIDTH = 420;
 export const SHOP_PANEL_PADDING = 16;
-export const SHOP_PANEL_HEADER_HEIGHT = 30;
+// Header/row/button sizes bumped for touch-target floor (see .plans/mobile-touch-support.md
+// D4) — row text is positioned by fraction of row.height (render.ts), so it re-centers safely.
+export const SHOP_PANEL_HEADER_HEIGHT = 34;
 export const SHOP_TAB_HEIGHT = 28;
-export const SHOP_ROW_HEIGHT = 40;
+export const SHOP_ROW_HEIGHT = 44;
 export const SHOP_ROW_GAP = 6;
 export const SHOP_BUY_BUTTON_WIDTH = 70;
-export const SHOP_BUY_BUTTON_HEIGHT = 26;
-export const SHOP_CLOSE_BUTTON_SIZE = 24;
+export const SHOP_BUY_BUTTON_HEIGHT = 34;
+export const SHOP_CLOSE_BUTTON_SIZE = 32;
 
 export function getShopPanelRect(canvasWidth: number, canvasHeight: number, rowCount: number): Rect {
   const rowsHeight = rowCount > 0 ? rowCount * SHOP_ROW_HEIGHT + (rowCount - 1) * SHOP_ROW_GAP : SHOP_ROW_HEIGHT;
@@ -506,19 +553,23 @@ export function pointerInHud(
   offerCount = 0,
   tutorialBannerVisible = false,
 ): boolean {
-  if (pointerInRect(point, getHudBarRect(canvas.width))) return true;
+  // canvas.clientWidth (CSS-pixel/logical size), not canvas.width — the latter is the
+  // dpr-scaled backing-buffer resolution set by rendering/index.ts (see
+  // .plans/mobile-touch-support.md D5) and would misalign every rect below against a
+  // CSS-pixel pointer position.
+  if (pointerInRect(point, getHudBarRect(canvas.clientWidth))) return true;
 
   // Row count only affects panel height, not x/width — a generous upper bound (max rows,
   // each potentially a 2-line pending row, plus a "+N more" line) safely covers the panel's
   // full extent for hit-testing without needing to know the actual workload list.
-  const panelRect = getWorkloadPanelRect(canvas.width, HUD_PANEL_MAX_ROWS * 2 + 1);
+  const panelRect = getWorkloadPanelRect(canvas.clientWidth, HUD_PANEL_MAX_ROWS * 2 + 1);
   if (pointerInRect(point, panelRect)) return true;
 
   if (offerCount > 0 && pointerInRect(point, getOffersPanelRect(offerCount))) {
     return true;
   }
 
-  if (tutorialBannerVisible && pointerInRect(point, getTutorialBannerRect(canvas.width))) {
+  if (tutorialBannerVisible && pointerInRect(point, getTutorialBannerRect(canvas.clientWidth))) {
     return true;
   }
 
