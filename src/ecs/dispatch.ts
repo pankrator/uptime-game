@@ -2,8 +2,8 @@
 // the `Workload.state` / `PlacedOn` / `ServerCapacity.free` invariant lives in one file. See
 // .plans/workload-dispatch.md D1 and the "New module: src/ecs/dispatch.ts" section.
 import { type World, type EntityId } from './world';
-import { placedOns, serverCapacities, powereds, workloads, offers, type Workload } from './components';
-import { type TraitKey } from './game-data';
+import { placedOns, serverCapacities, powereds, workloads, offers, reputations, type Workload } from './components';
+import { type TraitKey, REPUTATION_ON_DECLINE, clampReputation } from './game-data';
 import { fits, shortfall } from './traits';
 
 // Validity check, no mutation. Returns null if the workload fits on the server (which must
@@ -73,8 +73,13 @@ export function acceptOffer(world: World, offerId: EntityId): EntityId {
   return id;
 }
 
-// Declining costs nothing (REPUTATION_ON_DECLINE = 0) — see the D-note in game-data.ts: if
-// declining cost reputation, the accept gate would be a false choice.
-export function declineOffer(world: World, offerId: EntityId): void {
+// .plans/contract-variety.md step 3: a small, flat reputation cost (REPUTATION_ON_DECLINE) —
+// enough that cherry-picking forever isn't free, small enough that declining a genuinely bad
+// offer (no server fits it, or a recurring contract you don't have room to commit to) is still
+// clearly the right call next to accepting and eating penaltyOnMiss. facility is only needed to
+// look up Reputation — this function still owns no other state.
+export function declineOffer(world: World, facility: EntityId, offerId: EntityId): void {
+  const reputation = world.getComponent(reputations, facility);
+  if (reputation) reputation.value = clampReputation(reputation.value + REPUTATION_ON_DECLINE);
   world.destroyEntity(offerId);
 }

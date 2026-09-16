@@ -10,13 +10,14 @@ import {
   installedIns,
   temperatures,
 } from '../components';
-import { REPUTATION_ON_MISSED_DEADLINE, REPUTATION_ON_COMPLETION, WORKLOAD_ARCHETYPES } from '../game-data';
+import {
+  REPUTATION_ON_MISSED_DEADLINE,
+  REPUTATION_ON_COMPLETION,
+  WORKLOAD_ARCHETYPES,
+  clampReputation,
+} from '../game-data';
 import { type Audio } from '../../audio';
 import { type System } from './system';
-
-function clampReputation(value: number): number {
-  return Math.max(0, Math.min(100, value));
-}
 
 // D2: a single finish deadline, not separate start/finish deadlines. Per workload, every tick:
 //   1. deadlineRemainingSeconds -= dt, ALWAYS — whether sitting in the tray or running.

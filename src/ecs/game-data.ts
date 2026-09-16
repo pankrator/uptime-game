@@ -352,9 +352,21 @@ export const RECURRING_PAY_MULTIPLIER = 0.85;
 
 export const REPUTATION_ON_MISSED_DEADLINE = -8; // renamed from REPUTATION_ON_EXPIRY (D2)
 export const REPUTATION_ON_COMPLETION = 3;
-export const REPUTATION_ON_DECLINE = 0; // declining is free — see the D-note in the plan
+// .plans/contract-variety.md step 3: was 0 ("declining is free") back when accepting had no
+// downside beyond opportunity cost — the D-note this used to cite argued zero was correct only
+// in that world. Now that accepting carries penaltyOnMiss (D1), a flat -1 gives pure
+// cherry-picking (decline everything but the best offers, forever) a real cost via
+// getArrivalInterval, without making any single well-reasoned decline — e.g. a no-fit
+// offer — a meaningful hit on its own. A silent EXPIRY (createOfferExpirySystem in
+// workload-spawn.ts) is not this: it never calls declineOffer, so an ignored offer still costs
+// nothing, per D1's "never punish the player for a decision they did not make."
+export const REPUTATION_ON_DECLINE = -1;
 export const MAX_OFFERS = 3; // concurrent offers on screen
 export const BROWNOUT_COOLDOWN_SECONDS = 1.0;
+
+export function clampReputation(value: number): number {
+  return Math.max(0, Math.min(100, value));
+}
 
 export function getArrivalInterval(elapsedSeconds: number, reputation: number): number {
   return (14 - Math.min(8, elapsedSeconds / 45)) * (1.6 - (reputation / 100) * 0.8);

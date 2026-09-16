@@ -49,4 +49,5 @@ why these two are deliberately split.
 
 - **Must run after `capacity`** (`main.ts` order) — otherwise it could pay out against a
   placement a same-tick brownout already invalidated.
-- Reputation is clamped to `[0, 100]` via a local `clampReputation` helper.
+- Reputation is clamped to `[0, 100]` via `clampReputation` (`game-data.ts`), shared with
+  `dispatch.ts`'s `declineOffer` so every reputation write goes through the same clamp.

@@ -284,9 +284,11 @@ export interface RejectedDrop {
 }
 
 // An offered contract awaiting accept/decline. Its own entity; no Position, no Renderable.
-// Turning this down costs nothing (see REPUTATION_ON_DECLINE) — the accept/decline choice is
-// the actual difficulty dial now, not passive demand escalation. See
-// .plans/workload-dispatch.md "New loop" and the Offer section under Data model changes.
+// Explicitly declining costs a small amount of reputation (REPUTATION_ON_DECLINE, applied in
+// dispatch.ts's declineOffer) — letting the offer silently expire instead does not (see
+// createOfferExpirySystem in workload-spawn.ts). The accept/decline choice is the actual
+// difficulty dial now, not passive demand escalation. See .plans/workload-dispatch.md "New
+// loop", the Offer section under Data model changes, and .plans/contract-variety.md step 3.
 export interface Offer {
   archetypeId: WorkloadArchetypeId;
   demands: Traits;
