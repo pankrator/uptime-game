@@ -14,11 +14,12 @@ import { createResourceSystem } from './ecs/systems/resource';
 import { createCapacitySystem } from './ecs/systems/capacity';
 import { createWorkloadSpawnSystem, createOfferExpirySystem } from './ecs/systems/workload-spawn';
 import { createWorkloadRunSystem } from './ecs/systems/workload-run';
+import { createThermalSystem } from './ecs/systems/thermal';
 import { createRenderSystem } from './ecs/systems/render';
 import { createHudSystem } from './ecs/systems/hud';
 import { createCameraSystem } from './ecs/systems/camera';
 import { createTutorialSystem, startTutorial } from './ecs/systems/tutorial';
-import { spawnPlayer, spawnFacility } from './entities';
+import { spawnPlayer, spawnFacility, applyStressPreset } from './entities';
 import { getRoomRect } from './ecs/room';
 import { gridToWorld } from './ecs/components';
 import { showLanding, hideLanding } from './landing';
@@ -34,13 +35,23 @@ if (!landingContainer) {
   throw new Error('Landing element #landing not found');
 }
 
-showLanding(landingContainer, () => {
-  hideLanding(landingContainer);
-  canvas.hidden = false;
-  runGame(canvas);
-});
+showLanding(
+  landingContainer,
+  () => {
+    hideLanding(landingContainer);
+    canvas.hidden = false;
+    runGame(canvas, false);
+  },
+  import.meta.env.DEV
+    ? () => {
+        hideLanding(landingContainer);
+        canvas.hidden = false;
+        runGame(canvas, true);
+      }
+    : undefined,
+);
 
-function runGame(canvas: HTMLCanvasElement): void {
+function runGame(canvas: HTMLCanvasElement, stressPreset: boolean): void {
   const renderer = createRenderer(canvas);
   const input = createInput(canvas);
   const state = createGameState();
@@ -49,6 +60,11 @@ function runGame(canvas: HTMLCanvasElement): void {
   const audio = createAudio();
 
   const facility = spawnFacility(world);
+  if (stressPreset) {
+    // Must run before the room-center spawn point is computed below — it grows the room past
+    // the default closet tier, and the racks it places sit inside that larger room.
+    applyStressPreset(world, facility);
+  }
   const room = getRoomRect(world, facility);
   const spawnPoint = gridToWorld(
     Math.floor((room.minGridX + room.maxGridX) / 2),
@@ -72,6 +88,13 @@ function runGame(canvas: HTMLCanvasElement): void {
   // - capacity runs AFTER resource (needs Powered.online) and BEFORE workload-run: running
   //   workload-run against stale free-capacity would pay out for placements a brownout already
   //   invalidated this frame.
+  // - thermal runs AFTER capacity (needs this tick's RackLoad.heatKw) and BEFORE workload-run
+  //   (which applies Temperature.throttleFactor to pay/progress). It also runs after resource so
+  //   a machine already offline from a brownout doesn't also generate heat. resource.ts is the
+  //   sole writer of Powered.online; thermal.ts may only force a rack's machines offline on trip
+  //   (never force them online) and otherwise signals via the ThermalTrip marker, which
+  //   resource.ts reads as a veto on bringing a tripped rack back online — see
+  //   .plans/thermal-and-cooling.md D7.
   // - spawn runs before run so a contract's offer window starts the same frame it arrives.
   const updateSystems = [
     createInputSystem(world, input, renderer, player, facility, camera, audio),
@@ -82,6 +105,7 @@ function runGame(canvas: HTMLCanvasElement): void {
     createShopSystem(world, player),
     createResourceSystem(world, facility, audio),
     createCapacitySystem(world, facility),
+    createThermalSystem(world, facility, audio),
     createWorkloadSpawnSystem(world, facility),
     createOfferExpirySystem(world),
     createWorkloadRunSystem(world, facility, audio),
@@ -99,7 +123,7 @@ function runGame(canvas: HTMLCanvasElement): void {
   const renderSystems = [
     createCameraSystem(world, renderer, input, player, camera),
     createRenderSystem(world, renderer, player, facility, camera, input),
-    createHudSystem(world, renderer, facility, audio),
+    createHudSystem(world, renderer, facility, audio, camera),
   ];
 
   const loop = createGameLoop({ renderer, input, state, updateSystems, renderSystems });

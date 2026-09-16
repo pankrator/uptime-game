@@ -23,8 +23,10 @@ when new `Offer` entities arrive, and when an ignored offer auto-expires.
 ## `createOfferExpirySystem`
 
 - Ticks every open `Offer.secondsRemaining` down; destroys the entity at zero.
-- No reputation penalty on expiry — an ignored offer is treated as a silent decline,
-  same as `declineOffer` in `dispatch.ts` (`REPUTATION_ON_DECLINE = 0`).
+- No reputation penalty on expiry — it destroys the offer directly rather than calling
+  `declineOffer` in `dispatch.ts`, so `REPUTATION_ON_DECLINE` never applies. An ignored
+  offer is a silent decline (no choice was made), unlike an explicit decline click, which
+  costs `REPUTATION_ON_DECLINE` as of `.plans/contract-variety.md` step 3.
 
 ## Notes
 

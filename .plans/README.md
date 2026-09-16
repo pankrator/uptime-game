@@ -42,6 +42,7 @@ changes if you reorder.
 | 10 | [hardware-failure.md](hardware-failure.md) | Medium | Wear, failure, repair, decommission. Gives the player character a job and makes the walk meaningful. Build after 9 so heat drives wear. |
 | 11 | [contract-variety.md](contract-variety.md) | Small-Medium | Penalties and recurring contracts. Fixes the "accept everything" dominant strategy and introduces committed capacity. Independent of 9-10; can be pulled forward. |
 | 12 | [research-tree.md](research-tree.md) | Medium | Permanent, partly exclusive upgrades. **Build last** — most of its interesting nodes modify constants that plans 8-10 introduce. |
+| 13 | [mobile-touch-support.md](mobile-touch-support.md) | Medium | Pointer-event touch input, pinch/ctrl+wheel zoom, touch-friendly hit targets, DPR-correct rendering. Independent of the others — can be pulled forward any time gameplay needs to be checked on a phone/tablet. |
 | — | [ideas-backlog.md](ideas-backlog.md) | — | Unpromoted ideas, sized and sequenced, plus a record of what was considered and rejected. |
 
 ## If you only build one
