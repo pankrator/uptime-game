@@ -401,6 +401,13 @@ export interface TutorialProgress {
   skipped: boolean;
 }
 
+// Marker on the player entity — lets save/load (src/save/) find the player singleton after a
+// load without hardcoding an entity id in the save format. See .plans/save-load.md D5.
+export type PlayerTag = Record<string, never>;
+
+// Marker on the facility entity — same reasoning as PlayerTag.
+export type FacilityTag = Record<string, never>;
+
 export const positions = createComponentStore<Position>();
 export const moveTargets = createComponentStore<MoveTarget>();
 export const speeds = createComponentStore<Speed>();
@@ -441,3 +448,5 @@ export const dragStates = createComponentStore<DragState>();
 export const decommissionConfirms = createComponentStore<DecommissionConfirm>();
 export const rejectedDrops = createComponentStore<RejectedDrop>();
 export const tutorialProgresses = createComponentStore<TutorialProgress>();
+export const playerTags = createComponentStore<PlayerTag>();
+export const facilityTags = createComponentStore<FacilityTag>();

@@ -1,11 +1,14 @@
 // Pre-game landing screen: plain DOM/CSS, not canvas — it exists entirely before the ECS
 // world/game loop starts, so it isn't a "game entity" the render system needs to own.
 //
-// onStartStress is optional and caller-gated (main.ts only passes it in dev builds) — the
-// landing module itself stays free of env checks so it's usable/testable on its own.
+// onContinue/onStartStress are both optional and caller-gated (main.ts only passes onContinue
+// when a save exists, onStartStress only in dev builds) — the landing module itself stays free
+// of both env checks and save-storage access so it's usable/testable on its own. See
+// .plans/save-load.md D7.
 export function showLanding(
   container: HTMLElement,
   onStart: () => void,
+  onContinue?: () => void,
   onStartStress?: () => void,
 ): void {
   container.innerHTML = '';
@@ -36,11 +39,22 @@ export function showLanding(
   const startButton = document.createElement('button');
   startButton.type = 'button';
   startButton.className = 'landing-start';
-  startButton.textContent = 'START';
+  startButton.textContent = onContinue ? 'NEW GAME' : 'START';
   startButton.addEventListener('click', onStart);
 
   panel.appendChild(logo);
   panel.appendChild(tagline);
+
+  let continueButton: HTMLButtonElement | undefined;
+  if (onContinue) {
+    continueButton = document.createElement('button');
+    continueButton.type = 'button';
+    continueButton.className = 'landing-continue';
+    continueButton.textContent = 'CONTINUE';
+    continueButton.addEventListener('click', onContinue);
+    panel.appendChild(continueButton);
+  }
+
   panel.appendChild(startButton);
 
   if (onStartStress) {
@@ -54,7 +68,7 @@ export function showLanding(
 
   container.appendChild(panel);
 
-  startButton.focus();
+  (continueButton ?? startButton).focus();
 }
 
 export function hideLanding(container: HTMLElement): void {

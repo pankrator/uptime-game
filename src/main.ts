@@ -2,7 +2,7 @@ import { createRenderer } from './rendering';
 import { createInput } from './input';
 import { createGameState } from './state';
 import { createGameLoop } from './core';
-import { createWorld } from './ecs/world';
+import { createWorld, type EntityId } from './ecs/world';
 import { createCamera } from './camera';
 import { createInputSystem } from './ecs/systems/input';
 import { createMaintenanceSystem } from './ecs/systems/maintenance';
@@ -22,9 +22,11 @@ import { createCameraSystem } from './ecs/systems/camera';
 import { createTutorialSystem, startTutorial } from './ecs/systems/tutorial';
 import { spawnPlayer, spawnFacility, applyStressPreset } from './entities';
 import { getRoomRect } from './ecs/room';
-import { gridToWorld } from './ecs/components';
+import { gridToWorld, playerTags, facilityTags } from './ecs/components';
 import { showLanding, hideLanding } from './landing';
 import { createAudio } from './audio';
+import { createSaveManager, MANUAL_SLOT, type SaveManager } from './save/manager';
+import { createLocalStorageSaveStorage } from './save/local-storage';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#game');
 if (!canvas) {
@@ -36,23 +38,42 @@ if (!landingContainer) {
   throw new Error('Landing element #landing not found');
 }
 
+// One SaveManager for the page's whole lifetime — the landing screen's "has a save?" check and
+// runGame's load/quicksave path both go through it. See .plans/save-load.md D1: swapping in a
+// backend later is replacing this one line, nothing downstream of it changes.
+const saveManager = createSaveManager(createLocalStorageSaveStorage());
+
+const hasSave = await saveManager.hasSave(MANUAL_SLOT);
+
 showLanding(
   landingContainer,
   () => {
     hideLanding(landingContainer);
     canvas.hidden = false;
-    runGame(canvas, false);
+    void runGame(canvas, false, saveManager, false);
   },
+  hasSave
+    ? () => {
+        hideLanding(landingContainer);
+        canvas.hidden = false;
+        void runGame(canvas, false, saveManager, true);
+      }
+    : undefined,
   import.meta.env.DEV
     ? () => {
         hideLanding(landingContainer);
         canvas.hidden = false;
-        runGame(canvas, true);
+        void runGame(canvas, true, saveManager, false);
       }
     : undefined,
 );
 
-function runGame(canvas: HTMLCanvasElement, stressPreset: boolean): void {
+async function runGame(
+  canvas: HTMLCanvasElement,
+  stressPreset: boolean,
+  saveManager: SaveManager,
+  loadSave: boolean,
+): Promise<void> {
   const renderer = createRenderer(canvas);
   const input = createInput(canvas);
   const state = createGameState();
@@ -60,19 +81,50 @@ function runGame(canvas: HTMLCanvasElement, stressPreset: boolean): void {
   const camera = createCamera(input);
   const audio = createAudio();
 
-  const facility = spawnFacility(world);
-  if (stressPreset) {
-    // Must run before the room-center spawn point is computed below — it grows the room past
-    // the default closet tier, and the racks it places sit inside that larger room.
-    applyStressPreset(world, facility);
+  let facility: EntityId | undefined;
+  let player: EntityId | undefined;
+
+  if (loadSave) {
+    const loaded = await saveManager.load(world, MANUAL_SLOT);
+    if (loaded) {
+      facility = world.query(facilityTags)[0];
+      player = world.query(playerTags)[0];
+    }
+    if (!loaded || facility === undefined || player === undefined) {
+      // Corrupt/foreign save data (D6) — fall back to a fresh game rather than leaving the
+      // player stuck on an error. hasSave() already checked the slot was non-empty, so this
+      // path is only reached by a save that failed to parse/hydrate.
+      console.warn('[save] continue failed — starting a new game instead');
+    }
   }
-  const room = getRoomRect(world, facility);
-  const spawnPoint = gridToWorld(
-    Math.floor((room.minGridX + room.maxGridX) / 2),
-    Math.floor((room.minGridY + room.maxGridY) / 2),
-  );
-  const player = spawnPlayer(world, spawnPoint);
-  startTutorial(world, facility, spawnPoint);
+
+  if (facility === undefined || player === undefined) {
+    facility = spawnFacility(world);
+    if (stressPreset) {
+      // Must run before the room-center spawn point is computed below — it grows the room past
+      // the default closet tier, and the racks it places sit inside that larger room.
+      applyStressPreset(world, facility);
+    }
+    const room = getRoomRect(world, facility);
+    const spawnPoint = gridToWorld(
+      Math.floor((room.minGridX + room.maxGridX) / 2),
+      Math.floor((room.minGridY + room.maxGridY) / 2),
+    );
+    player = spawnPlayer(world, spawnPoint);
+    startTutorial(world, facility, spawnPoint);
+  }
+
+  // Quicksave — no in-game panel yet (see .plans/save-load.md D7/Non-goals; a Canvas-drawn
+  // pause/save panel is a follow-up), but the manual save slot needs SOME way to be written
+  // from inside a running game, or "Continue" on the landing screen never has anything to
+  // load. Mirrors camera.ts's own direct `input.onKeyDown(' ', ...)` — a key bound straight at
+  // the call site that owns it, not routed through ecs/systems/input.ts's click-priority chain.
+  input.onKeyDown('F5', () => {
+    void saveManager.save(world, MANUAL_SLOT).then(
+      () => console.info('[save] game saved'),
+      (err: unknown) => console.error('[save] failed to save', err),
+    );
+  });
 
   // ORDER IS LOAD-BEARING — see .plans/machines-and-racks.md, .plans/workload-economy.md,
   // .plans/workload-dispatch.md, and .plans/hardware-failure.md.
