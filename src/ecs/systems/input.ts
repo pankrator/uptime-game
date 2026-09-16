@@ -10,16 +10,22 @@ import {
   BUILDABLES,
   rackSlots,
   installedIns,
-  installTasks,
+  maintenanceTasks,
   offers,
   openRackPanels,
   dragStates,
   shopOpens,
   tutorialProgresses,
+  wallets,
+  conditions,
+  faileds,
+  machines,
+  decommissionConfirms,
   type BuildableDef,
 } from '../components';
 import { acceptOffer, declineOffer } from '../dispatch';
 import { advanceTutorial, skipTutorial, isTutorialActionStep, recordShopPurchase } from './tutorial';
+import { repairCost, repairSeconds } from '../wear';
 import {
   isWalkable,
   findPath,
@@ -27,7 +33,13 @@ import {
   simplifyPathToPixels,
 } from '../pathfinding';
 import { getWalkableRegions } from '../world-map';
-import { MACHINE_TIERS, type MachineTierId, type PurchasableId } from '../game-data';
+import {
+  MACHINE_TIERS,
+  DECOMMISSION_SECONDS,
+  REPAIRABLE_WEAR_THRESHOLD,
+  type MachineTierId,
+  type PurchasableId,
+} from '../game-data';
 import { getRoomRect } from '../room';
 import { takeFromInventory, addToInventory } from '../inventory';
 import { buy, dismissShop, shopTab, shopCategories, shopCatalogForTab } from './shop';
@@ -49,6 +61,8 @@ import {
   getRecenterButtonRect,
   getTutorialActionButtonRect,
   getTutorialSkipRect,
+  getServerRepairButtonRect,
+  getServerDecommissionButtonRect,
 } from '../../ui/layout';
 import {
   findRackAt,
@@ -150,15 +164,22 @@ export function moveControlledTo(
   world.addComponent(pathFollows, controlled, { path: simplified, index: 0 });
 }
 
-// D7: cancelling an install refunds to INVENTORY, not the wallet — the item was bought at the
-// shop and is still owned; only the install itself was abandoned.
-function cancelInstallTask(world: World, facility: EntityId, controlled: EntityId): void {
-  const task = world.getComponent(installTasks, controlled);
+// D7 (install)/D5 (repair): cancelling refunds whatever was taken up front — the item to
+// INVENTORY for an install (it was bought at the shop and is still owned; only the install
+// itself was abandoned) or the wear-scaled fee to the WALLET for a repair. A decommission has
+// nothing to refund: its payout only happens on completion (maintenance.ts), never up front.
+function cancelMaintenanceTask(world: World, facility: EntityId, controlled: EntityId): void {
+  const task = world.getComponent(maintenanceTasks, controlled);
   if (!task) return;
 
-  addToInventory(world, facility, `machine-${task.tierId}` as PurchasableId);
+  if (task.job.kind === 'install') {
+    addToInventory(world, facility, `machine-${task.job.tierId}` as PurchasableId);
+  } else if (task.job.kind === 'repair') {
+    const wallet = world.getComponent(wallets, facility);
+    if (wallet) wallet.money += task.job.cost;
+  }
 
-  world.removeComponent(installTasks, controlled);
+  world.removeComponent(maintenanceTasks, controlled);
   world.removeComponent(pathFollows, controlled);
   world.removeComponent(moveTargets, controlled);
 }
@@ -183,12 +204,72 @@ function tryInstallIntoRack(
 
   moveControlledTo(world, controlled, facility, gridToWorld(gridX, gridY));
 
-  world.addComponent(installTasks, controlled, {
+  world.addComponent(maintenanceTasks, controlled, {
     rackId,
-    tierId,
-    slotIndex,
+    job: { kind: 'install', tierId, slotIndex },
     secondsRemaining: tier.installSeconds,
     totalSeconds: tier.installSeconds,
+    arrived: false,
+  });
+}
+
+const DECOMMISSION_CONFIRM_WINDOW_MS = 3000;
+
+// Repair/decommission both queue a MaintenanceTask exactly like install does — click from
+// anywhere (viewing-mode panel included), then walk there, then the work happens. See
+// .plans/hardware-failure.md D5 ("one task at a time," attached to the player) and Step 6.
+function tryStartRepair(
+  world: World,
+  controlled: EntityId,
+  facility: EntityId,
+  serverId: EntityId,
+): void {
+  if (world.getComponent(maintenanceTasks, controlled)) return;
+
+  const condition = world.getComponent(conditions, serverId);
+  const machine = world.getComponent(machines, serverId);
+  const installedIn = world.getComponent(installedIns, serverId);
+  if (!condition || !machine || !installedIn) return;
+
+  const grid = world.getComponent(gridPositions, installedIn.rackId);
+  if (!grid) return;
+
+  const tier = MACHINE_TIERS[machine.tierId];
+  const cost = repairCost(tier.cost, condition.wear);
+  const wallet = world.getComponent(wallets, facility);
+  if (!wallet || Math.floor(wallet.money) < cost) return;
+  wallet.money -= cost;
+
+  const seconds = repairSeconds(condition.wear);
+  moveControlledTo(world, controlled, facility, gridToWorld(grid.gridX, grid.gridY));
+  world.addComponent(maintenanceTasks, controlled, {
+    rackId: installedIn.rackId,
+    job: { kind: 'repair', machineId: serverId, cost },
+    secondsRemaining: seconds,
+    totalSeconds: seconds,
+    arrived: false,
+  });
+}
+
+function tryStartDecommission(
+  world: World,
+  controlled: EntityId,
+  facility: EntityId,
+  serverId: EntityId,
+): void {
+  if (world.getComponent(maintenanceTasks, controlled)) return;
+
+  const installedIn = world.getComponent(installedIns, serverId);
+  if (!installedIn) return;
+  const grid = world.getComponent(gridPositions, installedIn.rackId);
+  if (!grid) return;
+
+  moveControlledTo(world, controlled, facility, gridToWorld(grid.gridX, grid.gridY));
+  world.addComponent(maintenanceTasks, controlled, {
+    rackId: installedIn.rackId,
+    job: { kind: 'decommission', machineId: serverId },
+    secondsRemaining: DECOMMISSION_SECONDS,
+    totalSeconds: DECOMMISSION_SECONDS,
     arrived: false,
   });
 }
@@ -225,7 +306,7 @@ export function createInputSystem(
   BUILDABLES.forEach((buildable, index) => {
     const key = String(index + 1);
     input.onKeyDown(key, () => {
-      if (world.getComponent(installTasks, controlled)) return;
+      if (world.getComponent(maintenanceTasks, controlled)) return;
       selectBuildable(world, controlled, buildable);
     });
   });
@@ -337,9 +418,10 @@ export function createInputSystem(
 
       if (pointerInHud(pointer, renderer.canvas, world.query(offers).length)) return;
 
-      // 1. Install in progress → any click cancels and refunds.
-      if (world.getComponent(installTasks, controlled)) {
-        cancelInstallTask(world, facility, controlled);
+      // 1. Maintenance task (install/repair/decommission) in progress → any click cancels and
+      // refunds whatever was taken up front (see cancelMaintenanceTask).
+      if (world.getComponent(maintenanceTasks, controlled)) {
+        cancelMaintenanceTask(world, facility, controlled);
         return;
       }
 
@@ -351,7 +433,8 @@ export function createInputSystem(
       const openPanel = world.getComponent(openRackPanels, controlled);
       const panelVisible = openPanel && (openPanel.mode === 'viewing' || openPanel.arrived);
       if (panelVisible) {
-        const serverCount = serversOn(world, openPanel.rackId).length;
+        const serverIds = serversOn(world, openPanel.rackId);
+        const serverCount = serverIds.length;
         const trayCount = trayWorkloadIds(world).length;
         const closeRect = getRackPanelCloseButtonRect(
           renderer.width,
@@ -361,10 +444,46 @@ export function createInputSystem(
         );
         // The panel is a full-screen modal (the floor behind it is dimmed), so every click
         // while it's visible is absorbed here — not just clicks landing inside its own rect —
-        // except the close button.
+        // except the close button and the repair/decommission buttons below.
         if (pointerInRect(pointer, closeRect)) {
           closeRackPanel(world, controlled);
+          return;
         }
+
+        // Repair/decommission (.plans/hardware-failure.md Step 6) — reachable from a viewing
+        // panel too (no travel required to click; the resulting task does its own walk), same
+        // as clicking a rack from the build panel while remote.
+        for (let index = 0; index < serverIds.length; index++) {
+          const serverId = serverIds[index];
+
+          const condition = world.getComponent(conditions, serverId);
+          const repairable = condition && (condition.wear > REPAIRABLE_WEAR_THRESHOLD || world.getComponent(faileds, serverId));
+          if (repairable) {
+            const repairRect = getServerRepairButtonRect(index, renderer.width, renderer.height, serverCount, trayCount);
+            if (pointerInRect(pointer, repairRect)) {
+              audio.play('uiClick');
+              tryStartRepair(world, controlled, facility, serverId);
+              return;
+            }
+          }
+
+          const decommissionRect = getServerDecommissionButtonRect(index, renderer.width, renderer.height, serverCount, trayCount);
+          if (pointerInRect(pointer, decommissionRect)) {
+            const confirm = world.getComponent(decommissionConfirms, controlled);
+            if (confirm && confirm.serverId === serverId && performance.now() < confirm.expiresAtMs) {
+              audio.play('uiClick');
+              world.removeComponent(decommissionConfirms, controlled);
+              tryStartDecommission(world, controlled, facility, serverId);
+            } else {
+              world.addComponent(decommissionConfirms, controlled, {
+                serverId,
+                expiresAtMs: performance.now() + DECOMMISSION_CONFIRM_WINDOW_MS,
+              });
+            }
+            return;
+          }
+        }
+
         return;
       }
 

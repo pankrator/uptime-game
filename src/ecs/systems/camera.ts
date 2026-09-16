@@ -2,7 +2,7 @@ import { type World, type EntityId } from '../world';
 import {
   positions,
   buildModes,
-  installTasks,
+  maintenanceTasks,
   dragStates,
   openRackPanels,
   shopOpens,
@@ -37,7 +37,7 @@ function canPanCamera(
   }
 
   if (world.getComponent(buildModes, controlled)) return false;
-  if (world.getComponent(installTasks, controlled)) return false;
+  if (world.getComponent(maintenanceTasks, controlled)) return false;
   if (world.getComponent(dragStates, controlled)) return false;
 
   const openPanel = world.getComponent(openRackPanels, controlled);

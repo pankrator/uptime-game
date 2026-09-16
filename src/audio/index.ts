@@ -9,7 +9,10 @@ export type SoundName =
   | 'contractCompleted'
   | 'contractMissed'
   | 'brownout'
-  | 'uiClick';
+  | 'uiClick'
+  | 'machineFailed'
+  | 'machineRepaired'
+  | 'machineDecommissioned';
 
 export interface Audio {
   play(name: SoundName): void;
@@ -72,6 +75,16 @@ const SOUND_TONES: Record<SoundName, Tone[]> = {
   ],
   brownout: [{ type: 'sawtooth', freq: [110, 70], duration: 0.18, gain: 0.12 }],
   uiClick: [{ type: 'square', freq: [880, 880], duration: 0.03, gain: 0.08 }],
+  // A harsher, lower buzz than brownout — a failure is a dead machine, not a recoverable dip.
+  machineFailed: [
+    { type: 'sawtooth', freq: [140, 55], duration: 0.22, gain: 0.14 },
+    { type: 'square', freq: [90, 40], duration: 0.16, gain: 0.09, delay: 0.05 },
+  ],
+  machineRepaired: [
+    { type: 'sine', freq: [330, 330], duration: 0.09, gain: 0.12 },
+    { type: 'sine', freq: [523, 523], duration: 0.12, gain: 0.12, delay: 0.08 },
+  ],
+  machineDecommissioned: [{ type: 'triangle', freq: [200, 80], duration: 0.14, gain: 0.14 }],
 };
 
 function readStoredMuted(): boolean {
