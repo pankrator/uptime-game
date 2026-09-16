@@ -189,11 +189,36 @@ export interface ServerCapacity {
   free: Traits;
 }
 
-// Install interaction (attached to the player)
-export interface InstallTask {
+// Per-machine wear, 0 (new) to 1 (worn out). Lives on MACHINE entities. OWNED SOLELY BY
+// wear.ts — like Temperature, this is integrated state, not a derived cache: wear has history
+// (how long has this box been running, hot, unrepaired) that this tick's inputs alone cannot
+// reconstruct. Never recompute it from scratch. See .plans/hardware-failure.md D1/D2.
+export interface Condition {
+  wear: number;
+}
+
+// Marker on a MACHINE entity that has failed (a wear.ts failure roll came up positive). Sole
+// writer is wear.ts; resource.ts only reads it, as a veto on Powered.online candidacy — the
+// same one-writer-many-readers shape ThermalTrip already uses. Cleared only by a completed
+// 'repair' MaintenanceTask (maintenance.ts). See .plans/hardware-failure.md D4/D7.
+export interface Failed {
+  failedAt: number;
+}
+
+// Walk-to-rack-then-work interaction, attached to the player. Generalizes the old InstallTask
+// (D5) to cover repair and decommission too — all three share the identical walk/arrival/
+// countdown shape; only what happens on completion differs, branched in maintenance.ts (the
+// renamed install-progress.ts). See .plans/hardware-failure.md D5.
+export type MaintenanceJob =
+  | { kind: 'install'; tierId: MachineTierId; slotIndex: number }
+  // cost is captured at task creation (the wear-scaled price shown on the repair button) and
+  // debited up front, mirroring install's up-front inventory take — see rack-panel.ts.
+  | { kind: 'repair'; machineId: EntityId; cost: number }
+  | { kind: 'decommission'; machineId: EntityId };
+
+export interface MaintenanceTask {
   rackId: EntityId;
-  tierId: MachineTierId;
-  slotIndex: number;
+  job: MaintenanceJob;
   secondsRemaining: number;
   totalSeconds: number;
   arrived: boolean;
@@ -264,6 +289,15 @@ export interface ShopOpen {
 export interface PendingDrop {
   workloadId: EntityId;
   serverId: EntityId;
+}
+
+// A decommission button was clicked once — the second click on the SAME button, within the
+// window, actually destroys the machine (D6: "a second click to confirm on the same button is
+// enough; no modal"). Attached to the player; cleared on confirm, expiry, or the panel closing.
+// See .plans/hardware-failure.md Step 6.
+export interface DecommissionConfirm {
+  serverId: EntityId;
+  expiresAtMs: number;
 }
 
 // Transient drag state. Attached to the player; exists only between mousedown and mouseup.
@@ -363,7 +397,9 @@ export const coolingUnits = createComponentStore<CoolingUnit>();
 export const machines = createComponentStore<Machine>();
 export const installedIns = createComponentStore<InstalledIn>();
 export const powereds = createComponentStore<Powered>();
-export const installTasks = createComponentStore<InstallTask>();
+export const conditions = createComponentStore<Condition>();
+export const faileds = createComponentStore<Failed>();
+export const maintenanceTasks = createComponentStore<MaintenanceTask>();
 export const serverCapacities = createComponentStore<ServerCapacity>();
 
 export const utilizations = createComponentStore<Utilization>();
@@ -376,5 +412,6 @@ export const rackScrolls = createComponentStore<RackScroll>();
 export const shopOpens = createComponentStore<ShopOpen>();
 export const pendingDrops = createComponentStore<PendingDrop>();
 export const dragStates = createComponentStore<DragState>();
+export const decommissionConfirms = createComponentStore<DecommissionConfirm>();
 export const rejectedDrops = createComponentStore<RejectedDrop>();
 export const tutorialProgresses = createComponentStore<TutorialProgress>();

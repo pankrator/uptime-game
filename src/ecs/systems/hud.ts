@@ -18,6 +18,7 @@ import {
   thermalTrips,
   rackSlots,
   gridPositions,
+  faileds,
   type Workload,
   type Offer,
 } from '../components';
@@ -205,6 +206,18 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
     const overheatText = parts.join('  ');
     ctx.fillText(overheatText, x, midY);
     x += ctx.measureText(overheatText).width + 20;
+  }
+
+  // Failure alert (.plans/hardware-failure.md D7) — a failed machine never recovers on its
+  // own, so this must stay visible until the player actually walks over and repairs it, not
+  // just flash and fade like the overheat warning above.
+  const failedCount = world.query(faileds).length;
+  if (failedCount > 0) {
+    ctx.font = 'bold 13px sans-serif';
+    ctx.fillStyle = RED;
+    const failedText = `⚠ ${failedCount} failed`;
+    ctx.fillText(failedText, x, midY);
+    x += ctx.measureText(failedText).width + 20;
   }
 
   // Inventory summary — total owned-but-unplaced stock (D5), bought at the shop.

@@ -135,13 +135,15 @@ function getOffersPanelRect(offerCount: number): Rect {
 export const RACK_PANEL_WIDTH = 460;
 export const RACK_PANEL_PADDING = 16;
 export const RACK_PANEL_HEADER_HEIGHT = 30;
-// Was 54, then 100 — 100 was too tight once a power/cooling draw line was added below the
-// server-name label. Layout, top to bottom: 16px to the server-name label, 14px to the
-// power/cooling draw line, then a gap, then three stacked trait rows (each a label line + a
-// 6px bar, 20px apart), 8px bottom margin. See getServerRowLabelY / getServerRowDrawY /
-// getServerTraitBarRect below for the exact offsets this height is sized against — keep them
-// in sync if this changes.
-export const RACK_SERVER_ROW_HEIGHT = 116;
+// Was 54, then 100, then 116 — 116 was sized for three trait rows only. .plans/hardware-failure.md
+// Step 6 adds a 4th bar-shaped row (wear, reusing getServerTraitBarRect at traitIndex ===
+// TRAIT_KEYS.length — see render.ts) plus a row of repair/decommission buttons beneath it.
+// Layout, top to bottom: 16px to the server-name label, 14px to the power/cooling draw line,
+// then a gap, then four stacked bar rows (three traits + wear, each a label line + a 6px bar,
+// 20px apart), a 6px gap, an 18px action-button row, 8px bottom margin. See
+// getServerRowLabelY / getServerRowDrawY / getServerTraitBarRect / getServerActionButtonRect
+// below for the exact offsets this height is sized against — keep them in sync if this changes.
+export const RACK_SERVER_ROW_HEIGHT = 162;
 export const RACK_SERVER_ROW_GAP = 10;
 export const RACK_TRAIT_BAR_HEIGHT = 6;
 export const RACK_TRAIT_BAR_GAP = 4;
@@ -292,6 +294,49 @@ export function getServerTraitBarRect(
     y: barsTop + traitIndex * RACK_TRAIT_ROW_HEIGHT + (RACK_TRAIT_ROW_HEIGHT - RACK_TRAIT_BAR_HEIGHT),
     width: row.width - chipColumnWidth,
     height: RACK_TRAIT_BAR_HEIGHT,
+  };
+}
+
+// Repair/decommission buttons — a row beneath the trait+wear bars. See
+// .plans/hardware-failure.md Step 6. Repair sits left, decommission right, both bottom-aligned
+// in the row (RACK_SERVER_ROW_HEIGHT's comment is sized against this).
+export const RACK_ACTION_BUTTON_WIDTH = 90;
+export const RACK_ACTION_BUTTON_HEIGHT = 18;
+export const RACK_ACTION_BUTTON_GAP = 8;
+
+function getServerActionsRowY(row: Rect): number {
+  return row.y + RACK_ROW_BARS_TOP_OFFSET_Y + 4 * RACK_TRAIT_ROW_HEIGHT + 6;
+}
+
+export function getServerRepairButtonRect(
+  serverIndex: number,
+  canvasWidth: number,
+  canvasHeight: number,
+  serverCount: number,
+  trayCount: number,
+): Rect {
+  const row = getServerRowRect(serverIndex, canvasWidth, canvasHeight, serverCount, trayCount);
+  return {
+    x: row.x + row.width - RACK_ACTION_BUTTON_WIDTH * 2 - RACK_ACTION_BUTTON_GAP,
+    y: getServerActionsRowY(row),
+    width: RACK_ACTION_BUTTON_WIDTH,
+    height: RACK_ACTION_BUTTON_HEIGHT,
+  };
+}
+
+export function getServerDecommissionButtonRect(
+  serverIndex: number,
+  canvasWidth: number,
+  canvasHeight: number,
+  serverCount: number,
+  trayCount: number,
+): Rect {
+  const row = getServerRowRect(serverIndex, canvasWidth, canvasHeight, serverCount, trayCount);
+  return {
+    x: row.x + row.width - RACK_ACTION_BUTTON_WIDTH,
+    y: getServerActionsRowY(row),
+    width: RACK_ACTION_BUTTON_WIDTH,
+    height: RACK_ACTION_BUTTON_HEIGHT,
   };
 }
 

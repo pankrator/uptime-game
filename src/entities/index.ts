@@ -19,6 +19,7 @@ import {
   inventories,
   temperatures,
   coolingUnits,
+  conditions,
 } from '../ecs/components';
 import {
   RACK_SLOT_CAPACITY,
@@ -79,6 +80,8 @@ export function spawnMachine(
   world.addComponent(machines, id, { tierId });
   world.addComponent(installedIns, id, { rackId, slotIndex });
   world.addComponent(powereds, id, { online: false, offlineCooldown: 0 });
+  // See .plans/hardware-failure.md D1: starts new, then owned solely by wear.ts.
+  world.addComponent(conditions, id, { wear: 0 });
   return id;
 }
 

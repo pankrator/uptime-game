@@ -26,6 +26,7 @@ import {
   pendingDrops,
   dragStates,
   rejectedDrops,
+  decommissionConfirms,
   placedOns,
   workloads,
   GRID_CELL_SIZE,
@@ -45,7 +46,7 @@ import {
 import { type Renderer } from '../../rendering';
 import { type System } from './system';
 
-// Same reach radius/approach as install-progress.ts's INSTALL_REACH_PX — the established
+// Same reach radius/approach as maintenance.ts's MAINTENANCE_REACH_PX — the established
 // "close enough to interact with this rack" pattern.
 export const DISPATCH_REACH_PX = GRID_CELL_SIZE * 1.2;
 
@@ -81,6 +82,7 @@ export function closeRackPanel(world: World, controlled: EntityId): void {
   world.removeComponent(rackScrolls, controlled);
   world.removeComponent(dragStates, controlled);
   world.removeComponent(rejectedDrops, controlled);
+  world.removeComponent(decommissionConfirms, controlled);
   for (const workloadId of world.query(pendingDrops)) {
     world.removeComponent(pendingDrops, workloadId);
   }
@@ -334,6 +336,12 @@ export function createRackPanelSystem(
       const rejection = world.getComponent(rejectedDrops, controlled);
       if (rejection && performance.now() >= rejection.expiresAtMs) {
         world.removeComponent(rejectedDrops, controlled);
+      }
+
+      // Expire an unconfirmed decommission click (D6: the confirm window, not a modal).
+      const decommissionConfirm = world.getComponent(decommissionConfirms, controlled);
+      if (decommissionConfirm && performance.now() >= decommissionConfirm.expiresAtMs) {
+        world.removeComponent(decommissionConfirms, controlled);
       }
 
       // Scroll: only while a panel is visible (viewing, or dispatching-and-arrived — same
