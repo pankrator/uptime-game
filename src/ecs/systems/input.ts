@@ -19,7 +19,7 @@ import {
   type BuildableDef,
 } from '../components';
 import { acceptOffer, declineOffer } from '../dispatch';
-import { advanceTutorial, skipTutorial, isTutorialActionStep } from './tutorial';
+import { advanceTutorial, skipTutorial, isTutorialActionStep, recordShopPurchase } from './tutorial';
 import {
   isWalkable,
   findPath,
@@ -382,7 +382,9 @@ export function createInputSystem(
           const buyRect = getShopBuyButtonRect(rowIndex, renderer.canvas.width, renderer.canvas.height, rowCount);
           if (pointerInRect(pointer, buyRect)) {
             audio.play('uiClick');
-            buy(world, facility, rows[rowIndex].id);
+            if (buy(world, facility, rows[rowIndex].id)) {
+              recordShopPurchase(world, facility);
+            }
             return;
           }
         }

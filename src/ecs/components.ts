@@ -297,6 +297,7 @@ export type TutorialStepId =
   | 'build-rack'
   | 'install-machine'
   | 'open-rack-panel'
+  | 'visit-shop'
   | 'accept-offer'
   | 'place-workload'
   | 'done';
@@ -304,6 +305,10 @@ export type TutorialStepId =
 export interface TutorialProgress {
   stepId: TutorialStepId;
   moveOrigin: { x: number; y: number };
+  // Set by tutorial.ts's recordShopPurchase, called from input.ts only when shop.ts's buy()
+  // reports a purchase actually went through (see shop.ts's buy return value) — a rejected
+  // click (can't afford it) must not advance the 'visit-shop' step.
+  shopPurchased: boolean;
   skipped: boolean;
 }
 
