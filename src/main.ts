@@ -5,6 +5,7 @@ import { createGameLoop } from './core';
 import { createWorld } from './ecs/world';
 import { createCamera } from './camera';
 import { createInputSystem } from './ecs/systems/input';
+import { createJobPanelsSystem } from './ecs/systems/job-panels';
 import { createMaintenanceSystem } from './ecs/systems/maintenance';
 import { createPathFollowSystem } from './ecs/systems/path-follow';
 import { createMovementSystem } from './ecs/systems/movement';
@@ -105,8 +106,12 @@ function runGame(canvas: HTMLCanvasElement, stressPreset: boolean): void {
   //   Powered.online alongside brownout and thermal trip (D7 of this plan) — never force a
   //   failed machine back online anywhere but a completed repair (maintenance.ts).
   // - spawn runs before run so a contract's offer window starts the same frame it arrives.
+  // - job-panels runs right after input: it's an input-reactive system in its own right (key
+  //   toggles, wheel-scroll) but doesn't feed or depend on anything else this tick, so its exact
+  //   position beyond "after input" isn't load-bearing — see .plans/job-panels.md.
   const updateSystems = [
     createInputSystem(world, input, renderer, player, facility, camera, audio),
+    createJobPanelsSystem(world, input, renderer, player),
     createMaintenanceSystem(world, player, facility, audio),
     createPathFollowSystem(world),
     createMovementSystem(world),
@@ -133,7 +138,7 @@ function runGame(canvas: HTMLCanvasElement, stressPreset: boolean): void {
   const renderSystems = [
     createCameraSystem(world, renderer, input, player, camera),
     createRenderSystem(world, renderer, player, facility, camera, input),
-    createHudSystem(world, renderer, facility, audio, camera),
+    createHudSystem(world, renderer, player, facility, audio, camera),
   ];
 
   const loop = createGameLoop({ renderer, input, state, updateSystems, renderSystems });

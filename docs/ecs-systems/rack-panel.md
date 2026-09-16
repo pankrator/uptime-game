@@ -53,10 +53,16 @@ gesture.
 
 ## Other responsibilities
 
-- Scroll: clamped every frame (not just on wheel input) via `maxRackScroll`, since
-  content height changes underneath the panel (a workload finishing removes a tray card).
+- Scroll: clamped every frame (not just on wheel input) via `maxRackScroll` (now a thin
+  re-export of `ui/scroll.ts`'s shared `maxScrollOffset` — see [job-panels](./job-panels.md),
+  which reuses the same formula for its own offers/jobs modals), since content height changes
+  underneath the panel (a workload finishing removes a tray card).
 - `closeRackPanel` clears `OpenRackPanel`, `RackScroll`, `DragState`, `RejectedDrop`, and
   any leftover `PendingDrop`s.
+- Both open paths (left-click dispatch via `openOrPromoteRackPanel`, right-click view in this
+  module's own `System`) call [job-panels](./job-panels.md)'s `closeJobPanels` first — only one
+  modal (rack, shop, offers, jobs) is ever open at a time; the rack panel always wins over an
+  already-open offers/jobs panel.
 
 ## Notes
 

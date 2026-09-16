@@ -43,8 +43,10 @@ import {
   getRackPanelContentHeight,
   pointerInRect,
 } from '../../ui/layout';
+import { maxScrollOffset } from '../../ui/scroll';
 import { type Renderer } from '../../rendering';
 import { type System } from './system';
+import { closeJobPanels } from './job-panels';
 
 // Same reach radius/approach as maintenance.ts's MAINTENANCE_REACH_PX — the established
 // "close enough to interact with this rack" pattern.
@@ -65,7 +67,11 @@ export function serversOn(world: World, rackId: EntityId): EntityId[] {
   return world
     .query(machines, installedIns)
     .filter((id) => world.getComponent(installedIns, id)!.rackId === rackId)
-    .sort((a, b) => world.getComponent(installedIns, a)!.slotIndex - world.getComponent(installedIns, b)!.slotIndex);
+    .sort(
+      (a, b) =>
+        world.getComponent(installedIns, a)!.slotIndex -
+        world.getComponent(installedIns, b)!.slotIndex,
+    );
 }
 
 // Accepted-but-unplaced workload ids — the tray's contents (D3), same across every panel since
@@ -90,10 +96,10 @@ export function closeRackPanel(world: World, controlled: EntityId): void {
 
 // Highest legal scroll offset for the given content/viewport heights — 0 once content fits
 // without scrolling. Shared by the wheel handler (clamping the new offset) and render.ts
-// (nothing to draw beyond this, so it never needs to know about the clamp itself).
-export function maxRackScroll(contentHeight: number, viewportHeight: number): number {
-  return Math.max(0, contentHeight - viewportHeight);
-}
+// (nothing to draw beyond this, so it never needs to know about the clamp itself). Re-exported
+// under this name for backward compatibility with render.ts's import; the formula itself now
+// lives in ui/scroll.ts so the offers/jobs panels can reuse it too.
+export const maxRackScroll = maxScrollOffset;
 
 // Translates a screen-space pointer into the rack panel's unscrolled content space (the space
 // getServerRowRect/getTrayCardRect/getPlacedChipRect lay out in) by adding back however far the
@@ -110,7 +116,12 @@ function toContentSpace(
   const canvasHeight = renderer.height;
   const serverIds = serversOn(world, rackId);
   const trayIds = trayWorkloadIds(world);
-  const contentRect = getRackPanelContentRect(canvasWidth, canvasHeight, serverIds.length, trayIds.length);
+  const contentRect = getRackPanelContentRect(
+    canvasWidth,
+    canvasHeight,
+    serverIds.length,
+    trayIds.length,
+  );
   if (!pointerInRect(pointer, contentRect)) return null;
 
   const offsetPx = world.getComponent(rackScrolls, controlled)?.offsetPx ?? 0;
@@ -122,7 +133,11 @@ function toContentSpace(
 // the already-open one (no-op), and promoting an open viewing panel to dispatching (D4:
 // "switching from a viewing panel to dispatching the same rack... flips mode to 'dispatching'
 // and starts the walk" — the panel stays open throughout). Returns true if a walk should start.
-export function openOrPromoteRackPanel(world: World, controlled: EntityId, rackId: EntityId): boolean {
+export function openOrPromoteRackPanel(
+  world: World,
+  controlled: EntityId,
+  rackId: EntityId,
+): boolean {
   const current = world.getComponent(openRackPanels, controlled);
 
   if (current?.rackId === rackId) {
@@ -134,6 +149,9 @@ export function openOrPromoteRackPanel(world: World, controlled: EntityId, rackI
     return false; // already dispatching (or already arrived) at this rack — nothing to do
   }
 
+  // Only one modal at a time (see job-panels.ts) — a rack click always wins over an open
+  // offers/jobs panel.
+  closeJobPanels(world, controlled);
   world.addComponent(openRackPanels, controlled, { rackId, mode: 'dispatching', arrived: false });
   world.addComponent(rackScrolls, controlled, { offsetPx: 0 });
   return true;
@@ -184,7 +202,14 @@ export function tryStartDrag(
     const serverId = serverIds[serverIndex];
     const placedIds = placedWorkloadIds(world, serverId);
     for (let chipIndex = 0; chipIndex < placedIds.length; chipIndex++) {
-      const chip = getPlacedChipRect(serverIndex, chipIndex, canvasWidth, canvasHeight, serverIds.length, trayIds.length);
+      const chip = getPlacedChipRect(
+        serverIndex,
+        chipIndex,
+        canvasWidth,
+        canvasHeight,
+        serverIds.length,
+        trayIds.length,
+      );
       if (pointerInRect(contentPoint, chip)) {
         world.addComponent(dragStates, controlled, {
           workloadId: placedIds[chipIndex],
@@ -197,7 +222,13 @@ export function tryStartDrag(
   }
 
   for (let trayIndex = 0; trayIndex < trayIds.length; trayIndex++) {
-    const card = getTrayCardRect(trayIndex, canvasWidth, canvasHeight, serverIds.length, trayIds.length);
+    const card = getTrayCardRect(
+      trayIndex,
+      canvasWidth,
+      canvasHeight,
+      serverIds.length,
+      trayIds.length,
+    );
     if (pointerInRect(contentPoint, card)) {
       world.addComponent(dragStates, controlled, {
         workloadId: trayIds[trayIndex],
@@ -213,7 +244,11 @@ export function tryStartDrag(
 
 // mousemove while dragging — updates DragState.pointer so render.ts can draw the dragged card
 // following the cursor. No-op if nothing is being dragged.
-export function updateDrag(world: World, controlled: EntityId, pointer: { x: number; y: number }): void {
+export function updateDrag(
+  world: World,
+  controlled: EntityId,
+  pointer: { x: number; y: number },
+): void {
   const drag = world.getComponent(dragStates, controlled);
   if (drag) drag.pointer = pointer;
 }
@@ -233,7 +268,13 @@ function hitTestServerRow(
   const trayIds = trayWorkloadIds(world);
 
   for (let index = 0; index < serverIds.length; index++) {
-    const row = getServerRowRect(index, canvasWidth, canvasHeight, serverIds.length, trayIds.length);
+    const row = getServerRowRect(
+      index,
+      canvasWidth,
+      canvasHeight,
+      serverIds.length,
+      trayIds.length,
+    );
     if (pointerInRect(pointer, row)) return serverIds[index];
   }
   return null;
@@ -306,7 +347,10 @@ export function resolveDrop(
     for (const workloadId of world.query(pendingDrops)) {
       if (workloadId === drag.workloadId) world.removeComponent(pendingDrops, workloadId);
     }
-    world.addComponent(pendingDrops, drag.workloadId, { workloadId: drag.workloadId, serverId: targetServerId });
+    world.addComponent(pendingDrops, drag.workloadId, {
+      workloadId: drag.workloadId,
+      serverId: targetServerId,
+    });
   }
 }
 
@@ -366,11 +410,16 @@ export function createRackPanelSystem(
           serverIds.length,
           trayIds.length,
         );
-        const contentHeight = getRackPanelContentHeight(renderer.width, serverIds.length, trayIds.length);
+        const contentHeight = getRackPanelContentHeight(
+          renderer.width,
+          serverIds.length,
+          trayIds.length,
+        );
         const maxScroll = maxRackScroll(contentHeight, contentRect.height);
 
         const scroll = world.getComponent(rackScrolls, controlled) ?? { offsetPx: 0 };
-        if (!world.getComponent(rackScrolls, controlled)) world.addComponent(rackScrolls, controlled, scroll);
+        if (!world.getComponent(rackScrolls, controlled))
+          world.addComponent(rackScrolls, controlled, scroll);
 
         const pointer = input.getPointerPosition();
         const wheelDeltaY = input.consumeWheelDeltaY();
@@ -445,6 +494,12 @@ export function createRackPanelSystem(
       // Right-clicking a rack that's already open dispatching keeps it dispatching — viewing
       // is strictly weaker, so this is a no-op rather than a demotion.
       if (!existing || existing.mode !== 'dispatching' || existing.rackId !== rackId) {
+        // Only one modal at a time (see job-panels.ts) — right-click, like left-click above,
+        // always wins over an open offers/jobs panel. This branch bypasses input.ts's own
+        // click-priority chain entirely (it's driven by wasRightClicked(), a separate gesture),
+        // so it needs its own guard rather than relying on that chain having already absorbed
+        // the click.
+        closeJobPanels(world, controlled);
         world.addComponent(openRackPanels, controlled, { rackId, mode: 'viewing', arrived: false });
         world.addComponent(rackScrolls, controlled, { offsetPx: 0 });
       }

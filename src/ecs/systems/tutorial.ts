@@ -57,7 +57,7 @@ export const TUTORIAL_STEPS: TutorialStepDef[] = [
   {
     id: 'accept-offer',
     title: 'Accept a contract',
-    body: 'Offers appear on the left as they arrive. Click Accept — you need one running to earn money.',
+    body: 'Press O to see offers as they arrive, then click Accept — you need one running to earn money.',
   },
   {
     id: 'place-workload',
@@ -84,7 +84,11 @@ export function getTutorialStepDef(stepId: TutorialStepId): TutorialStepDef {
   return TUTORIAL_STEPS.find((step) => step.id === stepId)!;
 }
 
-export function startTutorial(world: World, facility: EntityId, playerPosition: { x: number; y: number }): void {
+export function startTutorial(
+  world: World,
+  facility: EntityId,
+  playerPosition: { x: number; y: number },
+): void {
   world.addComponent(tutorialProgresses, facility, {
     stepId: 'welcome',
     moveOrigin: { x: playerPosition.x, y: playerPosition.y },
@@ -127,7 +131,11 @@ const MOVE_COMPLETE_DISTANCE_PX = GRID_CELL_SIZE * 2;
 function isCurrentStepComplete(
   world: World,
   controlled: EntityId,
-  progress: { stepId: TutorialStepId; moveOrigin: { x: number; y: number }; shopPurchased: boolean },
+  progress: {
+    stepId: TutorialStepId;
+    moveOrigin: { x: number; y: number };
+    shopPurchased: boolean;
+  },
 ): boolean {
   switch (progress.stepId) {
     case 'move': {
@@ -156,7 +164,11 @@ function isCurrentStepComplete(
   }
 }
 
-export function createTutorialSystem(world: World, controlled: EntityId, facility: EntityId): System {
+export function createTutorialSystem(
+  world: World,
+  controlled: EntityId,
+  facility: EntityId,
+): System {
   return {
     update() {
       const progress = world.getComponent(tutorialProgresses, facility);

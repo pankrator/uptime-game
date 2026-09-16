@@ -6,12 +6,12 @@ import {
   dragStates,
   openRackPanels,
   shopOpens,
-  offers,
 } from '../components';
 import { type Renderer } from '../../rendering';
 import { type Camera } from '../../camera';
 import { type InputState } from '../../input';
 import { pointerInHud } from '../../ui/layout';
+import { isOffersModalOpen, isJobsModalOpen } from './job-panels';
 import { type System } from './system';
 
 // Whether a press at `pointer` is allowed to pan the camera if it turns into a drag — the touch
@@ -32,7 +32,7 @@ function canPanCamera(
   controlled: EntityId,
   pointer: { x: number; y: number },
 ): boolean {
-  if (pointerInHud(pointer, renderer.canvas, world.query(offers).length)) {
+  if (pointerInHud(pointer, renderer.canvas)) {
     return false;
   }
 
@@ -43,6 +43,7 @@ function canPanCamera(
   const openPanel = world.getComponent(openRackPanels, controlled);
   if (openPanel && (openPanel.mode === 'viewing' || openPanel.arrived)) return false;
   if (world.getComponent(shopOpens, controlled)) return false;
+  if (isOffersModalOpen(world, controlled) || isJobsModalOpen(world, controlled)) return false;
 
   return true;
 }

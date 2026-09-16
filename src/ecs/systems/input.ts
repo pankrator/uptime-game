@@ -11,7 +11,6 @@ import {
   rackSlots,
   installedIns,
   maintenanceTasks,
-  offers,
   openRackPanels,
   dragStates,
   shopOpens,
@@ -23,8 +22,18 @@ import {
   decommissionConfirms,
   type BuildableDef,
 } from '../components';
-import { acceptOffer, declineOffer } from '../dispatch';
-import { advanceTutorial, skipTutorial, isTutorialActionStep, recordShopPurchase } from './tutorial';
+import {
+  advanceTutorial,
+  skipTutorial,
+  isTutorialActionStep,
+  recordShopPurchase,
+} from './tutorial';
+import {
+  isOffersModalOpen,
+  isJobsModalOpen,
+  handleOffersModalClick,
+  handleJobsModalClick,
+} from './job-panels';
 import { repairCost, repairSeconds } from '../wear';
 import {
   isWalkable,
@@ -52,7 +61,6 @@ import {
   getBuildPanelEntryRect,
   pointerInRect,
   pointerInHud,
-  getOfferButtonRect,
   getRackPanelCloseButtonRect,
   getShopCloseButtonRect,
   getShopTabRect,
@@ -75,29 +83,6 @@ import {
   resolveDrop,
 } from './rack-panel';
 import { type System } from './system';
-
-interface OfferButtonHit {
-  offerId: EntityId;
-  kind: 'accept' | 'decline';
-}
-
-function hitTestOfferButtons(
-  world: World,
-  point: { x: number; y: number },
-): OfferButtonHit | null {
-  // Hit-test against each offer's own stable slot (see Offer.slot), not its position in a
-  // sorted-by-id array — see getOfferCardRect's comment and .plans/playtest-findings.md F6.
-  for (const offerId of world.query(offers)) {
-    const offer = world.getComponent(offers, offerId)!;
-    if (pointerInRect(point, getOfferButtonRect(offer.slot, 'accept'))) {
-      return { offerId, kind: 'accept' };
-    }
-    if (pointerInRect(point, getOfferButtonRect(offer.slot, 'decline'))) {
-      return { offerId, kind: 'decline' };
-    }
-  }
-  return null;
-}
 
 function hitTestPanel(point: { x: number; y: number }, canvasHeight: number): number | null {
   for (let index = 0; index < BUILDABLES.length; index++) {
@@ -147,7 +132,12 @@ export function moveControlledTo(
   const targetIsWalkable = isWalkable(world, regions, targetGridX, targetGridY);
   const goal = targetIsWalkable
     ? { gridX: targetGridX, gridY: targetGridY }
-    : findNearestWalkableNeighbor(world, regions, { gridX: targetGridX, gridY: targetGridY }, start);
+    : findNearestWalkableNeighbor(
+        world,
+        regions,
+        { gridX: targetGridX, gridY: targetGridY },
+        start,
+      );
 
   if (!goal) return;
 
@@ -307,6 +297,7 @@ export function createInputSystem(
     const key = String(index + 1);
     input.onKeyDown(key, () => {
       if (world.getComponent(maintenanceTasks, controlled)) return;
+      if (isOffersModalOpen(world, controlled) || isJobsModalOpen(world, controlled)) return;
       selectBuildable(world, controlled, buildable);
     });
   });
@@ -402,21 +393,22 @@ export function createInputSystem(
         }
       }
 
-      // 0. Offer Accept/Decline — checked before the general HUD-blocking test since offer
-      // cards live inside the HUD region; this branch owns clicks there regardless of any
-      // other in-progress interaction (an install task or build mode should not swallow it).
-      const offerHit = hitTestOfferButtons(world, pointer);
-      if (offerHit) {
-        audio.play('uiClick');
-        if (offerHit.kind === 'accept') {
-          acceptOffer(world, offerHit.offerId);
-        } else {
-          declineOffer(world, facility, offerHit.offerId);
-        }
+      if (pointerInHud(pointer, renderer.canvas)) return;
+
+      // 0.7. Offers / Jobs panels — centered modals like the rack/shop panels below, toggled by
+      // the 'o'/'j' keys (job-panels.ts) instead of docked HUD chrome. Mutually exclusive with
+      // each other and with the rack/shop panels (job-panels.ts's otherModalBlocking / the two
+      // panels' own closeJobPanels calls), so checking them here — ahead of everything below —
+      // is safe: at most one of these five branches (offers, jobs, maintenance, rack, shop) is
+      // ever live at once.
+      if (isOffersModalOpen(world, controlled)) {
+        handleOffersModalClick(world, renderer, controlled, facility, pointer, audio);
         return;
       }
-
-      if (pointerInHud(pointer, renderer.canvas, world.query(offers).length)) return;
+      if (isJobsModalOpen(world, controlled)) {
+        handleJobsModalClick(world, renderer, controlled, pointer, audio);
+        return;
+      }
 
       // 1. Maintenance task (install/repair/decommission) in progress → any click cancels and
       // refunds whatever was taken up front (see cancelMaintenanceTask).
@@ -457,9 +449,17 @@ export function createInputSystem(
           const serverId = serverIds[index];
 
           const condition = world.getComponent(conditions, serverId);
-          const repairable = condition && (condition.wear > REPAIRABLE_WEAR_THRESHOLD || world.getComponent(faileds, serverId));
+          const repairable =
+            condition &&
+            (condition.wear > REPAIRABLE_WEAR_THRESHOLD || world.getComponent(faileds, serverId));
           if (repairable) {
-            const repairRect = getServerRepairButtonRect(index, renderer.width, renderer.height, serverCount, trayCount);
+            const repairRect = getServerRepairButtonRect(
+              index,
+              renderer.width,
+              renderer.height,
+              serverCount,
+              trayCount,
+            );
             if (pointerInRect(pointer, repairRect)) {
               audio.play('uiClick');
               tryStartRepair(world, controlled, facility, serverId);
@@ -467,10 +467,20 @@ export function createInputSystem(
             }
           }
 
-          const decommissionRect = getServerDecommissionButtonRect(index, renderer.width, renderer.height, serverCount, trayCount);
+          const decommissionRect = getServerDecommissionButtonRect(
+            index,
+            renderer.width,
+            renderer.height,
+            serverCount,
+            trayCount,
+          );
           if (pointerInRect(pointer, decommissionRect)) {
             const confirm = world.getComponent(decommissionConfirms, controlled);
-            if (confirm && confirm.serverId === serverId && performance.now() < confirm.expiresAtMs) {
+            if (
+              confirm &&
+              confirm.serverId === serverId &&
+              performance.now() < confirm.expiresAtMs
+            ) {
               audio.play('uiClick');
               world.removeComponent(decommissionConfirms, controlled);
               tryStartDecommission(world, controlled, facility, serverId);
@@ -502,7 +512,13 @@ export function createInputSystem(
 
         const categories = shopCategories();
         for (let tabIndex = 0; tabIndex < categories.length; tabIndex++) {
-          const tabRect = getShopTabRect(tabIndex, categories.length, renderer.width, renderer.height, rowCount);
+          const tabRect = getShopTabRect(
+            tabIndex,
+            categories.length,
+            renderer.width,
+            renderer.height,
+            rowCount,
+          );
           if (pointerInRect(pointer, tabRect)) {
             shopTab.current = categories[tabIndex];
             return;

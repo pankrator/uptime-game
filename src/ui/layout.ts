@@ -27,7 +27,9 @@ export function pointerInRect(point: { x: number; y: number }, rect: Rect): bool
 // Total height of the build panel's stacked entries — shared with getTutorialBannerRect below,
 // which anchors above this panel rather than risk overlapping it.
 function getBuildPanelHeight(): number {
-  return BUILDABLES.length * BUILD_PANEL_ENTRY_HEIGHT + (BUILDABLES.length - 1) * BUILD_PANEL_ENTRY_GAP;
+  return (
+    BUILDABLES.length * BUILD_PANEL_ENTRY_HEIGHT + (BUILDABLES.length - 1) * BUILD_PANEL_ENTRY_GAP
+  );
 }
 
 export function getBuildPanelEntryRect(index: number, canvasHeight: number): Rect {
@@ -44,10 +46,7 @@ export function getBuildPanelEntryRect(index: number, canvasHeight: number): Rec
 // below that reads HUD_BAR_HEIGHT (drawTopBar's midY, getGameViewportRect's top, the offers/
 // workload panels' y) shifts consistently since none of them hardcode the old value.
 export const HUD_BAR_HEIGHT = 44;
-export const HUD_PANEL_WIDTH = 240;
 export const HUD_PANEL_MARGIN = 12;
-export const HUD_ROW_HEIGHT = 28;
-export const HUD_PANEL_MAX_ROWS = 6;
 
 export function getHudBarRect(canvasWidth: number): Rect {
   return { x: 0, y: 0, width: canvasWidth, height: HUD_BAR_HEIGHT };
@@ -84,49 +83,31 @@ export function getRecenterButtonRect(canvasWidth: number): Rect {
   };
 }
 
-function getHudPanelWidth(canvasWidth: number): number {
-  return Math.min(HUD_PANEL_WIDTH, canvasWidth - HUD_PANEL_MARGIN * 2);
-}
-
-// `rowCount` is the total number of content rows (section headers included, pending rows
-// counted twice for their shortfall line) — the same unit `getWorkloadRowRect`'s `index` walks.
-export function getWorkloadPanelRect(canvasWidth: number, rowCount: number): Rect {
-  const width = getHudPanelWidth(canvasWidth);
-  const height = Math.max(rowCount, 1) * HUD_ROW_HEIGHT + HUD_PANEL_MARGIN * 2;
+// Shared centered-modal sizing for the offers/jobs panels below — both are a header + a
+// scrollable content region, centered and clamped to the canvas, same shape as the rack/shop
+// panels' own (independently laid out) modals above.
+function getCenteredRect(
+  canvasWidth: number,
+  canvasHeight: number,
+  width: number,
+  height: number,
+  padding: number,
+): Rect {
+  const clampedWidth = Math.min(width, canvasWidth - padding * 2);
+  const clampedHeight = Math.min(height, canvasHeight - padding * 2);
   return {
-    x: canvasWidth - HUD_PANEL_MARGIN - width,
-    y: HUD_BAR_HEIGHT + HUD_PANEL_MARGIN,
-    width,
-    height,
+    x: (canvasWidth - clampedWidth) / 2,
+    y: (canvasHeight - clampedHeight) / 2,
+    width: clampedWidth,
+    height: clampedHeight,
   };
 }
 
-export function getWorkloadRowRect(index: number, canvasWidth: number, rowCount: number): Rect {
-  const panel = getWorkloadPanelRect(canvasWidth, rowCount);
-  return {
-    x: panel.x,
-    y: panel.y + HUD_PANEL_MARGIN + index * HUD_ROW_HEIGHT,
-    width: panel.width,
-    height: HUD_ROW_HEIGHT,
-  };
-}
-
-// Offers panel — up to MAX_OFFERS cards, stacked below the top HUD bar on the LEFT (the
-// workload panel above occupies the right), each with its own Accept/Decline hit rects. See
-// .plans/workload-dispatch.md step 5.
-//
-// `index` below is really a stable SLOT (0..MAX_OFFERS-1), assigned to an offer once at spawn
-// (see entities.ts's spawnOffer / Offer.slot) and kept for that offer's whole lifetime — not
-// its position in a sorted-by-id array. Positional indexing used to make every other card
-// shift up (and the pointer land on the wrong card) the instant an earlier offer expired; see
-// .plans/playtest-findings.md F6.
-//
 // Tall enough for title/countdown, demands, pay, and — only on an unservable offer — a "no
 // server fits this" warning line above the buttons (see hud.ts's drawOfferCard and
 // .plans/playtest-findings.md B2: that warning used to be drawn UNDER the Accept button).
 // Servable cards just leave that line's space blank, same as a pending workload row always
 // reserving its shortfall line whether or not there's a shortfall to show.
-export const OFFER_CARD_WIDTH = 220;
 // Was 76, then 96 (.plans/playtest-findings.md B2: gave the "no server fits this" warning its
 // own line above the buttons) — grown again by .plans/mobile-touch-support.md D4 (the
 // accept/decline buttons sit at the touch-target floor, OFFER_BUTTON_HEIGHT) AND by
@@ -139,21 +120,96 @@ export const OFFER_CARD_GAP = 8;
 export const OFFER_BUTTON_HEIGHT = 32;
 export const OFFER_BUTTON_GAP = 6;
 
-// Left-anchored, fixed width — unlike the workload panel (right-anchored, sized to canvas
-// width), so neither function needs a canvasWidth parameter.
-export function getOfferCardRect(slot: number): Rect {
+// Offers panel — a modal opened by the `O` key (job-panels.ts), replacing the old always-docked
+// column of cards (see .plans/job-panels.md). Each offer keeps rendering at its own stable SLOT
+// (0..MAX_OFFERS-1, assigned once at spawn — entities.ts's spawnOffer / Offer.slot) rather than
+// a position in a sorted-by-id array: positional indexing used to make every other card shift up
+// (and the pointer land on the wrong card) the instant an earlier offer expired — see
+// .plans/playtest-findings.md F6. That fix carries over unchanged; only the column's screen
+// position (docked -> centered modal) and dismissability (always visible -> toggled) changed.
+export const OFFERS_MODAL_WIDTH = 460;
+export const OFFERS_MODAL_PADDING = 16;
+export const OFFERS_MODAL_HEADER_HEIGHT = 34;
+export const OFFERS_MODAL_CLOSE_BUTTON_SIZE = 32;
+
+// Sized to the full MAX_OFFERS-slot column regardless of how many offers are currently alive —
+// same "generous upper bound, since slots aren't contiguous" reasoning the old docked panel used.
+function getOffersModalContentHeight(): number {
+  return MAX_OFFERS * OFFER_CARD_HEIGHT + (MAX_OFFERS - 1) * OFFER_CARD_GAP;
+}
+
+export function getOffersModalRect(canvasWidth: number, canvasHeight: number): Rect {
+  const height =
+    OFFERS_MODAL_HEADER_HEIGHT + OFFERS_MODAL_PADDING * 3 + getOffersModalContentHeight();
+  return getCenteredRect(
+    canvasWidth,
+    canvasHeight,
+    OFFERS_MODAL_WIDTH,
+    height,
+    OFFERS_MODAL_PADDING,
+  );
+}
+
+// The scrollable sub-region inside the modal — everything below the header. Same clip-and
+// -translate-by-scroll-offset pattern as the rack panel's content rect.
+export function getOffersModalContentRect(canvasWidth: number, canvasHeight: number): Rect {
+  const modal = getOffersModalRect(canvasWidth, canvasHeight);
+  const top = modal.y + OFFERS_MODAL_PADDING + OFFERS_MODAL_HEADER_HEIGHT + OFFERS_MODAL_PADDING;
   return {
-    x: HUD_PANEL_MARGIN,
-    y: HUD_BAR_HEIGHT + HUD_PANEL_MARGIN + slot * (OFFER_CARD_HEIGHT + OFFER_CARD_GAP),
-    width: OFFER_CARD_WIDTH,
+    x: modal.x + OFFERS_MODAL_PADDING,
+    y: top,
+    width: modal.width - OFFERS_MODAL_PADDING * 2,
+    height: modal.y + modal.height - OFFERS_MODAL_PADDING - top,
+  };
+}
+
+// The full, unclamped content height (mirrors getOffersModalContentHeight — kept as a separate
+// exported function so job-panels.ts doesn't need to know MAX_OFFERS itself).
+export function getOffersModalFullContentHeight(): number {
+  return getOffersModalContentHeight();
+}
+
+export function getOffersModalCloseButtonRect(canvasWidth: number, canvasHeight: number): Rect {
+  const modal = getOffersModalRect(canvasWidth, canvasHeight);
+  return {
+    x: modal.x + modal.width - OFFERS_MODAL_PADDING - OFFERS_MODAL_CLOSE_BUTTON_SIZE,
+    y:
+      modal.y +
+      (OFFERS_MODAL_HEADER_HEIGHT - OFFERS_MODAL_CLOSE_BUTTON_SIZE) / 2 +
+      OFFERS_MODAL_PADDING / 2,
+    width: OFFERS_MODAL_CLOSE_BUTTON_SIZE,
+    height: OFFERS_MODAL_CLOSE_BUTTON_SIZE,
+  };
+}
+
+// `slot` is the offer's own stable slot (see the module comment above) — laid out in unscrolled
+// content space; render.ts clips to getOffersModalContentRect and translates by -scroll.
+export function getOffersModalCardRect(
+  slot: number,
+  canvasWidth: number,
+  canvasHeight: number,
+): Rect {
+  const content = getOffersModalContentRect(canvasWidth, canvasHeight);
+  return {
+    x: content.x,
+    y: content.y + slot * (OFFER_CARD_HEIGHT + OFFER_CARD_GAP),
+    width: content.width,
     height: OFFER_CARD_HEIGHT,
   };
 }
 
-export function getOfferButtonRect(slot: number, kind: 'accept' | 'decline'): Rect {
-  const card = getOfferCardRect(slot);
-  const buttonWidth = (card.width - HUD_PANEL_MARGIN - OFFER_BUTTON_GAP) / 2;
-  const x = kind === 'accept' ? card.x + HUD_PANEL_MARGIN / 2 : card.x + card.width / 2 + OFFER_BUTTON_GAP / 2;
+export function getOffersModalButtonRect(
+  slot: number,
+  kind: 'accept' | 'decline',
+  canvasWidth: number,
+  canvasHeight: number,
+): Rect {
+  const card = getOffersModalCardRect(slot, canvasWidth, canvasHeight);
+  const buttonWidth = (card.width - OFFERS_MODAL_PADDING - OFFER_BUTTON_GAP) / 2;
+  const x =
+    kind === 'accept'
+      ? card.x + OFFERS_MODAL_PADDING / 2
+      : card.x + card.width / 2 + OFFER_BUTTON_GAP / 2;
   return {
     x,
     y: card.y + card.height - OFFER_BUTTON_HEIGHT - 6,
@@ -162,19 +218,71 @@ export function getOfferButtonRect(slot: number, kind: 'accept' | 'decline'): Re
   };
 }
 
-// Always the full MAX_OFFERS-slot column, regardless of how many offers are currently alive —
-// same "generous upper bound" reasoning as getWorkloadPanelRect's HUD_PANEL_MAX_ROWS use below.
-// Sizing this to the live offer COUNT (as it used to) assumed offers always occupy a contiguous
-// run of slots starting at 0, which stable per-offer slots (see getOfferCardRect) no longer
-// guarantee — an offer alive only in slot 2 needs slot 2's card blocked, not a slot-0-sized
-// rect that happens to hold the same count.
-function getOffersPanelRect(): Rect {
-  const height = MAX_OFFERS * OFFER_CARD_HEIGHT + (MAX_OFFERS - 1) * OFFER_CARD_GAP;
+// Jobs panel — a modal opened by the `J` key (job-panels.ts) listing every accepted job
+// (unplaced + running) with full stats: progress, time left, pay, demands, penalty. Read-only
+// (no buttons beyond the shared close/×), so — unlike the offers panel — it has no stable-slot
+// requirement: UNPLACED then ACTIVE, sorted by id, same grouping the old docked corner panel
+// used, just never truncated (it scrolls instead). See .plans/job-panels.md.
+export const JOBS_MODAL_WIDTH = 480;
+export const JOBS_MODAL_PADDING = 16;
+export const JOBS_MODAL_HEADER_HEIGHT = 34;
+export const JOBS_MODAL_CLOSE_BUTTON_SIZE = 32;
+// Three lines per job (label+countdown, pay+full demand breakdown+deadline, penalty/recurring)
+// — the jobs panel's whole point is showing every stat at once, where the old docked corner
+// panel only had room for two lines and a single trait.
+export const JOBS_MODAL_ROW_HEIGHT = 58;
+export const JOBS_MODAL_HEADER_ROW_HEIGHT = 22;
+
+// Shared by job-panels.ts (scroll clamping) and hud.ts (both the outer rect and the draw loop's
+// own vertical walk use these same two constants) so the two can never silently disagree about
+// how tall the content actually is.
+export function getJobsModalContentHeight(pendingCount: number, activeCount: number): number {
+  if (pendingCount === 0 && activeCount === 0) return JOBS_MODAL_ROW_HEIGHT; // "no jobs" message
+  let height = 0;
+  if (pendingCount > 0)
+    height += JOBS_MODAL_HEADER_ROW_HEIGHT + pendingCount * JOBS_MODAL_ROW_HEIGHT;
+  if (activeCount > 0) height += JOBS_MODAL_HEADER_ROW_HEIGHT + activeCount * JOBS_MODAL_ROW_HEIGHT;
+  return height;
+}
+
+export function getJobsModalRect(
+  canvasWidth: number,
+  canvasHeight: number,
+  contentHeight: number,
+): Rect {
+  const height = JOBS_MODAL_HEADER_HEIGHT + JOBS_MODAL_PADDING * 3 + contentHeight;
+  return getCenteredRect(canvasWidth, canvasHeight, JOBS_MODAL_WIDTH, height, JOBS_MODAL_PADDING);
+}
+
+export function getJobsModalContentRect(
+  canvasWidth: number,
+  canvasHeight: number,
+  contentHeight: number,
+): Rect {
+  const modal = getJobsModalRect(canvasWidth, canvasHeight, contentHeight);
+  const top = modal.y + JOBS_MODAL_PADDING + JOBS_MODAL_HEADER_HEIGHT + JOBS_MODAL_PADDING;
   return {
-    x: HUD_PANEL_MARGIN,
-    y: HUD_BAR_HEIGHT + HUD_PANEL_MARGIN,
-    width: OFFER_CARD_WIDTH,
-    height,
+    x: modal.x + JOBS_MODAL_PADDING,
+    y: top,
+    width: modal.width - JOBS_MODAL_PADDING * 2,
+    height: modal.y + modal.height - JOBS_MODAL_PADDING - top,
+  };
+}
+
+export function getJobsModalCloseButtonRect(
+  canvasWidth: number,
+  canvasHeight: number,
+  contentHeight: number,
+): Rect {
+  const modal = getJobsModalRect(canvasWidth, canvasHeight, contentHeight);
+  return {
+    x: modal.x + modal.width - JOBS_MODAL_PADDING - JOBS_MODAL_CLOSE_BUTTON_SIZE,
+    y:
+      modal.y +
+      (JOBS_MODAL_HEADER_HEIGHT - JOBS_MODAL_CLOSE_BUTTON_SIZE) / 2 +
+      JOBS_MODAL_PADDING / 2,
+    width: JOBS_MODAL_CLOSE_BUTTON_SIZE,
+    height: JOBS_MODAL_CLOSE_BUTTON_SIZE,
   };
 }
 
@@ -223,7 +331,10 @@ export const RACK_CLOSE_BUTTON_SIZE = 32;
 // no circular dependency on the tray height it helps compute.
 function getTrayColumns(panelWidth: number): number {
   const availWidth = panelWidth - RACK_PANEL_PADDING * 2;
-  return Math.max(1, Math.floor((availWidth + RACK_TRAY_CARD_GAP) / (RACK_TRAY_CARD_WIDTH + RACK_TRAY_CARD_GAP)));
+  return Math.max(
+    1,
+    Math.floor((availWidth + RACK_TRAY_CARD_GAP) / (RACK_TRAY_CARD_WIDTH + RACK_TRAY_CARD_GAP)),
+  );
 }
 
 function getTrayHeight(trayCount: number, panelWidth: number): number {
@@ -239,7 +350,9 @@ export function getRackPanelRect(
   trayCount: number,
 ): Rect {
   const serversHeight =
-    serverCount > 0 ? serverCount * RACK_SERVER_ROW_HEIGHT + (serverCount - 1) * RACK_SERVER_ROW_GAP : 0;
+    serverCount > 0
+      ? serverCount * RACK_SERVER_ROW_HEIGHT + (serverCount - 1) * RACK_SERVER_ROW_GAP
+      : 0;
   const width = Math.min(RACK_PANEL_WIDTH, canvasWidth - RACK_PANEL_PADDING * 2);
   const trayHeight = getTrayHeight(trayCount, width);
   const height = Math.min(
@@ -259,9 +372,15 @@ export function getRackPanelRect(
 // the tray) — as opposed to getRackPanelRect's height, which is clamped to fit the canvas. The
 // difference between this and getRackPanelContentRect's height is how far the panel can scroll;
 // see rack-panel.ts's scroll handling.
-export function getRackPanelContentHeight(canvasWidth: number, serverCount: number, trayCount: number): number {
+export function getRackPanelContentHeight(
+  canvasWidth: number,
+  serverCount: number,
+  trayCount: number,
+): number {
   const serversHeight =
-    serverCount > 0 ? serverCount * RACK_SERVER_ROW_HEIGHT + (serverCount - 1) * RACK_SERVER_ROW_GAP : 0;
+    serverCount > 0
+      ? serverCount * RACK_SERVER_ROW_HEIGHT + (serverCount - 1) * RACK_SERVER_ROW_GAP
+      : 0;
   const width = Math.min(RACK_PANEL_WIDTH, canvasWidth - RACK_PANEL_PADDING * 2);
   return serversHeight + RACK_PANEL_PADDING + getTrayHeight(trayCount, width);
 }
@@ -363,7 +482,10 @@ export function getServerTraitBarRect(
   // colliding with the previous trait's bar.
   return {
     x: row.x,
-    y: barsTop + traitIndex * RACK_TRAIT_ROW_HEIGHT + (RACK_TRAIT_ROW_HEIGHT - RACK_TRAIT_BAR_HEIGHT),
+    y:
+      barsTop +
+      traitIndex * RACK_TRAIT_ROW_HEIGHT +
+      (RACK_TRAIT_ROW_HEIGHT - RACK_TRAIT_BAR_HEIGHT),
     width: row.width - chipColumnWidth,
     height: RACK_TRAIT_BAR_HEIGHT,
   };
@@ -464,9 +586,16 @@ export function getTrayTopY(
 ): number {
   const panel = getRackPanelRect(canvasWidth, canvasHeight, serverCount, trayCount);
   const serversHeight =
-    serverCount > 0 ? serverCount * RACK_SERVER_ROW_HEIGHT + (serverCount - 1) * RACK_SERVER_ROW_GAP : 0;
+    serverCount > 0
+      ? serverCount * RACK_SERVER_ROW_HEIGHT + (serverCount - 1) * RACK_SERVER_ROW_GAP
+      : 0;
   return (
-    panel.y + RACK_PANEL_PADDING + RACK_PANEL_HEADER_HEIGHT + RACK_PANEL_PADDING + serversHeight + RACK_PANEL_PADDING
+    panel.y +
+    RACK_PANEL_PADDING +
+    RACK_PANEL_HEADER_HEIGHT +
+    RACK_PANEL_PADDING +
+    serversHeight +
+    RACK_PANEL_PADDING
   );
 }
 
@@ -504,8 +633,13 @@ export const SHOP_BUY_BUTTON_WIDTH = 70;
 export const SHOP_BUY_BUTTON_HEIGHT = 34;
 export const SHOP_CLOSE_BUTTON_SIZE = 32;
 
-export function getShopPanelRect(canvasWidth: number, canvasHeight: number, rowCount: number): Rect {
-  const rowsHeight = rowCount > 0 ? rowCount * SHOP_ROW_HEIGHT + (rowCount - 1) * SHOP_ROW_GAP : SHOP_ROW_HEIGHT;
+export function getShopPanelRect(
+  canvasWidth: number,
+  canvasHeight: number,
+  rowCount: number,
+): Rect {
+  const rowsHeight =
+    rowCount > 0 ? rowCount * SHOP_ROW_HEIGHT + (rowCount - 1) * SHOP_ROW_GAP : SHOP_ROW_HEIGHT;
   const width = Math.min(SHOP_PANEL_WIDTH, canvasWidth - SHOP_PANEL_PADDING * 2);
   const height = Math.min(
     SHOP_PANEL_HEADER_HEIGHT + SHOP_TAB_HEIGHT + SHOP_PANEL_PADDING * 3 + rowsHeight,
@@ -519,7 +653,11 @@ export function getShopPanelRect(canvasWidth: number, canvasHeight: number, rowC
   };
 }
 
-export function getShopCloseButtonRect(canvasWidth: number, canvasHeight: number, rowCount: number): Rect {
+export function getShopCloseButtonRect(
+  canvasWidth: number,
+  canvasHeight: number,
+  rowCount: number,
+): Rect {
   const panel = getShopPanelRect(canvasWidth, canvasHeight, rowCount);
   return {
     x: panel.x + panel.width - SHOP_PANEL_PADDING - SHOP_CLOSE_BUTTON_SIZE,
@@ -529,7 +667,13 @@ export function getShopCloseButtonRect(canvasWidth: number, canvasHeight: number
   };
 }
 
-export function getShopTabRect(tabIndex: number, tabCount: number, canvasWidth: number, canvasHeight: number, rowCount: number): Rect {
+export function getShopTabRect(
+  tabIndex: number,
+  tabCount: number,
+  canvasWidth: number,
+  canvasHeight: number,
+  rowCount: number,
+): Rect {
   const panel = getShopPanelRect(canvasWidth, canvasHeight, rowCount);
   const tabsTop = panel.y + SHOP_PANEL_PADDING + SHOP_PANEL_HEADER_HEIGHT;
   const tabWidth = (panel.width - SHOP_PANEL_PADDING * 2) / tabCount;
@@ -541,9 +685,15 @@ export function getShopTabRect(tabIndex: number, tabCount: number, canvasWidth: 
   };
 }
 
-export function getShopRowRect(index: number, canvasWidth: number, canvasHeight: number, rowCount: number): Rect {
+export function getShopRowRect(
+  index: number,
+  canvasWidth: number,
+  canvasHeight: number,
+  rowCount: number,
+): Rect {
   const panel = getShopPanelRect(canvasWidth, canvasHeight, rowCount);
-  const top = panel.y + SHOP_PANEL_PADDING + SHOP_PANEL_HEADER_HEIGHT + SHOP_TAB_HEIGHT + SHOP_PANEL_PADDING;
+  const top =
+    panel.y + SHOP_PANEL_PADDING + SHOP_PANEL_HEADER_HEIGHT + SHOP_TAB_HEIGHT + SHOP_PANEL_PADDING;
   return {
     x: panel.x + SHOP_PANEL_PADDING,
     y: top + index * (SHOP_ROW_HEIGHT + SHOP_ROW_GAP),
@@ -552,7 +702,12 @@ export function getShopRowRect(index: number, canvasWidth: number, canvasHeight:
   };
 }
 
-export function getShopBuyButtonRect(index: number, canvasWidth: number, canvasHeight: number, rowCount: number): Rect {
+export function getShopBuyButtonRect(
+  index: number,
+  canvasWidth: number,
+  canvasHeight: number,
+  rowCount: number,
+): Rect {
   const row = getShopRowRect(index, canvasWidth, canvasHeight, rowCount);
   return {
     x: row.x + row.width - SHOP_BUY_BUTTON_WIDTH,
@@ -562,41 +717,25 @@ export function getShopBuyButtonRect(index: number, canvasWidth: number, canvasH
   };
 }
 
-// The world-drawing/camera-framing area, minus the strips permanently occupied by HUD
-// chrome: the top bar, the left offers column, and the right workload panel column. Both side
-// panels grow/shrink in height with their content but always start flush against the canvas
-// edge at a fixed width, so reserving their full column (not just their current content
-// height) keeps the boundary stable as offers/workloads come and go — recomputing it every
-// frame from content height would make the camera framing jitter.
+// The world-drawing/camera-framing area, minus the top HUD bar. Used to be minus the left
+// offers column and right workload panel column too, but those are now toggled modals (see
+// .plans/job-panels.md) rather than permanently-docked chrome, so there's no fixed column width
+// to reserve any more — the play area now fills the canvas below the bar.
 export function getGameViewportRect(canvasWidth: number, canvasHeight: number): Rect {
-  const left = HUD_PANEL_MARGIN * 2 + OFFER_CARD_WIDTH;
-  const right = HUD_PANEL_MARGIN * 2 + getHudPanelWidth(canvasWidth);
   const top = HUD_BAR_HEIGHT;
-  const width = Math.max(0, canvasWidth - left - right);
-  const height = Math.max(0, canvasHeight - top);
-  return { x: left, y: top, width, height };
+  return { x: 0, y: top, width: canvasWidth, height: Math.max(0, canvasHeight - top) };
 }
 
-export function pointerInHud(
-  point: { x: number; y: number },
-  canvas: HTMLCanvasElement,
-  offerCount = 0,
-): boolean {
+export function pointerInHud(point: { x: number; y: number }, canvas: HTMLCanvasElement): boolean {
   // canvas.clientWidth (CSS-pixel/logical size), not canvas.width — the latter is the
   // dpr-scaled backing-buffer resolution set by rendering/index.ts (see
   // .plans/mobile-touch-support.md D5) and would misalign every rect below against a
   // CSS-pixel pointer position.
   if (pointerInRect(point, getHudBarRect(canvas.clientWidth))) return true;
 
-  // Row count only affects panel height, not x/width — a generous upper bound (max rows,
-  // each potentially a 2-line pending row, plus a "+N more" line) safely covers the panel's
-  // full extent for hit-testing without needing to know the actual workload list.
-  const panelRect = getWorkloadPanelRect(canvas.clientWidth, HUD_PANEL_MAX_ROWS * 2 + 1);
-  if (pointerInRect(point, panelRect)) return true;
-
-  if (offerCount > 0 && pointerInRect(point, getOffersPanelRect())) {
-    return true;
-  }
+  // The offers/jobs panels are centered modals, like the rack/shop panels — those absorb clicks
+  // via their own "modal is open" check in input.ts's priority chain, not by being permanently
+  // blocked here (see .plans/job-panels.md).
 
   // The tutorial banner is deliberately NOT blocked here (see .plans/playtest-findings.md B1):
   // it's an overlay, not an interactive panel, and its own two hit targets (action button, skip
@@ -662,4 +801,3 @@ export function getTutorialSkipRect(canvasWidth: number, canvasHeight: number): 
     height: TUTORIAL_SKIP_HEIGHT,
   };
 }
-

@@ -28,25 +28,27 @@ Systems run in this order every tick; several depend on it (noted below):
 
 **`updateSystems`** (simulation, runs even off-screen):
 1. `input` — reads input, mutates build mode / drag state / dispatch requests
-2. `install-progress` — advances the player's active install task
-3. `path-follow` — turns a queued path into the next `MoveTarget`
-4. `movement` — advances `Position` toward `MoveTarget`
-5. `rack-panel` — panel open/close, arrival, scroll, pending-drop commit
-6. `shop` — proximity-based shop panel open/close
-7. `resource` — power/cooling brownout decisions (must run before `capacity`)
-8. `capacity` — recomputes free capacity per server/rack/facility (must run after `resource`, before `workload-run`)
-9. `workload-spawn` — spawns new offers, ticks offer expiry
-10. `workload-run` — advances placed workloads, pays out, resolves completion/deadline miss (must run after `capacity`)
-11. `tutorial` — advances the guided-tutorial step (must run last: reads this frame's mutations from every system above)
+2. `job-panels` — offers/jobs panel key toggles, wheel-scroll clamping (order beyond "after input" isn't load-bearing)
+3. `install-progress` — advances the player's active install task
+4. `path-follow` — turns a queued path into the next `MoveTarget`
+5. `movement` — advances `Position` toward `MoveTarget`
+6. `rack-panel` — panel open/close, arrival, scroll, pending-drop commit
+7. `shop` — proximity-based shop panel open/close
+8. `resource` — power/cooling brownout decisions (must run before `capacity`)
+9. `capacity` — recomputes free capacity per server/rack/facility (must run after `resource`, before `workload-run`)
+10. `workload-spawn` — spawns new offers, ticks offer expiry
+11. `workload-run` — advances placed workloads, pays out, resolves completion/deadline miss (must run after `capacity`)
+12. `tutorial` — advances the guided-tutorial step (must run last: reads this frame's mutations from every system above)
 
 **`renderSystems`** (presentation only, skipped when tab hidden):
 1. `camera` — eases camera toward the player
 2. `render` — draws the floor, racks, panels, build UI
-3. `hud` — draws the top bar, workload panel, offers panel
+3. `hud` — draws the top bar, offers modal, jobs modal
 
 ## Systems
 
 - [input](./input.md) — pointer/keyboard gesture ownership: build mode, click-priority chain, drag lifecycle entry points
+- [job-panels](./job-panels.md) — offers/jobs panel key toggles, mutual exclusion with rack/shop, wheel-scroll clamping
 - [movement](./movement.md) — moves an entity's `Position` toward its `MoveTarget`
 - [path-follow](./path-follow.md) — feeds a queued path into `MoveTarget` one waypoint at a time
 - [camera](./camera.md) — eases the camera toward the controlled entity (render-only)
@@ -58,6 +60,6 @@ Systems run in this order every tick; several depend on it (noted below):
 - [workload-spawn](./workload-spawn.md) — offer arrival cadence and offer expiry
 - [workload-run](./workload-run.md) — ticks placed/unplaced workloads: payout, completion, deadline miss
 - [render](./render.md) — all Canvas drawing of the floor, racks, panels, build UI (presentation only)
-- [hud](./hud.md) — top bar, workload panel, offers panel (presentation only)
+- [hud](./hud.md) — top bar, offers modal, jobs modal (presentation only)
 - [tutorial](./tutorial.md) — first-time guided-tutorial step advance (banner drawn by hud.ts)
 - [audio](./audio.md) — synthesized SFX and mute toggle, threaded through several systems as a shared dependency

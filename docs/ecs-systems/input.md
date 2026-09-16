@@ -12,9 +12,12 @@ interprets `wasClicked`/`wasPressed`/`wasReleased`.
 
 ## Keyboard (registered once, outside `update`)
 
-- `Escape` — closes shop panel if open, else clears build mode
+- `Escape` — closes shop panel if open, else clears build mode (a separate handler in
+  [job-panels](./job-panels.md) also closes the offers/jobs panel on the same key, if open)
 - Number keys `1..N` (one per `BUILDABLES` entry) — toggle build mode for that buildable,
-  ignored while an install task is active
+  ignored while an install task is active or the offers/jobs panel is open
+- `O`/`J` — offers/jobs panel toggles, registered and owned by
+  [job-panels](./job-panels.md), not this file
 
 ## Per-frame priority chain (`update`)
 
@@ -28,18 +31,20 @@ drag spans multiple frames):
 Then, only if `wasClicked()` (and not already consumed by a drag), in strict order:
 -1. Mute button (`getMuteButtonRect`) — always reachable, checked before anything else can
    swallow the click. See [audio](./audio.md).
-0. Offer accept/decline buttons (checked before general HUD-blocking, since offer cards
-   live inside the HUD but must not be swallowed by an in-progress install or build mode)
-1. `pointerInHud` check — HUD-region clicks otherwise fall through to nothing
-2. Install task active → any click cancels + refunds to inventory (`cancelInstallTask`)
-3. Rack panel visible (viewing, or dispatching-and-arrived) → **absorbs every click**
+0. `pointerInHud` check — HUD-region clicks otherwise fall through to nothing
+0.7. Offers/jobs panel open → **absorbs every click**, delegated to
+   [job-panels](./job-panels.md)'s `handleOffersModalClick`/`handleJobsModalClick` (close
+   button, and for offers, each card's accept/decline). Mutually exclusive with steps 1.5/1.6
+   below — see job-panels.ts's `otherModalBlocking`/`closeJobPanels`.
+1. Install task active → any click cancels + refunds to inventory (`cancelInstallTask`)
+1.5. Rack panel visible (viewing, or dispatching-and-arrived) → **absorbs every click**
    except its close button (full-screen modal)
-4. Shop panel open → **absorbs every click**: close button, category tabs, buy buttons
-5. Build panel entry hit → toggles that buildable's build mode
-6. Build mode active → place a rack (`'empty-cell'`) or start an install
+1.6. Shop panel open → **absorbs every click**: close button, category tabs, buy buttons
+2. Build panel entry hit → toggles that buildable's build mode
+3. Build mode active → place a rack (`'empty-cell'`) or start an install
    (`'rack'`, via `tryInstallIntoRack`) at the clicked grid cell
-7. Rack clicked (no build mode) → `openOrPromoteRackPanel` (rack-panel.ts) + walk there
-8. Otherwise → plain floor click: `moveControlledTo`, cancelling any not-yet-arrived
+4. Rack clicked (no build mode) → `openOrPromoteRackPanel` (rack-panel.ts) + walk there
+5. Otherwise → plain floor click: `moveControlledTo`, cancelling any not-yet-arrived
    pending dispatch panel (the player redirected away from it)
 
 ## `moveControlledTo(world, controlled, facility, targetPixel)`
