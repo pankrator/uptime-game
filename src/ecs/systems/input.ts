@@ -32,7 +32,7 @@ import { getRoomRect } from '../room';
 import { takeFromInventory, addToInventory } from '../inventory';
 import { buy, dismissShop, shopTab, shopCategories, shopCatalogForTab } from './shop';
 import { type InputState } from '../../input';
-import { spawnRack } from '../../entities';
+import { spawnRack, spawnCoolingUnit } from '../../entities';
 import { type Renderer } from '../../rendering';
 import { type Camera } from '../../camera';
 import { type Audio } from '../../audio';
@@ -410,14 +410,21 @@ export function createInputSystem(
         if (buildable.placement === 'empty-cell') {
           const room = getRoomRect(world, facility);
           const insideRoom =
-            gridX >= room.minGridX && gridX <= room.maxGridX && gridY >= room.minGridY && gridY <= room.maxGridY;
+            gridX >= room.minGridX &&
+            gridX <= room.maxGridX &&
+            gridY >= room.minGridY &&
+            gridY <= room.maxGridY;
           if (!insideRoom) return;
           if (isGridCellOccupied(world, gridX, gridY)) return;
           if (!takeFromInventory(world, facility, buildable.id as PurchasableId)) return;
 
-          spawnRack(world, gridX, gridY);
+          if (buildable.id === 'crac') {
+            spawnCoolingUnit(world, gridX, gridY);
+          } else {
+            spawnRack(world, gridX, gridY);
+          }
           audio.play('rackPlaced');
-          // Stay in build mode so a row of racks can be laid out quickly.
+          // Stay in build mode so a row of the same buildable can be laid out quickly.
           return;
         }
 

@@ -1,6 +1,24 @@
 import { type World, type EntityId } from '../world';
-import { machines, installedIns, powereds, placedOns, workloads, utilizations, powerCapacities, coolingCapacities, wallets } from '../components';
-import { MACHINE_TIERS, WORKLOAD_ARCHETYPES, BROWNOUT_COOLDOWN_SECONDS, POWER_COST_PER_KW_SECOND } from '../game-data';
+import {
+  machines,
+  installedIns,
+  powereds,
+  placedOns,
+  workloads,
+  utilizations,
+  powerCapacities,
+  coolingCapacities,
+  wallets,
+  thermalTrips,
+  coolingUnits,
+} from '../components';
+import {
+  MACHINE_TIERS,
+  WORKLOAD_ARCHETYPES,
+  BROWNOUT_COOLDOWN_SECONDS,
+  POWER_COST_PER_KW_SECOND,
+  CRAC_UNIT,
+} from '../game-data';
 import { unplaceWorkload } from '../dispatch';
 import { type Audio } from '../../audio';
 import { type System } from './system';
@@ -46,10 +64,12 @@ function workloadsOn(world: World, serverId: EntityId): EntityId[] {
     .filter((workloadId) => world.getComponent(placedOns, workloadId)!.serverId === serverId);
 }
 
-// Losing a server to a brownout unplaces every workload on it — they return to the tray still
-// holding their deadline, a visible/recoverable setback rather than silent progress loss (see
-// .plans/workload-dispatch.md, "Changed: resource.ts").
-function unplaceAllOn(world: World, serverId: EntityId): void {
+// Losing a server to a brownout (or, per .plans/thermal-and-cooling.md D6, a thermal trip)
+// unplaces every workload on it — they return to the tray still holding their deadline, a
+// visible/recoverable setback rather than silent progress loss (see .plans/workload-dispatch.md,
+// "Changed: resource.ts"). Exported so thermal.ts's trip handling reuses this exactly rather
+// than a second, likely-diverging implementation (D6: "no new failure path").
+export function unplaceAllOn(world: World, serverId: EntityId): void {
   for (const workloadId of workloadsOn(world, serverId)) {
     unplaceWorkload(world, workloadId);
   }
@@ -80,6 +100,13 @@ export function createResourceSystem(world: World, facility: EntityId, audio: Au
 
       const machineIds = world.query(machines, installedIns, powereds);
 
+      // Placed CRAC units draw power unconditionally — they have no Powered component and are
+      // never brownout candidates (D4/Step 1: "cooling costs power" is meant to be a flat cost
+      // of having them placed, not something that itself flickers under a power crunch).
+      // Subtracting their draw from the power budget available to machines keeps the tension
+      // real: more CRACs placed leaves less headroom before machines start browning out.
+      const cracPowerKw = world.query(coolingUnits).length * CRAC_UNIT.powerKw;
+
       // Tick cooldowns first so a machine can become recovery-eligible this frame.
       for (const id of machineIds) {
         const powered = world.getComponent(powereds, id)!;
@@ -89,14 +116,24 @@ export function createResourceSystem(world: World, facility: EntityId, audio: Au
       }
 
       // Recovery: online machines plus any offline machine whose cooldown has elapsed are
-      // candidates; brownout selection then decides who actually fits.
+      // candidates; brownout selection then decides who actually fits. A machine whose rack is
+      // thermally tripped is never a candidate — see .plans/thermal-and-cooling.md D7: thermal.ts
+      // may only force offline, never force online, so this is the one place resource.ts (the
+      // sole writer of Powered.online) reads that veto rather than thermal.ts writing the flag
+      // itself.
       const candidateIds = machineIds.filter((id) => {
         const powered = world.getComponent(powereds, id)!;
+        const installedIn = world.getComponent(installedIns, id)!;
+        if (world.getComponent(thermalTrips, installedIn.rackId)) return false;
         return powered.online || powered.offlineCooldown <= 0;
       });
 
       const candidateDraws = candidateIds.map((id) => drawFor(world, id));
-      const toOffline = selectMachinesToBrownOut(candidateDraws, powerCapacity.kw, coolingCapacity.kw);
+      const toOffline = selectMachinesToBrownOut(
+        candidateDraws,
+        Math.max(0, powerCapacity.kw - cracPowerKw),
+        coolingCapacity.kw,
+      );
       const candidateSet = new Set(candidateIds);
 
       let powerDrawKw = 0;
@@ -134,14 +171,16 @@ export function createResourceSystem(world: World, facility: EntityId, audio: Au
         computeFree += Math.max(0, tier.traits.cpu - used);
       }
 
-      utilization.powerDrawKw = powerDrawKw;
+      utilization.powerDrawKw = powerDrawKw + cracPowerKw;
       utilization.coolingDrawKw = coolingDrawKw;
       utilization.computeTotal = computeTotal;
       utilization.computeFree = computeFree;
 
       // .plans/power-billing.md D1/D2: billed on draw (offline machines already `continue`d
-      // above and contribute 0), power + cooling at one rate.
-      utilization.powerCostPerSecond = (powerDrawKw + coolingDrawKw) * POWER_COST_PER_KW_SECOND;
+      // above and contribute 0), power + cooling at one rate. Includes CRAC power draw
+      // (.plans/thermal-and-cooling.md Step 1) — cooling costs money to run.
+      utilization.powerCostPerSecond =
+        (powerDrawKw + cracPowerKw + coolingDrawKw) * POWER_COST_PER_KW_SECOND;
       const wallet = world.getComponent(wallets, facility);
       if (wallet) wallet.money -= utilization.powerCostPerSecond * deltaSeconds;
     },

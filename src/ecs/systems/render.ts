@@ -26,6 +26,9 @@ import {
   wallets,
   shopOpens,
   inventories,
+  temperatures,
+  thermalTrips,
+  coolingUnits,
 } from '../components';
 import {
   RACK_SLOT_CAPACITY,
@@ -35,6 +38,9 @@ import {
   TRAIT_UNITS,
   WORKLOAD_ARCHETYPES,
   POWER_COST_PER_KW_SECOND,
+  AMBIENT_C,
+  THROTTLE_C,
+  TRIP_C,
   type Traits,
   type PurchasableId,
   type MachineTierId,
@@ -177,6 +183,62 @@ function drawShopAndCorridor(renderer: Renderer): void {
   ctx.fillText('SHOP', shop.x + shop.w / 2, shop.y + 16);
 }
 
+// Blue (ambient/cool) -> amber (throttle band) -> red (tripped), interpolated linearly across
+// the two sub-ranges. See .plans/thermal-and-cooling.md D8.
+const HEAT_COOL_RGB: [number, number, number] = [61, 139, 220];
+const HEAT_WARN_RGB: [number, number, number] = [247, 183, 49];
+const HEAT_HOT_RGB: [number, number, number] = [229, 72, 77];
+
+function lerpRgb(
+  a: [number, number, number],
+  b: [number, number, number],
+  t: number,
+): [number, number, number] {
+  const clamped = Math.max(0, Math.min(1, t));
+  return [
+    a[0] + (b[0] - a[0]) * clamped,
+    a[1] + (b[1] - a[1]) * clamped,
+    a[2] + (b[2] - a[2]) * clamped,
+  ];
+}
+
+function heatColor(celsius: number): [number, number, number] {
+  if (celsius <= THROTTLE_C) {
+    return lerpRgb(HEAT_COOL_RGB, HEAT_WARN_RGB, (celsius - AMBIENT_C) / (THROTTLE_C - AMBIENT_C));
+  }
+  return lerpRgb(HEAT_WARN_RGB, HEAT_HOT_RGB, (celsius - THROTTLE_C) / (TRIP_C - THROTTLE_C));
+}
+
+const HEAT_OVERLAY_MAX_ALPHA = 0.35;
+
+// Per-cell heat wash, drawn before racks so the cabinet art sits on top of it — the interface to
+// the thermal mechanic (D8): the player must be able to read "this corner is hot" from across
+// the floor, not just from a rack's label. A soft radial glow rather than a hard-edged cell fill
+// so racks near each other visibly blend into a hot patch. Racks at/below ambient draw nothing —
+// there's no useful signal in "this rack is exactly as cool as the room."
+function drawHeatOverlay(renderer: Renderer, world: World): void {
+  const ctx = renderer.context;
+  for (const rackId of world.query(rackSlots, gridPositions, temperatures)) {
+    const grid = world.getComponent(gridPositions, rackId)!;
+    const temperature = world.getComponent(temperatures, rackId)!;
+    if (temperature.celsius <= AMBIENT_C) continue;
+
+    const [r, g, b] = heatColor(temperature.celsius);
+    const alpha =
+      HEAT_OVERLAY_MAX_ALPHA *
+      Math.min(1, (temperature.celsius - AMBIENT_C) / (TRIP_C - AMBIENT_C));
+    const centerX = grid.gridX * GRID_CELL_SIZE + GRID_CELL_SIZE / 2;
+    const centerY = grid.gridY * GRID_CELL_SIZE + GRID_CELL_SIZE / 2;
+    const radius = GRID_CELL_SIZE * 1.4;
+
+    const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
+    gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${alpha})`);
+    gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(centerX - radius, centerY - radius, radius * 2, radius * 2);
+  }
+}
+
 const RACK_PADDING = 4;
 
 // 'partial'/'full' replace the old 'online-busy': full means every trait in ServerCapacity.free
@@ -252,6 +314,12 @@ const RACK_LABEL_COLOR = '#9aa0a6';
 // Under-rack power/heat readout, read straight off RackLoad — visible from across the floor
 // without opening anything. Colored against facility headroom so an over-drawing rack stands
 // out. See .plans/workload-dispatch.md step 2.
+function temperatureColor(celsius: number): string {
+  if (celsius >= TRIP_C) return RACK_LABEL_OVER_COLOR;
+  if (celsius >= THROTTLE_C) return '#f7b731';
+  return RACK_LABEL_COLOR;
+}
+
 function drawRackLoadLabel(
   renderer: Renderer,
   gridX: number,
@@ -259,6 +327,7 @@ function drawRackLoadLabel(
   load: { powerKw: number; heatKw: number },
   facilityOverPower: boolean,
   facilityOverCooling: boolean,
+  temperature: { celsius: number } | undefined,
 ): void {
   const ctx = renderer.context;
   const centerX = gridX * GRID_CELL_SIZE + GRID_CELL_SIZE / 2;
@@ -271,6 +340,75 @@ function drawRackLoadLabel(
   ctx.fillText(`⚡ ${load.powerKw.toFixed(1)}kW`, centerX, labelY);
   ctx.fillStyle = facilityOverCooling ? RACK_LABEL_OVER_COLOR : RACK_LABEL_COLOR;
   ctx.fillText(`🔥 ${load.heatKw.toFixed(1)}kW`, centerX, labelY + 10);
+
+  if (temperature) {
+    ctx.fillStyle = temperatureColor(temperature.celsius);
+    ctx.fillText(`${Math.round(temperature.celsius)}°C`, centerX, labelY + 20);
+  }
+}
+
+// Throttle/trip badge, drawn above a hot rack — the trip case reuses the same red the brownout
+// path already uses elsewhere in this file, so "this rack is dark" reads the same regardless of
+// cause. See .plans/thermal-and-cooling.md D8.
+function drawThermalBadge(
+  renderer: Renderer,
+  gridX: number,
+  gridY: number,
+  tripped: boolean,
+  throttleFactor: number,
+): void {
+  if (!tripped && throttleFactor >= 1) return;
+
+  const ctx = renderer.context;
+  const centerX = gridX * GRID_CELL_SIZE + GRID_CELL_SIZE / 2;
+  const badgeY = gridY * GRID_CELL_SIZE - 8;
+
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = tripped ? RACK_LABEL_OVER_COLOR : '#f7b731';
+  ctx.fillText(tripped ? '⛔ OVERHEATED' : '🌡 THROTTLED', centerX, badgeY);
+}
+
+// A placed CRAC unit and its coverage ring. See .plans/thermal-and-cooling.md D4/Step 7.
+function drawCoolingUnit(
+  renderer: Renderer,
+  gridX: number,
+  gridY: number,
+  radiusCells: number,
+  showRing: boolean,
+): void {
+  const ctx = renderer.context;
+  const x = gridX * GRID_CELL_SIZE + RACK_PADDING;
+  const y = gridY * GRID_CELL_SIZE + RACK_PADDING;
+  const size = GRID_CELL_SIZE - RACK_PADDING * 2;
+  const centerX = gridX * GRID_CELL_SIZE + GRID_CELL_SIZE / 2;
+  const centerY = gridY * GRID_CELL_SIZE + GRID_CELL_SIZE / 2;
+
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+  ctx.fillRect(x + 2, y + 3, size, size);
+
+  ctx.fillStyle = '#2b4a5c';
+  ctx.fillRect(x, y, size, size);
+  ctx.strokeStyle = '#1c333f';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, y, size, size);
+
+  ctx.font = `${size * 0.55}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('❄', centerX, centerY + 1);
+
+  // Faint always-on ring so coverage is legible without opening build mode; strong+solid while
+  // actively placing (D8 point 3 — coverage must be plannable before committing).
+  ctx.save();
+  ctx.strokeStyle = showRing ? 'rgba(93, 179, 235, 0.85)' : 'rgba(93, 179, 235, 0.22)';
+  ctx.lineWidth = showRing ? 2 : 1;
+  if (!showRing) ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, radiusCells * GRID_CELL_SIZE, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
 }
 
 function drawManager(renderer: Renderer, x: number, y: number): void {
@@ -583,16 +721,25 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
   // Rack-wide total draw, right-aligned in the header (left of the close button) — RackLoad
   // already sums every online server's tier power/cooling plus their workloads' cooling
   // bonuses (capacity.ts), so no new aggregation is needed here.
-  const rackLoad = world.getComponent(rackLoads, panel.rackId) ?? { powerKw: 0, heatKw: 0, serverCount: 0 };
+  const rackLoad = world.getComponent(rackLoads, panel.rackId) ?? {
+    powerKw: 0,
+    heatKw: 0,
+    serverCount: 0,
+  };
+  const rackTemperature = world.getComponent(temperatures, panel.rackId);
+  const tripped = world.getComponent(thermalTrips, panel.rackId) !== undefined;
   ctx.font = '11px sans-serif';
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
   ctx.fillStyle = RACK_PANEL_DIM;
-  ctx.fillText(
-    `⚡ ${rackLoad.powerKw.toFixed(1)}kW   🔥 ${rackLoad.heatKw.toFixed(1)}kW`,
-    closeRect.x - 10,
-    headerY,
-  );
+  let headerStats = `⚡ ${rackLoad.powerKw.toFixed(1)}kW   🔥 ${rackLoad.heatKw.toFixed(1)}kW`;
+  if (rackTemperature) {
+    headerStats += `   ${Math.round(rackTemperature.celsius)}°C`;
+    if (tripped) headerStats += ' ⛔ OVERHEATED';
+    else if (rackTemperature.throttleFactor < 1) headerStats += ' 🌡 THROTTLED';
+  }
+  ctx.fillStyle = tripped ? RACK_LABEL_OVER_COLOR : RACK_PANEL_DIM;
+  ctx.fillText(headerStats, closeRect.x - 10, headerY);
 
   // Server rows + tray both live in the scrollable content region: clip to it and translate up
   // by however far the player has scrolled, so every rect computed below (all laid out in
@@ -913,6 +1060,23 @@ export function createRenderSystem(
 
       drawBuilding(renderer, world, facility);
       drawShopAndCorridor(renderer);
+      // Before racks, after the floor (D8) — the cabinet art draws on top of the wash.
+      drawHeatOverlay(renderer, world);
+
+      const buildMode = world.getComponent(buildModes, controlled);
+      for (const id of world.query(renderables, gridPositions)) {
+        const renderable = world.getComponent(renderables, id)!;
+        if (renderable.kind !== 'crac') continue;
+        const grid = world.getComponent(gridPositions, id)!;
+        const coolingUnit = world.getComponent(coolingUnits, id)!;
+        drawCoolingUnit(
+          renderer,
+          grid.gridX,
+          grid.gridY,
+          coolingUnit.radiusCells,
+          buildMode?.buildableId === 'crac',
+        );
+      }
 
       const machinesByRack = new Map<EntityId, EntityId[]>();
       for (const id of world.query(machines, installedIns)) {
@@ -979,7 +1143,25 @@ export function createRenderSystem(
           const facilityOverCooling = Boolean(
             coolingCapacity && utilization && utilization.coolingDrawKw > coolingCapacity.kw,
           );
-          drawRackLoadLabel(renderer, grid.gridX, grid.gridY, load, facilityOverPower, facilityOverCooling);
+          const temperature = world.getComponent(temperatures, id);
+          drawRackLoadLabel(
+            renderer,
+            grid.gridX,
+            grid.gridY,
+            load,
+            facilityOverPower,
+            facilityOverCooling,
+            temperature,
+          );
+          if (temperature) {
+            drawThermalBadge(
+              renderer,
+              grid.gridX,
+              grid.gridY,
+              world.getComponent(thermalTrips, id) !== undefined,
+              temperature.throttleFactor,
+            );
+          }
         }
       }
 
