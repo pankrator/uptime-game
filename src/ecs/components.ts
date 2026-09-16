@@ -1,6 +1,7 @@
 import { createComponentStore, type EntityId } from './world';
 import {
   MACHINE_TIERS,
+  CRAC_UNIT,
   type MachineTierId,
   type WorkloadArchetypeId,
   type PurchasableId,
@@ -54,7 +55,7 @@ export interface PathFollow {
   index: number;
 }
 
-export type RenderableKind = 'player-circle' | 'rack';
+export type RenderableKind = 'player-circle' | 'rack' | 'crac';
 
 export interface Renderable {
   kind: RenderableKind;
@@ -67,9 +68,9 @@ export type PlacementKind = 'empty-cell' | 'rack';
 // .plans/workload-dispatch.md D6 and the BUILDABLES generalization below.
 //
 // As of .plans/facility-shop-inventory.md D6, the build panel only ever shows STOCK
-// purchasables (rack, machines) — power/cooling upgrades are 'instant' kind, bought and
+// purchasables (rack, machines, crac) — power/cooling upgrades are 'instant' kind, bought and
 // applied at the shop, never placed. BuildableId is a strict subset of PurchasableId.
-export type BuildableId = 'rack' | `machine-${MachineTierId}`;
+export type BuildableId = 'rack' | `machine-${MachineTierId}` | 'crac';
 
 export interface BuildableDef {
   id: BuildableId;
@@ -86,6 +87,7 @@ const machineBuildables: BuildableDef[] = Object.values(MACHINE_TIERS).map((tier
 export const BUILDABLES: BuildableDef[] = [
   { id: 'rack', label: 'Rack', placement: 'empty-cell' },
   ...machineBuildables,
+  { id: 'crac', label: CRAC_UNIT.label, placement: 'empty-cell' },
 ];
 
 export interface BuildMode {
@@ -134,6 +136,33 @@ export interface RackLoad {
   powerKw: number;
   heatKw: number;
   serverCount: number;
+}
+
+// Lives on RACK entities. OWNED SOLELY BY thermal.ts — unlike RackLoad/ServerCapacity/
+// Utilization, this is NOT a derived cache recomputed from scratch each tick. Heat has history:
+// a rack that's been running hot for a minute is hot *now*, a fact not recoverable from this
+// tick's RackLoad.heatKw alone, so thermal.ts integrates it incrementally instead. Do not "fix"
+// this into a recompute — see .plans/thermal-and-cooling.md D2. throttleFactor (1 = full speed,
+// 0 = stalled) is cached here too so workload-run.ts reads one number instead of re-deriving the
+// throttle band from celsius itself.
+export interface Temperature {
+  celsius: number;
+  throttleFactor: number;
+}
+
+// Marker on RACK entities currently tripped from overheating (celsius was >= TRIP_C, hasn't
+// cooled back to TRIP_RECOVER_C yet). thermal.ts is the sole writer; resource.ts only reads it,
+// as a veto on Powered.online candidacy — see .plans/thermal-and-cooling.md D7: two systems
+// must never both write Powered.online directly, or a stuck-offline machine is a day-long bug.
+export interface ThermalTrip {
+  trippedAt: number;
+}
+
+// A placed CRAC unit — an entity with GridPosition + Renderable('crac') like a rack, plus this.
+// See .plans/thermal-and-cooling.md D4.
+export interface CoolingUnit {
+  kwOutput: number;
+  radiusCells: number;
 }
 
 // Machines
@@ -315,6 +344,7 @@ export type TutorialStepId =
   | 'build-rack'
   | 'install-machine'
   | 'open-rack-panel'
+  | 'visit-shop'
   | 'accept-offer'
   | 'place-workload'
   | 'done';
@@ -322,6 +352,10 @@ export type TutorialStepId =
 export interface TutorialProgress {
   stepId: TutorialStepId;
   moveOrigin: { x: number; y: number };
+  // Set by tutorial.ts's recordShopPurchase, called from input.ts only when shop.ts's buy()
+  // reports a purchase actually went through (see shop.ts's buy return value) — a rejected
+  // click (can't afford it) must not advance the 'visit-shop' step.
+  shopPurchased: boolean;
   skipped: boolean;
 }
 
@@ -341,6 +375,9 @@ export const powerCapacities = createComponentStore<PowerCapacity>();
 export const coolingCapacities = createComponentStore<CoolingCapacity>();
 export const rackSlots = createComponentStore<RackSlots>();
 export const rackLoads = createComponentStore<RackLoad>();
+export const temperatures = createComponentStore<Temperature>();
+export const thermalTrips = createComponentStore<ThermalTrip>();
+export const coolingUnits = createComponentStore<CoolingUnit>();
 export const machines = createComponentStore<Machine>();
 export const installedIns = createComponentStore<InstalledIn>();
 export const powereds = createComponentStore<Powered>();

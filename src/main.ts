@@ -14,6 +14,7 @@ import { createResourceSystem } from './ecs/systems/resource';
 import { createCapacitySystem } from './ecs/systems/capacity';
 import { createWorkloadSpawnSystem, createOfferExpirySystem } from './ecs/systems/workload-spawn';
 import { createWorkloadRunSystem } from './ecs/systems/workload-run';
+import { createThermalSystem } from './ecs/systems/thermal';
 import { createRenderSystem } from './ecs/systems/render';
 import { createHudSystem } from './ecs/systems/hud';
 import { createCameraSystem } from './ecs/systems/camera';
@@ -72,6 +73,13 @@ function runGame(canvas: HTMLCanvasElement): void {
   // - capacity runs AFTER resource (needs Powered.online) and BEFORE workload-run: running
   //   workload-run against stale free-capacity would pay out for placements a brownout already
   //   invalidated this frame.
+  // - thermal runs AFTER capacity (needs this tick's RackLoad.heatKw) and BEFORE workload-run
+  //   (which applies Temperature.throttleFactor to pay/progress). It also runs after resource so
+  //   a machine already offline from a brownout doesn't also generate heat. resource.ts is the
+  //   sole writer of Powered.online; thermal.ts may only force a rack's machines offline on trip
+  //   (never force them online) and otherwise signals via the ThermalTrip marker, which
+  //   resource.ts reads as a veto on bringing a tripped rack back online — see
+  //   .plans/thermal-and-cooling.md D7.
   // - spawn runs before run so a contract's offer window starts the same frame it arrives.
   const updateSystems = [
     createInputSystem(world, input, renderer, player, facility, camera, audio),
@@ -82,6 +90,7 @@ function runGame(canvas: HTMLCanvasElement): void {
     createShopSystem(world, player),
     createResourceSystem(world, facility, audio),
     createCapacitySystem(world, facility),
+    createThermalSystem(world, facility, audio),
     createWorkloadSpawnSystem(world, facility),
     createOfferExpirySystem(world),
     createWorkloadRunSystem(world, facility, audio),
@@ -97,9 +106,9 @@ function runGame(canvas: HTMLCanvasElement): void {
   // pause without affecting gameplay.
   // Camera update goes first — it must update before the render systems read it this frame.
   const renderSystems = [
-    createCameraSystem(world, renderer, input, player, camera),
+    createCameraSystem(world, renderer, input, player, facility, camera),
     createRenderSystem(world, renderer, player, facility, camera, input),
-    createHudSystem(world, renderer, facility, audio),
+    createHudSystem(world, renderer, facility, audio, camera),
   ];
 
   const loop = createGameLoop({ renderer, input, state, updateSystems, renderSystems });

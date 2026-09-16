@@ -14,8 +14,8 @@ normal play.
 
 ## Steps
 
-`welcome -> move -> build-rack -> install-machine -> open-rack-panel -> accept-offer ->
-place-workload -> done`
+`welcome -> move -> build-rack -> install-machine -> open-rack-panel -> visit-shop ->
+accept-offer -> place-workload -> done`
 
 `'welcome'` and `'done'` (`isTutorialActionStep`) have no world-state completion check — they
 only advance via the banner's own primary button (handled in `input.ts`). Every other step
@@ -27,8 +27,19 @@ already own — no new mutation paths, no gating of unrelated systems:
 - `build-rack` — `world.query(rackSlots).length >= 1`
 - `install-machine` — `world.query(machines).length >= 1`
 - `open-rack-panel` — `OpenRackPanel` present and (`mode === 'viewing'` or `arrived`)
+- `visit-shop` — `TutorialProgress.shopPurchased`, set by the exported `recordShopPurchase`,
+  called from `input.ts`'s buy-button handler only when [shop](./shop.md)'s `buy()` reports the
+  purchase actually went through (not on a rejected, can't-afford click) — the one step whose
+  completion isn't a bare `world.query(...)` read, since "a purchase happened" has no component
+  of its own to query
 - `accept-offer` — `world.query(workloads).length >= 1`
 - `place-workload` — `world.query(placedOns).length >= 1`
+
+The starting inventory (one rack, two Budget Boxes — see `entities.ts`'s
+`STARTING_INVENTORY`) is what `build-rack`/`install-machine` place; deliberately no shop trip
+is required to reach them, matching that inventory's own "playable before the shop exists"
+design intent (`game-data.ts`). `visit-shop` comes after, framed as restocking once the
+starter stock is used.
 
 ## Reads / writes
 

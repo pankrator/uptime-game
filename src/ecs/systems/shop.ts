@@ -53,18 +53,20 @@ function canAfford(world: World, facility: EntityId, cost: number): boolean {
 }
 
 // Applies a purchase's effect per its kind (D6): 'stock' → inventory +1, 'instant' → capacity
-// applied now, 'room' → room tier advances now. Rejected (no-op) if the wallet can't cover it.
-export function buy(world: World, facility: EntityId, purchasableId: PurchasableId): void {
+// applied now, 'room' → room tier advances now. Rejected (no-op, returns false) if the wallet
+// can't cover it. Returns true iff a purchase was actually applied — input.ts uses this to
+// tell a real buy from a rejected click (e.g. to advance the tutorial's shop step).
+export function buy(world: World, facility: EntityId, purchasableId: PurchasableId): boolean {
   const purchasable = PURCHASABLES.find((p) => p.id === purchasableId);
-  if (!purchasable) return;
-  if (!canAfford(world, facility, purchasable.cost)) return;
+  if (!purchasable) return false;
+  if (!canAfford(world, facility, purchasable.cost)) return false;
 
   const wallet = world.getComponent(wallets, facility)!;
   wallet.money -= purchasable.cost;
 
   if (purchasable.kind === 'stock') {
     addToInventory(world, facility, purchasableId);
-    return;
+    return true;
   }
 
   if (purchasable.kind === 'instant') {
@@ -75,18 +77,20 @@ export function buy(world: World, facility: EntityId, purchasableId: Purchasable
       const coolingCapacity = world.getComponent(coolingCapacities, facility)!;
       coolingCapacity.kw += COOLING_UPGRADE_KW;
     }
-    return;
+    return true;
   }
 
   // 'room': advance to the next tier. purchasableId is `room-${tierId}` — the shop only ever
   // offers the immediate next tier as a catalog entry (game-data.ts's roomPurchasables), so
   // buying it always means "advance by one."
   const roomTier = world.getComponent(roomTiers, facility);
-  if (!roomTier) return;
+  if (!roomTier) return false;
   const nextIndex = roomTier.index + 1;
   if (nextIndex < ROOM_TIERS.length) {
     roomTier.index = nextIndex;
+    return true;
   }
+  return false;
 }
 
 export function createShopSystem(world: World, controlled: EntityId): System {

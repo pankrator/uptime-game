@@ -98,9 +98,14 @@ export const RACK_SLOT_CAPACITY = 6;
 export const WORLD_WIDTH = 2400;
 export const WORLD_HEIGHT = 1600;
 
-export const CAMERA_EDGE_PAN_MARGIN_PX = 24;
-export const CAMERA_EDGE_PAN_SPEED = 700; // pixels/second while edge-panning or arrow-key panning
+export const CAMERA_PAN_SPEED = 700; // pixels/second while WASD-panning
 export const CAMERA_FOLLOW_EASE = 6; // higher = camera catches up to the player faster
+
+// Pinch/ctrl+wheel zoom range (see .plans/mobile-touch-support.md D2) — clamped so click-to-grid
+// math and pathing stay sane at both extremes, and so the HUD-safe viewport can never show less
+// floor than a rack's width at max zoom-in.
+export const CAMERA_ZOOM_MIN = 0.6;
+export const CAMERA_ZOOM_MAX = 2;
 
 // Room tier ladder — anchored at a shared top-left origin so upgrading always grows the room
 // right and down (see .plans/facility-shop-inventory.md D4). Grid cells, not pixels. gridY
@@ -133,6 +138,46 @@ export const POWER_UPGRADE_KW = 5;
 export const COOLING_UPGRADE_COST = 350;
 export const COOLING_UPGRADE_KW = 5;
 
+// See .plans/thermal-and-cooling.md D3: a first-order approach to a target temperature, not a
+// fluid sim. HEAT_TO_DEGREES/COOLING_TO_DEGREES convert kW to the °C they push the rack's
+// target toward; THERMAL_RESPONSE is the per-second fraction of the gap to target closed each
+// tick (thermal mass — a rack does not jump straight to its target).
+export const AMBIENT_C = 20;
+export const HEAT_TO_DEGREES = 14;
+export const COOLING_TO_DEGREES = 14;
+export const THERMAL_RESPONSE = 0.25;
+export const THROTTLE_C = 45;
+export const TRIP_C = 65;
+// Hysteresis (D3/Step 3): a trip clears once the rack cools to this, not merely back under
+// THROTTLE_C, or a rack sitting right at the boundary would flicker online/offline every tick.
+export const TRIP_RECOVER_C = THROTTLE_C - 5;
+// D5: facility CoolingCapacity stays as a flat, position-independent baseline applied to every
+// rack — this fraction of it, not divided across racks. Weak enough that it stops sufficing once
+// the player has enough hardware for heat to matter; CRAC units (placed, radius-limited) are the
+// answer once it does.
+export const BASELINE_COOLING_SHARE = 0.5;
+
+export interface CoolingUnitDef {
+  id: 'crac';
+  label: string;
+  cost: number;
+  kwOutput: number;
+  radiusCells: number;
+  powerKw: number;
+}
+
+// powerKw matters: cooling costs power, so it costs money to run (POWER_COST_PER_KW_SECOND
+// above) — the central tension of a real datacenter falls out for free. See
+// .plans/thermal-and-cooling.md Step 1.
+export const CRAC_UNIT: CoolingUnitDef = {
+  id: 'crac',
+  label: 'CRAC Unit',
+  cost: 450,
+  kwOutput: 3,
+  radiusCells: 3,
+  powerKw: 0.8,
+};
+
 // What the shop sells — unifies the three purchase kinds that used to be mixed into
 // BUILDABLES (components.ts): 'stock' items go into inventory and are placed later from the
 // build panel; 'instant' and 'room' apply immediately at purchase. See
@@ -142,6 +187,7 @@ export type PurchasableKind = 'stock' | 'instant' | 'room';
 export type PurchasableId =
   | 'rack'
   | `machine-${MachineTierId}`
+  | 'crac'
   | 'power-upgrade'
   | 'cooling-upgrade'
   | `room-${string}`;
@@ -173,8 +219,21 @@ const roomPurchasables: PurchasableDef[] = ROOM_TIERS.slice(1).map((tier) => ({
 export const PURCHASABLES: PurchasableDef[] = [
   { id: 'rack', label: 'Rack', kind: 'stock', cost: RACK_COST, category: 'Racks' },
   ...machinePurchasables,
-  { id: 'power-upgrade', label: '+5kW Power', kind: 'instant', cost: POWER_UPGRADE_COST, category: 'Utilities' },
-  { id: 'cooling-upgrade', label: '+5kW Cooling', kind: 'instant', cost: COOLING_UPGRADE_COST, category: 'Utilities' },
+  { id: 'crac', label: CRAC_UNIT.label, kind: 'stock', cost: CRAC_UNIT.cost, category: 'Cooling' },
+  {
+    id: 'power-upgrade',
+    label: '+5kW Power',
+    kind: 'instant',
+    cost: POWER_UPGRADE_COST,
+    category: 'Utilities',
+  },
+  {
+    id: 'cooling-upgrade',
+    label: '+5kW Cooling',
+    kind: 'instant',
+    cost: COOLING_UPGRADE_COST,
+    category: 'Utilities',
+  },
   ...roomPurchasables,
 ];
 
