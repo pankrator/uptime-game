@@ -8,10 +8,15 @@ exists and to find the right place in the update order for new logic.
 
 - **World** (`src/ecs/world.ts`) — hand-rolled ECS core. `EntityId` is a plain number.
   `ComponentStore<T>` wraps a `Map<EntityId, T>`. `World` exposes
-  `createEntity`/`destroyEntity`/`addComponent`/`getComponent`/`removeComponent`/`query`.
+  `createEntity`/`destroyEntity`/`hasEntity`/`addComponent`/`getComponent`/`removeComponent`/`query`.
   `query(...stores)` returns entity ids present in all given stores (intersection).
   `destroyEntity` sweeps every store it has ever seen, so removing an entity always
   cleans up its components — callers never need to remove components one by one first.
+  Component stores are module-level singletons shared by every `World` instance (only the id
+  counter and `entities` set are per-instance) — see the comment on `createWorld` for what that
+  means for anything that creates more than one `World` in the same process.
+  `resetAllComponentStores()` (also in `world.ts`) is the escape hatch, wired into every test
+  globally via `src/test/setup.ts`.
 - **System interface** (`src/ecs/systems/system.ts`) — one method: `update(deltaSeconds: number): void`.
   Every system factory (`createXSystem(...)`) returns an object matching this interface.
 - **Components** (`src/ecs/components.ts`) — all component type definitions and their
@@ -21,12 +26,18 @@ exists and to find the right place in the update order for new logic.
   `checkPlacement`, `placeWorkload`, `unplaceWorkload`, `acceptOffer`, `declineOffer`.
   Systems and input both call into this rather than duplicating the placement invariant
   (`Workload.state` / `PlacedOn` / `ServerCapacity.free` must stay consistent).
+- **Save/load** (`src/save/`) — not a system (nothing here runs every tick); `main.ts` calls
+  into it directly. `registry.ts` is the extension point: every new persistent component gets
+  one line there (`SAVE_COMPONENTS` or `TRANSIENT_COMPONENTS`, enforced by
+  `registry.test.ts`'s exhaustiveness check) before it needs a save-format decision made for
+  it elsewhere. See `.plans/save-load.md`.
 
 ## Update order (see `src/main.ts`)
 
 Systems run in this order every tick; several depend on it (noted below):
 
 **`updateSystems`** (simulation, runs even off-screen):
+
 1. `input` — reads input, mutates build mode / drag state / dispatch requests
 2. `maintenance` — advances the player's active install/repair task
 3. `path-follow` — turns a queued path into the next `MoveTarget`
@@ -34,14 +45,15 @@ Systems run in this order every tick; several depend on it (noted below):
 5. `rack-panel` — panel open/close, arrival, scroll, pending-drop commit
 6. `shop` — proximity-based shop panel open/close
 7. `resource` — power/cooling brownout decisions (must run before `capacity`)
-9. `thermal` — integrates per-rack `Temperature`, throttles and trips (must run after `capacity` for this tick's `RackLoad.heatKw`, before `wear` and `workload-run`)
-10. `wear` — accrues wear and rolls for hardware failure (must run after `resource` and `thermal`)
-11. `workload-spawn` — spawns new offers, ticks offer expiry
-12. `workload-run` — advances placed workloads, pays out, resolves completion/deadline miss (must run after `capacity` and `thermal`)
-13. `effects` — expires `FloatingText`/`Toast` entities spawned by `resource`/`workload-run` (timestamp-based, no ordering dependency)
-14. `tutorial` — advances the guided-tutorial step (must run last: reads this frame's mutations from every system above)
+8. `thermal` — integrates per-rack `Temperature`, throttles and trips (must run after `capacity` for this tick's `RackLoad.heatKw`, before `wear` and `workload-run`)
+9. `wear` — accrues wear and rolls for hardware failure (must run after `resource` and `thermal`)
+10. `workload-spawn` — spawns new offers, ticks offer expiry
+11. `workload-run` — advances placed workloads, pays out, resolves completion/deadline miss (must run after `capacity` and `thermal`)
+12. `effects` — expires `FloatingText`/`Toast` entities spawned by `resource`/`workload-run` (timestamp-based, no ordering dependency)
+13. `tutorial` — advances the guided-tutorial step (must run last: reads this frame's mutations from every system above)
 
 **`renderSystems`** (presentation only, skipped when tab hidden):
+
 1. `camera` — eases camera toward the player
 2. `render` — draws the floor, racks, panels, build UI
 3. `hud` — draws the top bar, workload panel, offers panel

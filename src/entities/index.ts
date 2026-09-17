@@ -21,6 +21,8 @@ import {
   temperatures,
   coolingUnits,
   conditions,
+  playerTags,
+  facilityTags,
 } from '../ecs/components';
 import {
   RACK_SLOT_CAPACITY,
@@ -50,6 +52,7 @@ export function spawnPlayer(world: World, start: { x: number; y: number }): Enti
   world.addComponent(positions, id, { x: start.x, y: start.y });
   world.addComponent(speeds, id, { pixelsPerSecond: PLAYER_SPEED });
   world.addComponent(renderables, id, { kind: 'player-circle' });
+  world.addComponent(playerTags, id, {});
   return id;
 }
 
@@ -100,6 +103,7 @@ const STARTING_INVENTORY: Partial<Record<PurchasableId, number>> = {
 
 export function spawnFacility(world: World): EntityId {
   const id = world.createEntity();
+  world.addComponent(facilityTags, id, {});
   world.addComponent(roomTiers, id, { index: 0 });
   world.addComponent(inventories, id, { counts: { ...STARTING_INVENTORY } });
   world.addComponent(wallets, id, { money: STARTING_MONEY });
@@ -143,7 +147,11 @@ function lowestFreeOfferSlot(world: World): number {
 // Spawns an Offer awaiting accept/decline — NOT a live Workload. Accepting (dispatch.ts's
 // acceptOffer) is what turns an offer into a Workload entity; see .plans/workload-dispatch.md
 // step 5.
-export function spawnOffer(world: World, archetypeId: WorkloadArchetypeId, valueScale: number): EntityId {
+export function spawnOffer(
+  world: World,
+  archetypeId: WorkloadArchetypeId,
+  valueScale: number,
+): EntityId {
   const archetype = WORKLOAD_ARCHETYPES[archetypeId];
   // Two different scales past this point — see .plans/compute-scale-fix.md D2. PAY (and the
   // miss penalty, which tracks it) keeps climbing with valueScale, uncapped by what any server
@@ -224,7 +232,9 @@ export function applyStressPreset(world: World, facility: EntityId): void {
     const rackId = spawnRack(world, gridX, gridY);
     for (let slotIndex = 0; slotIndex < STRESS_MACHINES_PER_RACK; slotIndex++) {
       const tierId =
-        STRESS_MACHINE_TIERS[(rackIndex * STRESS_MACHINES_PER_RACK + slotIndex) % STRESS_MACHINE_TIERS.length];
+        STRESS_MACHINE_TIERS[
+          (rackIndex * STRESS_MACHINES_PER_RACK + slotIndex) % STRESS_MACHINE_TIERS.length
+        ];
       const machineId = spawnMachine(world, rackId, tierId, slotIndex);
       if (!firstMachineByTier.has(tierId)) firstMachineByTier.set(tierId, machineId);
     }

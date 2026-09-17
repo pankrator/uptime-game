@@ -436,6 +436,13 @@ export interface TutorialProgress {
   skipped: boolean;
 }
 
+// Marker on the player entity — lets save/load (src/save/) find the player singleton after a
+// load without hardcoding an entity id in the save format. See .plans/save-load.md D5.
+export type PlayerTag = Record<string, never>;
+
+// Marker on the facility entity — same reasoning as PlayerTag.
+export type FacilityTag = Record<string, never>;
+
 // Presentation-only "+$N" (or similar) text that rises and fades at a fixed world position —
 // e.g. over the rack a contract just completed on. Its own entity (no Position/Renderable: it
 // needs no pathfinding/collision/z-ordering, just a world coordinate to draw at), spawned and
@@ -503,5 +510,7 @@ export const decommissionConfirms = createComponentStore<DecommissionConfirm>();
 export const acceptConfirms = createComponentStore<AcceptConfirm>();
 export const rejectedDrops = createComponentStore<RejectedDrop>();
 export const tutorialProgresses = createComponentStore<TutorialProgress>();
+export const playerTags = createComponentStore<PlayerTag>();
+export const facilityTags = createComponentStore<FacilityTag>();
 export const floatingTexts = createComponentStore<FloatingText>();
 export const toasts = createComponentStore<Toast>();
