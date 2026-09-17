@@ -1,7 +1,7 @@
 // Rack panel lifecycle: open/close (both D4 open paths), arrival detection, committing any
-// PendingDrop queued while walking, and (step 8) drag-and-drop.
+// PendingDrop queued while walking, click hit-testing (F7), and (step 8) drag-and-drop.
 //
-// Click/gesture ownership: input.ts owns ALL left-button pointer gestures — clicks (wasClicked,
+// Gesture ownership: input.ts owns ALL left-button pointer gestures — clicks (wasClicked,
 // consumed-once) AND drags (wasPressed/wasReleased) — as a single priority chain, for the same
 // reason in both cases: only one system may react to a given mousedown/mouseup pair, so a
 // second independent handler here would race input.ts for the same gesture. A drag's mouseup
@@ -9,9 +9,10 @@
 // must also be the one place that decides "this release ended a drag, don't treat it as a
 // click" — splitting that decision across two systems would need cross-system signaling for a
 // single boolean. Rack clicks and drags are therefore both handled in input.ts's chain by
-// calling this module's exported pure functions. This module's own System owns only: right-click
-// (a genuinely separate, non-conflicting event — the "view a rack" affordance), Escape, and the
-// per-frame arrival/pending-drop-commit logic.
+// calling this module's exported functions (handleRackPanelClick for clicks once the panel is
+// the active modal; tryStartDrag/updateDrag/resolveDrop for drags). This module's own System
+// owns only: right-click (a genuinely separate, non-conflicting event — the "view a rack"
+// affordance), Escape, and the per-frame arrival/pending-drop-commit logic.
 import { type World, type EntityId } from '../world';
 import {
   positions,
@@ -27,13 +28,17 @@ import {
   dragStates,
   rejectedDrops,
   decommissionConfirms,
+  conditions,
+  faileds,
   placedOns,
   workloads,
   GRID_CELL_SIZE,
 } from '../components';
 import { type InputState } from '../../input';
 import { type Camera } from '../../camera';
-import { placeWorkload, checkPlacement, unplaceWorkload } from '../dispatch';
+import { placeWorkload, checkPlacement, unplaceWorkload, abandonWorkload } from '../dispatch';
+import { REPAIRABLE_WEAR_THRESHOLD } from '../game-data';
+import { startRepair, startDecommission } from './maintenance';
 import {
   getServerRowRect,
   getTrayCardRect,
@@ -42,12 +47,18 @@ import {
   getPlacedChipRect,
   getRackPanelContentRect,
   getRackPanelContentHeight,
+  getRackPanelCloseButtonRect,
+  getServerRepairButtonRect,
+  getServerDecommissionButtonRect,
   pointerInRect,
 } from '../../ui/layout';
 import { maxScrollOffset } from '../../ui/scroll';
 import { type Renderer } from '../../rendering';
+import { type Audio } from '../../audio';
 import { type System } from './system';
 import { registerModalCloser, closeOtherModals } from '../modal';
+
+const DECOMMISSION_CONFIRM_WINDOW_MS = 3000;
 
 // Same reach radius/approach as maintenance.ts's MAINTENANCE_REACH_PX — the established
 // "close enough to interact with this rack" pattern.
@@ -160,6 +171,87 @@ export function openOrPromoteRackPanel(
   return true;
 }
 
+// F7: panel hit-testing, moved here from input.ts — this module owns the rack panel's layout
+// (it already draws against the same rects in render.ts), so the click targets live next to it
+// instead of input.ts importing nine layout getters to know their geometry. Called from
+// input.ts's click-priority chain only once activeModal() (../modal.ts) is already 'rack' — the
+// panel is a full-screen modal, so every click while it's visible is absorbed here, not just
+// clicks landing inside its own rect, except the close button and the repair/decommission
+// buttons.
+export function handleRackPanelClick(
+  world: World,
+  renderer: Renderer,
+  controlled: EntityId,
+  facility: EntityId,
+  pointer: { x: number; y: number },
+  audio: Audio,
+): void {
+  const panel = world.getComponent(openRackPanels, controlled)!;
+  const serverIds = serversOn(world, panel.rackId);
+  const serverCount = serverIds.length;
+  const trayCount = trayWorkloadIds(world).length;
+  const closeRect = getRackPanelCloseButtonRect(renderer.width, renderer.height, serverCount, trayCount);
+
+  if (pointerInRect(pointer, closeRect)) {
+    closeRackPanel(world, controlled);
+    return;
+  }
+
+  // Repair/decommission (.plans/hardware-failure.md Step 6) — reachable from a viewing panel
+  // too (no travel required to click; the resulting task does its own walk), same as clicking a
+  // rack from the build panel while remote.
+  for (let index = 0; index < serverIds.length; index++) {
+    const serverId = serverIds[index];
+
+    const condition = world.getComponent(conditions, serverId);
+    const repairable =
+      condition && (condition.wear > REPAIRABLE_WEAR_THRESHOLD || world.getComponent(faileds, serverId));
+    if (repairable) {
+      const repairRect = getServerRepairButtonRect(index, renderer.width, renderer.height, serverCount, trayCount);
+      if (pointerInRect(pointer, repairRect)) {
+        audio.play('uiClick');
+        startRepair(world, controlled, facility, serverId);
+        return;
+      }
+    }
+
+    const decommissionRect = getServerDecommissionButtonRect(
+      index,
+      renderer.width,
+      renderer.height,
+      serverCount,
+      trayCount,
+    );
+    if (pointerInRect(pointer, decommissionRect)) {
+      const confirm = world.getComponent(decommissionConfirms, controlled);
+      if (confirm && confirm.serverId === serverId && performance.now() < confirm.expiresAtMs) {
+        audio.play('uiClick');
+        world.removeComponent(decommissionConfirms, controlled);
+        startDecommission(world, controlled, facility, serverId);
+      } else {
+        world.addComponent(decommissionConfirms, controlled, {
+          serverId,
+          expiresAtMs: performance.now() + DECOMMISSION_CONFIRM_WINDOW_MS,
+        });
+      }
+      return;
+    }
+  }
+
+  // Abandon-contract button on each tray card (.plans/playtest-findings.md F3) — immediate, no
+  // confirm: it's already strictly better than letting the same contract rot into a full miss,
+  // so there's nothing a second click needs to protect against.
+  const trayIds = trayWorkloadIds(world);
+  for (let index = 0; index < trayIds.length; index++) {
+    const dropRect = getTrayCardDropButtonRect(index, renderer.width, renderer.height, serverCount, trayCount);
+    if (pointerInRect(pointer, dropRect)) {
+      audio.play('uiClick');
+      abandonWorkload(world, facility, trayIds[index]);
+      return;
+    }
+  }
+}
+
 // --- Drag and drop (step 8) ---------------------------------------------------------------
 //
 // Only meaningful while a panel is open in 'dispatching' mode (D4: viewing-mode rows and the
@@ -232,8 +324,9 @@ export function tryStartDrag(
       serverIds.length,
       trayIds.length,
     );
-    // The abandon-contract button (F3, input.ts) overlays this card's corner — a press there
-    // must fall through as a plain click, not start a drag, or its click handler never sees it.
+    // The abandon-contract button (.plans/playtest-findings.md F3, handleRackPanelClick above)
+    // overlays this card's corner — a press there must fall through as a plain click, not start
+    // a drag, or its click handler never sees it.
     const dropButton = getTrayCardDropButtonRect(
       trayIndex,
       canvasWidth,

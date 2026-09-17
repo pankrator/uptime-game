@@ -1,7 +1,10 @@
 // Walk-to-rack-then-work flow, attached to the player. Renamed from install-progress.ts and
 // generalized (.plans/hardware-failure.md D5) to also handle repairing a failed machine and
 // decommissioning one entirely — all three share the identical walk/arrival/countdown shape;
-// this module only branches at completion.
+// createMaintenanceSystem only branches at completion. F7: this module also owns starting each
+// task (startInstall/startRepair/startDecommission) and cancelling one (cancelMaintenanceTask)
+// — the module that finishes a MaintenanceTask is the one that creates it, rather than that
+// split across this file and input.ts.
 import { type World, type EntityId } from '../world';
 import {
   positions,
@@ -13,13 +16,22 @@ import {
   conditions,
   wallets,
   machines,
+  pathFollows,
+  moveTargets,
   GRID_CELL_SIZE,
 } from '../components';
-import { MACHINE_TIERS, DECOMMISSION_REFUND_FRACTION, type PurchasableId } from '../game-data';
-import { applyRepair } from '../wear';
+import {
+  MACHINE_TIERS,
+  DECOMMISSION_REFUND_FRACTION,
+  DECOMMISSION_SECONDS,
+  type MachineTierId,
+  type PurchasableId,
+} from '../game-data';
+import { applyRepair, repairCost, repairSeconds } from '../wear';
 import { clearFailure } from './wear';
 import { spawnMachine } from '../../entities';
-import { addToInventory } from '../inventory';
+import { addToInventory, takeFromInventory } from '../inventory';
+import { moveControlledTo } from '../movement-commands';
 import { type Audio } from '../../audio';
 import { type System } from './system';
 
@@ -43,6 +55,116 @@ export function findLowestFreeSlot(world: World, rackId: EntityId, capacity: num
     if (!occupied.has(slot)) return slot;
   }
   return null;
+}
+
+// D7 (install)/D5 (repair): cancelling refunds whatever was taken up front — the item to
+// INVENTORY for an install (it was bought at the shop and is still owned; only the install
+// itself was abandoned) or the wear-scaled fee to the WALLET for a repair. A decommission has
+// nothing to refund: its payout only happens on completion (below), never up front.
+export function cancelMaintenanceTask(world: World, facility: EntityId, controlled: EntityId): void {
+  const task = world.getComponent(maintenanceTasks, controlled);
+  if (!task) return;
+
+  if (task.job.kind === 'install') {
+    addToInventory(world, facility, `machine-${task.job.tierId}` as PurchasableId);
+  } else if (task.job.kind === 'repair') {
+    const wallet = world.getComponent(wallets, facility);
+    if (wallet) wallet.money += task.job.cost;
+  }
+
+  world.removeComponent(maintenanceTasks, controlled);
+  world.removeComponent(pathFollows, controlled);
+  world.removeComponent(moveTargets, controlled);
+}
+
+// F7: moved here from input.ts — this is the module that finishes an install, so it's also the
+// one that starts it. Takes rackId directly (callers already resolve it via rack-panel.ts's
+// findRackAt) rather than a grid cell, so this module never needs to depend on rack-panel.ts.
+export function startInstall(
+  world: World,
+  controlled: EntityId,
+  facility: EntityId,
+  tierId: MachineTierId,
+  rackId: EntityId,
+): void {
+  const slots = world.getComponent(rackSlots, rackId);
+  if (!slots) return;
+
+  const slotIndex = findLowestFreeSlot(world, rackId, slots.capacity);
+  if (slotIndex === null) return;
+
+  const tier = MACHINE_TIERS[tierId];
+  if (!takeFromInventory(world, facility, `machine-${tierId}` as PurchasableId)) return;
+
+  const grid = world.getComponent(gridPositions, rackId);
+  if (grid) moveControlledTo(world, controlled, facility, gridToWorld(grid.gridX, grid.gridY));
+
+  world.addComponent(maintenanceTasks, controlled, {
+    rackId,
+    job: { kind: 'install', tierId, slotIndex },
+    secondsRemaining: tier.installSeconds,
+    totalSeconds: tier.installSeconds,
+    arrived: false,
+  });
+}
+
+// Repair/decommission both queue a MaintenanceTask exactly like install does — click from
+// anywhere (viewing-mode panel included), then walk there, then the work happens. See
+// .plans/hardware-failure.md D5 ("one task at a time," attached to the player) and Step 6.
+export function startRepair(
+  world: World,
+  controlled: EntityId,
+  facility: EntityId,
+  serverId: EntityId,
+): void {
+  if (world.getComponent(maintenanceTasks, controlled)) return;
+
+  const condition = world.getComponent(conditions, serverId);
+  const machine = world.getComponent(machines, serverId);
+  const installedIn = world.getComponent(installedIns, serverId);
+  if (!condition || !machine || !installedIn) return;
+
+  const grid = world.getComponent(gridPositions, installedIn.rackId);
+  if (!grid) return;
+
+  const tier = MACHINE_TIERS[machine.tierId];
+  const cost = repairCost(tier.cost, condition.wear);
+  const wallet = world.getComponent(wallets, facility);
+  if (!wallet || Math.floor(wallet.money) < cost) return;
+  wallet.money -= cost;
+
+  const seconds = repairSeconds(condition.wear);
+  moveControlledTo(world, controlled, facility, gridToWorld(grid.gridX, grid.gridY));
+  world.addComponent(maintenanceTasks, controlled, {
+    rackId: installedIn.rackId,
+    job: { kind: 'repair', machineId: serverId, cost },
+    secondsRemaining: seconds,
+    totalSeconds: seconds,
+    arrived: false,
+  });
+}
+
+export function startDecommission(
+  world: World,
+  controlled: EntityId,
+  facility: EntityId,
+  serverId: EntityId,
+): void {
+  if (world.getComponent(maintenanceTasks, controlled)) return;
+
+  const installedIn = world.getComponent(installedIns, serverId);
+  if (!installedIn) return;
+  const grid = world.getComponent(gridPositions, installedIn.rackId);
+  if (!grid) return;
+
+  moveControlledTo(world, controlled, facility, gridToWorld(grid.gridX, grid.gridY));
+  world.addComponent(maintenanceTasks, controlled, {
+    rackId: installedIn.rackId,
+    job: { kind: 'decommission', machineId: serverId },
+    secondsRemaining: DECOMMISSION_SECONDS,
+    totalSeconds: DECOMMISSION_SECONDS,
+    arrived: false,
+  });
 }
 
 export function createMaintenanceSystem(
@@ -104,8 +226,8 @@ export function createMaintenanceSystem(
 
       if (job.kind === 'repair') {
         // Cost was already debited up front, when the repair button started this task (see
-        // input.ts's tryStartRepair) — completion only applies the effect, same division of
-        // labor as install (inventory taken up front, spawnMachine on completion).
+        // startRepair above) — completion only applies the effect, same division of labor as
+        // install (inventory taken up front, spawnMachine on completion).
         const condition = world.getComponent(conditions, job.machineId);
         if (condition) condition.wear = applyRepair(condition.wear);
         clearFailure(world, job.machineId);

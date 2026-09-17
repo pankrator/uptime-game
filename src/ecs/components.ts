@@ -212,7 +212,8 @@ export interface Failed {
 export type MaintenanceJob =
   | { kind: 'install'; tierId: MachineTierId; slotIndex: number }
   // cost is captured at task creation (the wear-scaled price shown on the repair button) and
-  // debited up front, mirroring install's up-front inventory take — see rack-panel.ts.
+  // debited up front, mirroring install's up-front inventory take — see maintenance.ts's
+  // startRepair.
   | { kind: 'repair'; machineId: EntityId; cost: number }
   | { kind: 'decommission'; machineId: EntityId };
 

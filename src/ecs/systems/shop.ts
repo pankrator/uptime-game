@@ -1,6 +1,8 @@
 // Shop lifecycle: proximity open/close (mirrors rack-panel.ts's arrival pattern, but simpler —
-// no travel state to track, just in-range or not) and buy(), which applies D6's three
-// purchasable kinds. See .plans/facility-shop-inventory.md Step 5.
+// no travel state to track, just in-range or not), buy(), which applies D6's three purchasable
+// kinds, and (F7) click hit-testing — handleShopClick, called from input.ts's click-priority
+// chain once the shop is the active modal (see ../modal.ts). See
+// .plans/facility-shop-inventory.md Step 5.
 import { type World, type EntityId } from '../world';
 import {
   positions,
@@ -20,6 +22,15 @@ import {
 } from '../game-data';
 import { SHOP_DOOR } from '../world-map';
 import { addToInventory } from '../inventory';
+import { recordShopPurchase } from './tutorial';
+import {
+  getShopCloseButtonRect,
+  getShopTabRect,
+  getShopBuyButtonRect,
+  pointerInRect,
+} from '../../ui/layout';
+import { type Renderer } from '../../rendering';
+import { type Audio } from '../../audio';
 import { type System } from './system';
 import { registerModalCloser, closeOtherModals } from '../modal';
 
@@ -110,6 +121,48 @@ export function buy(world: World, facility: EntityId, purchasableId: Purchasable
     return true;
   }
   return false;
+}
+
+// F7: panel hit-testing, moved here from input.ts — this module owns the shop's tabs/buy rows
+// (it already draws against the same layout getters in render.ts), so the click targets live
+// next to it. Called from input.ts's click-priority chain only once activeModal() (../modal.ts)
+// is already 'shop'; ordering there is load-bearing the same way the rack panel's is (both
+// absorb every click while open).
+export function handleShopClick(
+  world: World,
+  renderer: Renderer,
+  controlled: EntityId,
+  facility: EntityId,
+  pointer: { x: number; y: number },
+  audio: Audio,
+): void {
+  const rowCount = shopCatalogForTab(shopTab.current).length;
+  const closeRect = getShopCloseButtonRect(renderer.width, renderer.height, rowCount);
+  if (pointerInRect(pointer, closeRect)) {
+    closeShop(world, controlled);
+    return;
+  }
+
+  const categories = shopCategories();
+  for (let tabIndex = 0; tabIndex < categories.length; tabIndex++) {
+    const tabRect = getShopTabRect(tabIndex, categories.length, renderer.width, renderer.height, rowCount);
+    if (pointerInRect(pointer, tabRect)) {
+      shopTab.current = categories[tabIndex];
+      return;
+    }
+  }
+
+  const rows = shopCatalogForTab(shopTab.current);
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+    const buyRect = getShopBuyButtonRect(rowIndex, renderer.width, renderer.height, rowCount);
+    if (pointerInRect(pointer, buyRect)) {
+      audio.play('uiClick');
+      if (buy(world, facility, rows[rowIndex].id)) {
+        recordShopPurchase(world, facility);
+      }
+      return;
+    }
+  }
 }
 
 export function createShopSystem(world: World, controlled: EntityId): System {

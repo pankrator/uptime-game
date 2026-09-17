@@ -1,60 +1,33 @@
+// Gesture arbitration and build-mode placement. F7 (.plans/design-review.md) moved this
+// module's other two jobs out: panel hit-testing now lives next to each panel it tests
+// (rack-panel.ts's handleRackPanelClick, shop.ts's handleShopClick), and starting/cancelling a
+// maintenance task now lives in maintenance.ts (the module that finishes one). What's left here
+// is the single-consumer click/drag priority chain — see the comment on the drag lifecycle
+// below for why one system must own both wasClicked() and wasReleased() — and placing a rack/
+// CRAC/machine while in build mode.
 import { type World, type EntityId } from '../world';
 import {
-  positions,
-  moveTargets,
-  pathFollows,
   gridPositions,
   gridToWorld,
   worldToGrid,
   buildModes,
   BUILDABLES,
-  rackSlots,
-  installedIns,
   maintenanceTasks,
   openRackPanels,
   dragStates,
   shopOpens,
   tutorialProgresses,
-  wallets,
-  conditions,
-  faileds,
-  machines,
-  decommissionConfirms,
   type BuildableDef,
 } from '../components';
-import { abandonWorkload } from '../dispatch';
-import {
-  advanceTutorial,
-  skipTutorial,
-  isTutorialActionStep,
-  recordShopPurchase,
-} from './tutorial';
-import {
-  isOffersModalOpen,
-  isJobsModalOpen,
-  handleOffersModalClick,
-  handleJobsModalClick,
-} from './job-panels';
-import { repairCost, repairSeconds } from '../wear';
-import { findLowestFreeSlot } from './maintenance';
+import { advanceTutorial, skipTutorial, isTutorialActionStep } from './tutorial';
+import { isOffersModalOpen, isJobsModalOpen, handleOffersModalClick, handleJobsModalClick } from './job-panels';
+import { cancelMaintenanceTask, startInstall } from './maintenance';
 import { activeModal } from '../modal';
-import {
-  isWalkable,
-  findPath,
-  findNearestWalkableNeighbor,
-  simplifyPathToPixels,
-} from '../pathfinding';
-import { getWalkableRegions } from '../world-map';
-import {
-  MACHINE_TIERS,
-  DECOMMISSION_SECONDS,
-  REPAIRABLE_WEAR_THRESHOLD,
-  type MachineTierId,
-  type PurchasableId,
-} from '../game-data';
+import { moveControlledTo } from '../movement-commands';
+import { type MachineTierId, type PurchasableId } from '../game-data';
 import { getRoomRect } from '../room';
-import { takeFromInventory, addToInventory } from '../inventory';
-import { buy, closeShop, shopTab, shopCategories, shopCatalogForTab } from './shop';
+import { takeFromInventory } from '../inventory';
+import { closeShop, handleShopClick } from './shop';
 import { type InputState } from '../../input';
 import { spawnRack, spawnCoolingUnit } from '../../entities';
 import { type Renderer } from '../../rendering';
@@ -64,24 +37,15 @@ import {
   getBuildPanelEntryRect,
   pointerInRect,
   pointerInHud,
-  getRackPanelCloseButtonRect,
-  getShopCloseButtonRect,
-  getShopTabRect,
-  getShopBuyButtonRect,
   getMuteButtonRect,
   getRecenterButtonRect,
   getTutorialActionButtonRect,
   getTutorialSkipRect,
-  getServerRepairButtonRect,
-  getServerDecommissionButtonRect,
-  getTrayCardDropButtonRect,
 } from '../../ui/layout';
 import {
   findRackAt,
-  serversOn,
-  trayWorkloadIds,
   openOrPromoteRackPanel,
-  closeRackPanel,
+  handleRackPanelClick,
   tryStartDrag,
   updateDrag,
   resolveDrop,
@@ -102,157 +66,6 @@ function isGridCellOccupied(world: World, gridX: number, gridY: number): boolean
   return world.query(gridPositions).some((id) => {
     const grid = world.getComponent(gridPositions, id)!;
     return grid.gridX === gridX && grid.gridY === gridY;
-  });
-}
-
-// Exported for rack-panel.ts: walking to a clicked rack (an obstacle — see D4's dispatching
-// open path) needs the identical obstacle-fallback pathfinding as walking to any other point,
-// so it reuses this rather than a second, likely-diverging implementation.
-export function moveControlledTo(
-  world: World,
-  controlled: EntityId,
-  facility: EntityId,
-  targetPixel: { x: number; y: number },
-): void {
-  const position = world.getComponent(positions, controlled);
-  if (!position) return;
-
-  const regions = getWalkableRegions(world, facility);
-  const start = worldToGrid(position.x, position.y);
-  const { gridX: targetGridX, gridY: targetGridY } = worldToGrid(targetPixel.x, targetPixel.y);
-
-  const targetIsWalkable = isWalkable(world, regions, targetGridX, targetGridY);
-  const goal = targetIsWalkable
-    ? { gridX: targetGridX, gridY: targetGridY }
-    : findNearestWalkableNeighbor(
-        world,
-        regions,
-        { gridX: targetGridX, gridY: targetGridY },
-        start,
-      );
-
-  if (!goal) return;
-
-  const path = findPath(world, regions, start, goal);
-  if (path === null) return;
-
-  // Exact click point when it's reachable; otherwise the neighbor cell's center, since the
-  // click landed on an obstacle and there's no exact point on it to walk to.
-  const endPixel = targetIsWalkable ? targetPixel : gridToWorld(goal.gridX, goal.gridY);
-
-  world.removeComponent(moveTargets, controlled);
-
-  const simplified = simplifyPathToPixels(world, regions, position, path, endPixel);
-  world.addComponent(pathFollows, controlled, { path: simplified, index: 0 });
-}
-
-// D7 (install)/D5 (repair): cancelling refunds whatever was taken up front — the item to
-// INVENTORY for an install (it was bought at the shop and is still owned; only the install
-// itself was abandoned) or the wear-scaled fee to the WALLET for a repair. A decommission has
-// nothing to refund: its payout only happens on completion (maintenance.ts), never up front.
-function cancelMaintenanceTask(world: World, facility: EntityId, controlled: EntityId): void {
-  const task = world.getComponent(maintenanceTasks, controlled);
-  if (!task) return;
-
-  if (task.job.kind === 'install') {
-    addToInventory(world, facility, `machine-${task.job.tierId}` as PurchasableId);
-  } else if (task.job.kind === 'repair') {
-    const wallet = world.getComponent(wallets, facility);
-    if (wallet) wallet.money += task.job.cost;
-  }
-
-  world.removeComponent(maintenanceTasks, controlled);
-  world.removeComponent(pathFollows, controlled);
-  world.removeComponent(moveTargets, controlled);
-}
-
-function tryInstallIntoRack(
-  world: World,
-  controlled: EntityId,
-  facility: EntityId,
-  tierId: MachineTierId,
-  gridX: number,
-  gridY: number,
-): void {
-  const rackId = findRackAt(world, gridX, gridY);
-  if (rackId === null) return;
-
-  const slots = world.getComponent(rackSlots, rackId)!;
-  const slotIndex = findLowestFreeSlot(world, rackId, slots.capacity);
-  if (slotIndex === null) return;
-
-  const tier = MACHINE_TIERS[tierId];
-  if (!takeFromInventory(world, facility, `machine-${tierId}` as PurchasableId)) return;
-
-  moveControlledTo(world, controlled, facility, gridToWorld(gridX, gridY));
-
-  world.addComponent(maintenanceTasks, controlled, {
-    rackId,
-    job: { kind: 'install', tierId, slotIndex },
-    secondsRemaining: tier.installSeconds,
-    totalSeconds: tier.installSeconds,
-    arrived: false,
-  });
-}
-
-const DECOMMISSION_CONFIRM_WINDOW_MS = 3000;
-
-// Repair/decommission both queue a MaintenanceTask exactly like install does — click from
-// anywhere (viewing-mode panel included), then walk there, then the work happens. See
-// .plans/hardware-failure.md D5 ("one task at a time," attached to the player) and Step 6.
-function tryStartRepair(
-  world: World,
-  controlled: EntityId,
-  facility: EntityId,
-  serverId: EntityId,
-): void {
-  if (world.getComponent(maintenanceTasks, controlled)) return;
-
-  const condition = world.getComponent(conditions, serverId);
-  const machine = world.getComponent(machines, serverId);
-  const installedIn = world.getComponent(installedIns, serverId);
-  if (!condition || !machine || !installedIn) return;
-
-  const grid = world.getComponent(gridPositions, installedIn.rackId);
-  if (!grid) return;
-
-  const tier = MACHINE_TIERS[machine.tierId];
-  const cost = repairCost(tier.cost, condition.wear);
-  const wallet = world.getComponent(wallets, facility);
-  if (!wallet || Math.floor(wallet.money) < cost) return;
-  wallet.money -= cost;
-
-  const seconds = repairSeconds(condition.wear);
-  moveControlledTo(world, controlled, facility, gridToWorld(grid.gridX, grid.gridY));
-  world.addComponent(maintenanceTasks, controlled, {
-    rackId: installedIn.rackId,
-    job: { kind: 'repair', machineId: serverId, cost },
-    secondsRemaining: seconds,
-    totalSeconds: seconds,
-    arrived: false,
-  });
-}
-
-function tryStartDecommission(
-  world: World,
-  controlled: EntityId,
-  facility: EntityId,
-  serverId: EntityId,
-): void {
-  if (world.getComponent(maintenanceTasks, controlled)) return;
-
-  const installedIn = world.getComponent(installedIns, serverId);
-  if (!installedIn) return;
-  const grid = world.getComponent(gridPositions, installedIn.rackId);
-  if (!grid) return;
-
-  moveControlledTo(world, controlled, facility, gridToWorld(grid.gridX, grid.gridY));
-  world.addComponent(maintenanceTasks, controlled, {
-    rackId: installedIn.rackId,
-    job: { kind: 'decommission', machineId: serverId },
-    secondsRemaining: DECOMMISSION_SECONDS,
-    totalSeconds: DECOMMISSION_SECONDS,
-    arrived: false,
   });
 }
 
@@ -421,94 +234,7 @@ export function createInputSystem(
       // same visibility gate (see ../modal.ts).
       const openPanel = world.getComponent(openRackPanels, controlled);
       if (modal === 'rack') {
-        const serverIds = serversOn(world, openPanel!.rackId);
-        const serverCount = serverIds.length;
-        const trayCount = trayWorkloadIds(world).length;
-        const closeRect = getRackPanelCloseButtonRect(
-          renderer.width,
-          renderer.height,
-          serverCount,
-          trayCount,
-        );
-        // The panel is a full-screen modal (the floor behind it is dimmed), so every click
-        // while it's visible is absorbed here — not just clicks landing inside its own rect —
-        // except the close button and the repair/decommission buttons below.
-        if (pointerInRect(pointer, closeRect)) {
-          closeRackPanel(world, controlled);
-          return;
-        }
-
-        // Repair/decommission (.plans/hardware-failure.md Step 6) — reachable from a viewing
-        // panel too (no travel required to click; the resulting task does its own walk), same
-        // as clicking a rack from the build panel while remote.
-        for (let index = 0; index < serverIds.length; index++) {
-          const serverId = serverIds[index];
-
-          const condition = world.getComponent(conditions, serverId);
-          const repairable =
-            condition &&
-            (condition.wear > REPAIRABLE_WEAR_THRESHOLD || world.getComponent(faileds, serverId));
-          if (repairable) {
-            const repairRect = getServerRepairButtonRect(
-              index,
-              renderer.width,
-              renderer.height,
-              serverCount,
-              trayCount,
-            );
-            if (pointerInRect(pointer, repairRect)) {
-              audio.play('uiClick');
-              tryStartRepair(world, controlled, facility, serverId);
-              return;
-            }
-          }
-
-          const decommissionRect = getServerDecommissionButtonRect(
-            index,
-            renderer.width,
-            renderer.height,
-            serverCount,
-            trayCount,
-          );
-          if (pointerInRect(pointer, decommissionRect)) {
-            const confirm = world.getComponent(decommissionConfirms, controlled);
-            if (
-              confirm &&
-              confirm.serverId === serverId &&
-              performance.now() < confirm.expiresAtMs
-            ) {
-              audio.play('uiClick');
-              world.removeComponent(decommissionConfirms, controlled);
-              tryStartDecommission(world, controlled, facility, serverId);
-            } else {
-              world.addComponent(decommissionConfirms, controlled, {
-                serverId,
-                expiresAtMs: performance.now() + DECOMMISSION_CONFIRM_WINDOW_MS,
-              });
-            }
-            return;
-          }
-        }
-
-        // Abandon-contract button on each tray card (F3) — immediate, no confirm: it's already
-        // strictly better than letting the same contract rot into a full miss, so there's
-        // nothing a second click needs to protect against.
-        const trayIds = trayWorkloadIds(world);
-        for (let index = 0; index < trayIds.length; index++) {
-          const dropRect = getTrayCardDropButtonRect(
-            index,
-            renderer.width,
-            renderer.height,
-            serverCount,
-            trayCount,
-          );
-          if (pointerInRect(pointer, dropRect)) {
-            audio.play('uiClick');
-            abandonWorkload(world, facility, trayIds[index]);
-            return;
-          }
-        }
-
+        handleRackPanelClick(world, renderer, controlled, facility, pointer, audio);
         return;
       }
 
@@ -517,40 +243,7 @@ export function createInputSystem(
       // purely by proximity (shop.ts), so there's no travel state to check here — just whether
       // it's currently open.
       if (modal === 'shop') {
-        const rowCount = shopCatalogForTab(shopTab.current).length;
-        const closeRect = getShopCloseButtonRect(renderer.width, renderer.height, rowCount);
-        if (pointerInRect(pointer, closeRect)) {
-          closeShop(world, controlled);
-          return;
-        }
-
-        const categories = shopCategories();
-        for (let tabIndex = 0; tabIndex < categories.length; tabIndex++) {
-          const tabRect = getShopTabRect(
-            tabIndex,
-            categories.length,
-            renderer.width,
-            renderer.height,
-            rowCount,
-          );
-          if (pointerInRect(pointer, tabRect)) {
-            shopTab.current = categories[tabIndex];
-            return;
-          }
-        }
-
-        const rows = shopCatalogForTab(shopTab.current);
-        for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
-          const buyRect = getShopBuyButtonRect(rowIndex, renderer.width, renderer.height, rowCount);
-          if (pointerInRect(pointer, buyRect)) {
-            audio.play('uiClick');
-            if (buy(world, facility, rows[rowIndex].id)) {
-              recordShopPurchase(world, facility);
-            }
-            return;
-          }
-        }
-
+        handleShopClick(world, renderer, controlled, facility, pointer, audio);
         return;
       }
 
@@ -595,7 +288,10 @@ export function createInputSystem(
           // strip the prefix rather than hand-matching each tier id (see BUILDABLES in
           // components.ts, generated from MACHINE_TIERS).
           const tierId = buildable.id.slice('machine-'.length) as MachineTierId;
-          tryInstallIntoRack(world, controlled, facility, tierId, gridX, gridY);
+          const rackId = findRackAt(world, gridX, gridY);
+          if (rackId !== null) {
+            startInstall(world, controlled, facility, tierId, rackId);
+          }
           world.removeComponent(buildModes, controlled);
           return;
         }
