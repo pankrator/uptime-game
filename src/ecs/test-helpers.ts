@@ -6,6 +6,7 @@ import { spawnFacility, spawnRack, spawnMachine } from '../entities';
 import { powereds, serverCapacities, workloads, type Workload } from './components';
 import { MACHINE_TIERS, type MachineTierId } from './game-data';
 import { type Audio } from '../audio';
+import { type Renderer } from '../rendering';
 import { type System } from './systems/system';
 
 export function createTestFacility(): { world: World; facility: EntityId } {
@@ -65,4 +66,18 @@ export function stubAudio(): Audio {
 
 export function runTicks(system: System, deltaSeconds: number, ticks: number): void {
   for (let i = 0; i < ticks; i++) system.update(deltaSeconds);
+}
+
+// F7/F16: click-handling functions extracted from input.ts (handleRackPanelClick,
+// handleShopClick) only read renderer.width/renderer.height — no canvas or drawing context —
+// so a headless test can satisfy the Renderer interface with a stub rather than a real
+// HTMLCanvasElement, which the "node" test environment (vite.config.ts) doesn't have.
+export function stubRenderer(width: number, height: number): Renderer {
+  return {
+    canvas: null as unknown as HTMLCanvasElement,
+    context: null as unknown as CanvasRenderingContext2D,
+    width,
+    height,
+    clear() {},
+  };
 }
