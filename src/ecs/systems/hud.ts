@@ -53,6 +53,7 @@ import { maxScrollOffset } from '../../ui/scroll';
 import { isTutorialActionStep, getTutorialStepDef } from './tutorial';
 import { isOffersModalOpen, isJobsModalOpen, jobPanelCounts, anyServerFits } from './job-panels';
 import { type Audio } from '../../audio';
+import { type FpsCounter } from '../../fps';
 import { type System } from './system';
 
 const TEXT_COLOR = '#e6e8eb';
@@ -119,6 +120,17 @@ function drawRecenterButton(renderer: Renderer, camera: Camera): void {
   ctx.fillStyle = TEXT_COLOR;
   ctx.fillText('Recenter', rect.x + rect.width / 2, rect.y + rect.height / 2);
   ctx.textAlign = 'left';
+}
+
+// Bottom-left corner, out of the way of the top bar and the build-mode UI render.ts draws along
+// the bottom edge — purely informational, so it gets no layout.ts rect and no hit-testing.
+function drawFpsCounter(renderer: Renderer, fps: FpsCounter): void {
+  const ctx = renderer.context;
+  ctx.font = '12px monospace';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'bottom';
+  ctx.fillStyle = DIM_COLOR;
+  ctx.fillText(`${Math.round(fps.value)} FPS`, 8, renderer.height - 8);
 }
 
 function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void {
@@ -854,6 +866,7 @@ export function createHudSystem(
   facility: EntityId,
   audio: Audio,
   camera: Camera,
+  fps: FpsCounter,
 ): System {
   return {
     update() {
@@ -864,6 +877,7 @@ export function createHudSystem(
       drawJobsModal(world, renderer, controlled, facility);
       drawToasts(world, renderer);
       drawTutorialBanner(world, renderer, facility);
+      drawFpsCounter(renderer, fps);
     },
   };
 }

@@ -36,6 +36,11 @@ no component writes.
 - `drawTutorialBanner` — the guided-tutorial step banner, drawn last (topmost) so it stays
   legible over the rack/shop/offers/jobs panels' full-screen dim; see [tutorial](./tutorial.md)
   for the step-advance logic this only reads
+- `drawFpsCounter` — bottom-left corner, reads the render loop's own frame cadence from the
+  `FpsCounter` passed into `createHudSystem` (see `src/fps.ts`). Not ECS state — it measures the
+  `requestAnimationFrame` callback rate itself, sampled once per frame in `src/core/index.ts`'s
+  game loop — so it's a small standalone module threaded through like `camera`/`audio`, not a
+  component.
 
 ## Notes
 

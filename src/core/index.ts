@@ -2,6 +2,7 @@ import { type Renderer } from '../rendering';
 import { type InputState } from '../input';
 import { type GameState } from '../state';
 import { type System } from '../ecs/systems/system';
+import { type FpsCounter } from '../fps';
 
 export interface GameLoopDeps {
   renderer: Renderer;
@@ -9,6 +10,7 @@ export interface GameLoopDeps {
   state: GameState;
   updateSystems: System[];
   renderSystems: System[];
+  fps: FpsCounter;
 }
 
 export interface GameLoop {
@@ -20,7 +22,7 @@ const UPDATE_HZ = 30;
 const UPDATE_INTERVAL_MS = 1000 / UPDATE_HZ;
 const MAX_DELTA_SECONDS = 0.1;
 
-export function createGameLoop({ renderer, updateSystems, renderSystems }: GameLoopDeps): GameLoop {
+export function createGameLoop({ renderer, updateSystems, renderSystems, fps }: GameLoopDeps): GameLoop {
   let running = false;
   let lastUpdateTime = 0;
   let updateHandle: ReturnType<typeof setInterval> | undefined;
@@ -42,9 +44,10 @@ export function createGameLoop({ renderer, updateSystems, renderSystems }: GameL
     }
   }
 
-  function render(): void {
+  function render(time: number): void {
     if (!running) return;
 
+    fps.sample(time);
     renderer.clear();
     for (const system of renderSystems) {
       system.update(0);
