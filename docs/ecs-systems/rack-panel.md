@@ -64,7 +64,10 @@ gesture.
 - Both open paths (left-click dispatch via `openOrPromoteRackPanel`, right-click view in this
   module's own `System`) call [job-panels](./job-panels.md)'s `closeJobPanels` first — only one
   modal (rack, shop, offers, jobs) is ever open at a time; the rack panel always wins over an
-  already-open offers/jobs panel.
+  already-open offers/jobs panel. The reverse also holds: pressing `O`/`J` while the rack panel
+  is open closes it (via this module's own `closeRackPanel`, called from job-panels.ts's
+  `closeOtherModals`) and switches straight to the requested panel, in any mode and whether or
+  not the player has arrived yet.
 
 ## Notes
 

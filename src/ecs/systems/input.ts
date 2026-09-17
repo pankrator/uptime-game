@@ -399,10 +399,11 @@ export function createInputSystem(
 
       // 0.7. Offers / Jobs panels — centered modals like the rack/shop panels below, toggled by
       // the 'o'/'j' keys (job-panels.ts) instead of docked HUD chrome. Mutually exclusive with
-      // each other and with the rack/shop panels (job-panels.ts's otherModalBlocking / the two
-      // panels' own closeJobPanels calls), so checking them here — ahead of everything below —
-      // is safe: at most one of these five branches (offers, jobs, maintenance, rack, shop) is
-      // ever live at once. The accept-confirm gate (.plans/playtest-findings.md F3 — accepting a
+      // each other and with the rack/shop panels (job-panels.ts's closeOtherModals / the two
+      // panels' own closeJobPanels calls — pressing O/J while a rack/shop panel is open SWITCHES
+      // to the requested panel rather than being blocked), so checking them here — ahead of
+      // everything below — is safe: at most one of these five branches (offers, jobs,
+      // maintenance, rack, shop) is ever live at once. The accept-confirm gate (.plans/playtest-findings.md F3 — accepting a
       // contract nothing can currently serve needs a second click, same shape as
       // DecommissionConfirm) lives inside handleOffersModalClick now, since offer accept/decline
       // buttons only exist inside this modal.
@@ -504,7 +505,13 @@ export function createInputSystem(
         // nothing a second click needs to protect against.
         const trayIds = trayWorkloadIds(world);
         for (let index = 0; index < trayIds.length; index++) {
-          const dropRect = getTrayCardDropButtonRect(index, renderer.width, renderer.height, serverCount, trayCount);
+          const dropRect = getTrayCardDropButtonRect(
+            index,
+            renderer.width,
+            renderer.height,
+            serverCount,
+            trayCount,
+          );
           if (pointerInRect(pointer, dropRect)) {
             audio.play('uiClick');
             abandonWorkload(world, facility, trayIds[index]);

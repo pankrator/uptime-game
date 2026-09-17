@@ -1,6 +1,8 @@
 // Offers panel (the counterpart to the old always-docked column of offer cards) and the jobs
 // panel (every accepted job's full stats) — two toggled modals, opened by 'o'/'j' and mutually
-// exclusive with each other and with the rack/shop panels (see .plans/job-panels.md). This
+// exclusive with each other and with the rack/shop panels (see .plans/job-panels.md). Pressing
+// O/J while another modal is open SWITCHES to it — closes whichever is open (rack panel, shop,
+// or the other of these two) and opens the one just requested, rather than doing nothing. This
 // module owns both panels' lifecycle: key toggles, Escape close, wheel-scroll clamping, and the
 // click hit-testing input.ts calls into while a panel is open — the same split of responsibility
 // rack-panel.ts uses (interaction here, drawing in hud.ts).
@@ -24,6 +26,8 @@ import {
 } from '../components';
 import { acceptOffer, declineOffer } from '../dispatch';
 import { fits } from '../traits';
+import { closeRackPanel } from './rack-panel';
+import { dismissShop } from './shop';
 import {
   getOffersModalContentRect,
   getOffersModalFullContentHeight,
@@ -75,33 +79,48 @@ export function isJobsModalOpen(world: World, controlled: EntityId): boolean {
   return world.getComponent(jobsPanelOpens, controlled) !== undefined;
 }
 
-// A maintenance task or another modal (rack/shop) already claims the click-priority chain the
-// same way build mode's number keys are guarded in input.ts — the offers/jobs toggle keys are
-// ignored under the same conditions so opening one of these panels can never race an
-// in-progress interaction elsewhere. See rack-panel.ts/shop.ts's own closeJobPanels calls for
-// the reverse direction (those two always win over an already-open offers/jobs panel).
-function otherModalBlocking(world: World, controlled: EntityId): boolean {
-  if (world.getComponent(maintenanceTasks, controlled)) return true;
-  const rackPanel = world.getComponent(openRackPanels, controlled);
-  if (rackPanel && (rackPanel.mode === 'viewing' || rackPanel.arrived)) return true;
-  if (world.getComponent(shopOpens, controlled)) return true;
-  return false;
+// A maintenance task represents an already-committed action (walking to install/repair/
+// decommission something paid for up front) — same "don't silently interrupt" reasoning as the
+// build-mode number keys' own guard in input.ts. This is the only thing that still blocks the
+// O/J toggle outright; every other modal below yields to whichever the player asks for next.
+function maintenanceTaskActive(world: World, controlled: EntityId): boolean {
+  return world.getComponent(maintenanceTasks, controlled) !== undefined;
+}
+
+// Closes whichever OTHER modal (rack panel, shop) is currently open, so pressing O/J always
+// switches straight to the requested panel instead of doing nothing — the reverse direction of
+// rack-panel.ts's/shop.ts's own closeJobPanels calls, which make a rack click or shop proximity
+// win over an already-open offers/jobs panel. Closes the rack panel unconditionally (any mode,
+// arrived or not) rather than only once visible: leaving a dispatching-but-not-yet-arrived panel
+// dangling would have it pop up on arrival stacked on top of whichever panel the player just
+// switched to. Closing the shop also calls dismissShop() so proximity doesn't reopen it the
+// very next frame — the same guard Escape already uses on the shop's own close path.
+function closeOtherModals(world: World, controlled: EntityId): void {
+  if (world.getComponent(openRackPanels, controlled)) {
+    closeRackPanel(world, controlled);
+  }
+  if (world.getComponent(shopOpens, controlled)) {
+    world.removeComponent(shopOpens, controlled);
+    dismissShop();
+  }
 }
 
 function toggleOffersPanel(world: World, controlled: EntityId): void {
-  if (otherModalBlocking(world, controlled)) return;
+  if (maintenanceTaskActive(world, controlled)) return;
   const wasOpen = isOffersModalOpen(world, controlled);
   closeJobPanels(world, controlled);
   if (wasOpen) return;
+  closeOtherModals(world, controlled);
   world.addComponent(offersPanelOpens, controlled, { open: true });
   world.addComponent(offersPanelScrolls, controlled, { offsetPx: 0 });
 }
 
 function toggleJobsPanel(world: World, controlled: EntityId): void {
-  if (otherModalBlocking(world, controlled)) return;
+  if (maintenanceTaskActive(world, controlled)) return;
   const wasOpen = isJobsModalOpen(world, controlled);
   closeJobPanels(world, controlled);
   if (wasOpen) return;
+  closeOtherModals(world, controlled);
   world.addComponent(jobsPanelOpens, controlled, { open: true });
   world.addComponent(jobsPanelScrolls, controlled, { offsetPx: 0 });
 }
@@ -238,7 +257,7 @@ export function createJobPanelsSystem(
       }
 
       // Wheel-scroll clamping — only one of the two panels can be open at a time (see
-      // otherModalBlocking/closeJobPanels), so at most one branch below ever consumes the
+      // toggleOffersPanel/toggleJobsPanel/closeJobPanels), so at most one branch below ever consumes the
       // frame's wheel delta. Clamped every frame (not just on wheel input), same reasoning as
       // rack-panel.ts's scroll: content height can change under an open panel (an offer gets
       // accepted, a job completes) between wheel events. Only scrolls while the pointer is over

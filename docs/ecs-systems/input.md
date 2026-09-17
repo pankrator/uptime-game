@@ -37,8 +37,9 @@ Then, only if `wasClicked()` (and not already consumed by a drag), in strict ord
    button, and for offers, each card's accept/decline — accepting an offer nothing currently
    fits requires a second click within a window to confirm, `AcceptConfirm`, same "second click
    on the same button" shape as `DecommissionConfirm` below — see `.plans/playtest-findings.md`
-   F3). Mutually exclusive with steps 1.5/1.6 below — see job-panels.ts's
-   `otherModalBlocking`/`closeJobPanels`.
+   F3). Mutually exclusive with steps 1.5/1.6 below, but not blocked by them: pressing O/J
+   while the rack or shop panel is open closes it and switches straight to the requested panel
+   — see job-panels.ts's `closeOtherModals`/`closeJobPanels`.
 1. Install task active → any click cancels + refunds to inventory (`cancelInstallTask`)
 1.5. Rack panel visible (viewing, or dispatching-and-arrived) → **absorbs every click**
    except its close button, repair/decommission buttons, and each tray card's small
