@@ -108,19 +108,40 @@ Rejected alternative — CRAC units cooling a rectangular zone: cheaper to compu
 but it makes optimal play a tiling puzzle with exact right answers. A radius with falloff makes
 placement a judgement about *overlap*, which is more interesting and more forgiving.
 
-### D5. Facility `CoolingCapacity` stays, demoted to baseline
+### D5. Facility `CoolingCapacity` is the work budget; the per-rack baseline is a flat constant
 
-Do **not** delete `CoolingCapacity` and the `cooling-upgrade` purchasable. Keep them as a
-facility-wide baseline — building ventilation — that contributes a flat amount to every rack
-regardless of position.
+Do **not** delete `CoolingCapacity` and the `cooling-upgrade` purchasable. But they mean one
+thing only: **how much work the datacenter can run at once**. `resource.ts` enforces that as a
+brownout cap, exactly parallel to power, and because workloads add `coolingBonusKw` while
+machines draw a fixed `powerKw`, it is the budget that governs the player's *workload mix*
+(render and training are what consume it) where power governs *fleet size*.
 
-Two reasons. First, migration safety: an existing game with no CRAC units placed must remain
-playable through step 3, and the existing brownout path keeps working. Second, design: a
-baseline means the early game does not require spatial planning at all. Players meet heat as
-a constraint only once they have enough hardware for it to bite, which is the right ordering
-for teaching it.
+`CoolingCapacity` does **not** feed rack temperature. A rack's temperature is a purely local
+thing: a flat `BASELINE_COOLING_KW` of building ventilation, the CRAC units in range, and the
+`RackLoad.heatKw` the rack is generating. Nothing facility-wide enters the calculation.
 
-The baseline should be weak enough that it stops sufficing by the second room tier.
+**Superseded:** this decision originally read "demoted to baseline", with
+`BASELINE_COOLING_SHARE = 0.5` giving every rack half the facility's `CoolingCapacity`. That is
+a unit error, and it is worth spelling out so nobody reintroduces it. `CoolingCapacity` is a
+facility-wide budget the brownout system keeps at or above the sum of *every* rack's heat, so
+handing each rack half of it made delivered cooling scale with the whole floor while a rack's
+own heat stayed rack-sized:
+
+```
+target_i = AMBIENT + HEAT_TO_DEGREES * heat_avg * (1 - N/2)     for N similar racks
+```
+
+Break-even sat at exactly N = 2. Past that, temperature fell linearly with rack count — a
+ten-rack floor read around -450 °C — and a thermal trip was unreachable, since it needed one
+rack holding more than half the entire facility's heat. It also made the 350-cost cooling
+upgrade strictly dominate the 450-cost CRAC (global, stronger, no running power draw), so CRACs
+had no reason to exist.
+
+The replacement keeps both of D5's original motivations. Migration safety: `BASELINE_COOLING_KW`
+applies with no CRACs placed, so an existing game stays playable. Teaching order: 0.6 kW covers
+a rack of budget boxes or basic servers, so the early game still needs no spatial planning, and
+heat starts biting once the player densifies (a rack of blade chassis trips on its own; a rack
+running render or training work needs CRACs) — which is what makes CRAC placement a decision.
 
 ### D6. Overheating throttles before it trips
 
@@ -183,12 +204,13 @@ interface to the mechanic:
 
 ```ts
 export const AMBIENT_C = 20;
-export const HEAT_TO_DEGREES = 14;       // °C added per kW of rack heat at equilibrium
-export const COOLING_TO_DEGREES = 14;    // °C removed per kW of cooling delivered
+export const HEAT_TO_DEGREES = 6;        // °C added per kW of rack heat at equilibrium
+export const COOLING_TO_DEGREES = 6;     // °C removed per kW of cooling delivered
 export const THERMAL_RESPONSE = 0.25;    // per second; ~4s to cover 63% of the gap
 export const THROTTLE_C = 45;
 export const TRIP_C = 65;
-export const BASELINE_COOLING_SHARE = 0.5;  // fraction of facility CoolingCapacity per rack
+export const SUPPLY_AIR_C = 14;          // floor: cooling can't pull a rack below supply air
+export const BASELINE_COOLING_KW = 0.6;  // flat per-rack building ventilation (absolute kW)
 
 export interface CoolingUnitDef { id, label, cost, kwOutput, radiusCells, powerKw }
 export const CRAC_UNIT: CoolingUnitDef = {

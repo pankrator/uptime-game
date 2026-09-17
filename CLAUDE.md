@@ -57,6 +57,7 @@ ECS files.
 - [shop](docs/ecs-systems/shop.md) — proximity-based shop panel lifecycle and purchase application
 - [resource](docs/ecs-systems/resource.md) — power/cooling brownout selection and facility draw totals
 - [capacity](docs/ecs-systems/capacity.md) — derived per-server/per-rack/facility free-capacity cache
+- [thermal](docs/ecs-systems/thermal.md) — per-rack temperature from local heat and CRAC placement; throttle band and overheat trips
 - [workload-spawn](docs/ecs-systems/workload-spawn.md) — offer arrival cadence and offer expiry
 - [workload-run](docs/ecs-systems/workload-run.md) — ticks placed/unplaced workloads: payout, completion, deadline miss
 - [render](docs/ecs-systems/render.md) — all Canvas drawing of the floor, racks, panels, build UI (presentation only)

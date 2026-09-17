@@ -28,17 +28,18 @@ Systems run in this order every tick; several depend on it (noted below):
 
 **`updateSystems`** (simulation, runs even off-screen):
 1. `input` — reads input, mutates build mode / drag state / dispatch requests
-2. `install-progress` — advances the player's active install task
+2. `maintenance` — advances the player's active install/repair task
 3. `path-follow` — turns a queued path into the next `MoveTarget`
 4. `movement` — advances `Position` toward `MoveTarget`
 5. `rack-panel` — panel open/close, arrival, scroll, pending-drop commit
 6. `shop` — proximity-based shop panel open/close
 7. `resource` — power/cooling brownout decisions (must run before `capacity`)
-8. `capacity` — recomputes free capacity per server/rack/facility (must run after `resource`, before `workload-run`)
-9. `workload-spawn` — spawns new offers, ticks offer expiry
-10. `workload-run` — advances placed workloads, pays out, resolves completion/deadline miss (must run after `capacity`)
-11. `effects` — expires `FloatingText`/`Toast` entities spawned by `resource`/`workload-run` (timestamp-based, no ordering dependency)
-12. `tutorial` — advances the guided-tutorial step (must run last: reads this frame's mutations from every system above)
+9. `thermal` — integrates per-rack `Temperature`, throttles and trips (must run after `capacity` for this tick's `RackLoad.heatKw`, before `wear` and `workload-run`)
+10. `wear` — accrues wear and rolls for hardware failure (must run after `resource` and `thermal`)
+11. `workload-spawn` — spawns new offers, ticks offer expiry
+12. `workload-run` — advances placed workloads, pays out, resolves completion/deadline miss (must run after `capacity` and `thermal`)
+13. `effects` — expires `FloatingText`/`Toast` entities spawned by `resource`/`workload-run` (timestamp-based, no ordering dependency)
+14. `tutorial` — advances the guided-tutorial step (must run last: reads this frame's mutations from every system above)
 
 **`renderSystems`** (presentation only, skipped when tab hidden):
 1. `camera` — eases camera toward the player
@@ -56,6 +57,7 @@ Systems run in this order every tick; several depend on it (noted below):
 - [shop](./shop.md) — proximity-based shop panel lifecycle and purchase application
 - [resource](./resource.md) — power/cooling brownout selection and facility draw totals
 - [capacity](./capacity.md) — derived per-server/per-rack/facility free-capacity cache
+- [thermal](./thermal.md) — per-rack temperature from local heat and CRAC placement; throttle band and overheat trips
 - [workload-spawn](./workload-spawn.md) — offer arrival cadence and offer expiry
 - [workload-run](./workload-run.md) — ticks placed/unplaced workloads: payout, completion, deadline miss
 - [effects](./effects.md) — floating text / toast banners: spawn-where-it-happens, expire centrally

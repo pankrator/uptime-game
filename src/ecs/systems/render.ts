@@ -409,6 +409,32 @@ function temperatureColor(celsius: number): string {
   return RACK_LABEL_COLOR;
 }
 
+// Same two thresholds as the rack panel's wear bar (RACK_PANEL_AMBER/RED below), so a rack that
+// reads amber from across the floor still reads amber once you open it.
+function rackWearColor(wear: number): string {
+  if (wear > 0.7) return RACK_LABEL_OVER_COLOR;
+  if (wear > 0.4) return '#f7b731';
+  return RACK_LABEL_COLOR;
+}
+
+// Below this the wear readout is omitted rather than drawn in grey: a healthy floor should stay
+// uncluttered, and wear under 40% is near-harmless anyway (failure chance is
+// BASE_FAILURE_RATE * wear^3 — see wear.ts).
+const RACK_LABEL_WEAR_THRESHOLD = 0.4;
+
+// Worst wear among a rack's installed machines, or undefined if it holds none. Only the worst
+// one reaches the floor label: the question from across the room is "does this rack need me?",
+// and the rack panel already answers "what is each box at" per server.
+function worstRackWear(world: World, machineIds: EntityId[]): number | undefined {
+  let worst: number | undefined;
+  for (const machineId of machineIds) {
+    const condition = world.getComponent(conditions, machineId);
+    if (!condition) continue;
+    if (worst === undefined || condition.wear > worst) worst = condition.wear;
+  }
+  return worst;
+}
+
 function drawRackLoadLabel(
   renderer: Renderer,
   gridX: number,
@@ -417,6 +443,7 @@ function drawRackLoadLabel(
   facilityOverPower: boolean,
   facilityOverCooling: boolean,
   temperature: { celsius: number } | undefined,
+  worstWear: number | undefined,
 ): void {
   const ctx = renderer.context;
   const centerX = gridX * GRID_CELL_SIZE + GRID_CELL_SIZE / 2;
@@ -430,9 +457,29 @@ function drawRackLoadLabel(
   ctx.fillStyle = facilityOverCooling ? RACK_LABEL_OVER_COLOR : RACK_LABEL_COLOR;
   ctx.fillText(`🔥 ${load.heatKw.toFixed(1)}kW`, centerX, labelY + 10);
 
-  if (temperature) {
-    ctx.fillStyle = temperatureColor(temperature.celsius);
-    ctx.fillText(`${Math.round(temperature.celsius)}°C`, centerX, labelY + 20);
+  // Temperature and worst wear SHARE the third line rather than stacking a fourth: the block is
+  // already 29px deep under a 40px GRID_CELL_SIZE, so another row would overlap the label of a
+  // rack placed directly below. Side by side is also the point — a hot rack wears its machines up
+  // to HEAT_WEAR_MULTIPLIER_MAX faster, and the two numbers adjacent is how that link teaches
+  // itself.
+  const celsius = temperature?.celsius;
+  const wear =
+    worstWear !== undefined && worstWear > RACK_LABEL_WEAR_THRESHOLD ? worstWear : undefined;
+
+  if (celsius !== undefined && wear !== undefined) {
+    ctx.textAlign = 'right';
+    ctx.fillStyle = temperatureColor(celsius);
+    ctx.fillText(`${Math.round(celsius)}°C`, centerX - 3, labelY + 20);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = rackWearColor(wear);
+    ctx.fillText(`🔧${Math.round(wear * 100)}%`, centerX + 3, labelY + 20);
+    ctx.textAlign = 'center';
+  } else if (celsius !== undefined) {
+    ctx.fillStyle = temperatureColor(celsius);
+    ctx.fillText(`${Math.round(celsius)}°C`, centerX, labelY + 20);
+  } else if (wear !== undefined) {
+    ctx.fillStyle = rackWearColor(wear);
+    ctx.fillText(`🔧${Math.round(wear * 100)}%`, centerX, labelY + 20);
   }
 }
 
@@ -1430,6 +1477,7 @@ export function createRenderSystem(
               facilityOverPower,
               facilityOverCooling,
               temperature,
+              worstRackWear(world, installedMachines),
             );
           }
           if (temperature) {
