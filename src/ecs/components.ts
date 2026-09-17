@@ -225,10 +225,11 @@ export interface MaintenanceTask {
   arrived: boolean;
 }
 
-// Facility singleton — derived cache, fully recomputed every frame. Written by more than one
-// system (resource.ts and workload-run.ts write disjoint fields; capacity.ts writes the
-// traits/compute fields) — see .plans/power-billing.md step 3. A third writer means this should
-// be split by owner.
+// Facility singleton — derived cache, fully recomputed every frame. Written by three systems on
+// disjoint fields (resource.ts, capacity.ts, workload-run.ts — see .plans/power-billing.md step
+// 3) but read together as a unit by hud.ts's drawTopBar, the only place all of them matter at
+// once. .plans/design-review.md F9 considered splitting this by writer and decided against it
+// for now — see that finding's "Decision" note.
 export interface Utilization {
   powerDrawKw: number;
   coolingDrawKw: number;

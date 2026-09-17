@@ -298,6 +298,17 @@ make `hud.ts` read three components instead of one. Do F3 first — deleting the
 enough to make the split feel unnecessary for another few features, and that is a legitimate
 outcome. Record the decision either way.
 
+**Decision (post-F3): not splitting, for now.** With the dead `computeTotal`/`computeFree` pair
+gone, the remaining three writers each own a small, disjoint field set, and every reader that
+matters — `hud.ts`'s `drawTopBar`, which is also the only place all six remaining fields are read
+together — needs power, capacity and revenue in the same line of the bar. Splitting would touch
+10 files (`resource.ts`, `capacity.ts`, `workload-run.ts`, `workload-spawn.ts`, `render.ts`,
+`hud.ts`, `entities/index.ts`, `save/registry.ts`, `save/manager.ts`, and both their tests) to
+turn one `getComponent` call into three at every read site, for an organizational win with no
+bug behind it and no read-side test coverage (`hud.ts`/`render.ts`) to catch a mistake in the
+move. Revisit if a fourth writer ever shows up — that would be the tripwire firing a second
+time on the same component, which is a different argument than this one.
+
 ### F10. The `render.ts` / `hud.ts` boundary is historical, not architectural
 
 `render.ts` is 1555 lines; `drawRackPanel` alone is 390. `hud.ts` is 869.
