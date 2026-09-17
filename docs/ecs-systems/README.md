@@ -13,10 +13,10 @@ exists and to find the right place in the update order for new logic.
   `destroyEntity` sweeps every store it has ever seen, so removing an entity always
   cleans up its components — callers never need to remove components one by one first.
   Component stores are module-level singletons shared by every `World` instance (only the id
-  counter and `entities` set are per-instance) — see the comment on `createWorld` for what that
-  means for anything that creates more than one `World` in the same process.
-  `resetAllComponentStores()` (also in `world.ts`) is the escape hatch, wired into every test
-  globally via `src/test/setup.ts`.
+  counter and `entities` set are per-instance); `createWorld()` calls
+  `resetAllComponentStores()` (also in `world.ts`) on every call, so a new `World` always starts
+  from empty stores regardless of what a previous one left behind — this also means at most one
+  `World` is ever live at a time, see the comment on `createWorld` for the trade-off.
 - **System interface** (`src/ecs/systems/system.ts`) — one method: `update(deltaSeconds: number): void`.
   Every system factory (`createXSystem(...)`) returns an object matching this interface.
 - **Components** (`src/ecs/components.ts`) — all component type definitions and their

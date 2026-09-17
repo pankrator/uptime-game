@@ -6,8 +6,8 @@ export interface ComponentStore<T> {
 
 // Every store ever created, regardless of which World(s) end up using it — components.ts
 // creates one module-level singleton set of these for the whole process, shared by every
-// World instance (see createWorld's own per-instance entity-id counter below). Only consulted
-// by resetAllComponentStores, which nothing in the running game calls.
+// World instance (see createWorld's own per-instance entity-id counter below). Consulted by
+// resetAllComponentStores, which createWorld() itself calls (F12).
 const allComponentStores: ComponentStore<unknown>[] = [];
 
 export function createComponentStore<T>(): ComponentStore<T> {
@@ -16,13 +16,11 @@ export function createComponentStore<T>(): ComponentStore<T> {
   return store;
 }
 
-// Test-only escape hatch. The real game creates exactly one World per page load, so component
-// stores being module-level singletons (not owned per-World) never matters there. A test suite
-// that calls createWorld() many times in one process is not that world: entity ids restart at 1
-// each call, but the singleton stores from components.ts keep every previous test's entries —
-// so a fresh World can collide with, and read, stale components an earlier test left behind at
-// the same numeric id. Call this between tests (see src/test/setup.ts) to give each one a clean
-// slate, equivalent to a fresh page load.
+// Called by createWorld() itself (F12) so every new World starts from empty stores regardless
+// of what a previous World — a prior test, or eventually a prior game session — left behind at
+// the same entity ids. Also exported directly for src/test/setup.ts's global beforeEach, which
+// predates createWorld() calling this and is now a harmless no-op belt-and-suspenders on top of
+// it (each test still calls createWorld() itself via test-helpers.ts).
 export function resetAllComponentStores(): void {
   for (const store of allComponentStores) {
     store.map.clear();
@@ -45,11 +43,15 @@ export interface World {
 
 // Component stores (components.ts) are created once and imported as module-level singletons —
 // `World.createEntity`'s id counter and `entities` Set are the only state actually scoped to
-// one World instance. The real app never notices (exactly one World is ever created per page
-// load), but two Worlds live at once in the same process WILL collide: both id sequences start
-// at 1 and both write into the same underlying Maps. resetAllComponentStores() above (wired
-// into every test via src/test/setup.ts) is how the test suite works around this.
+// one World instance. F12 (.plans/design-review.md): resetting every store on each call makes
+// "component stores start empty" true by construction rather than merely documented and relying
+// on src/test/setup.ts's global beforeEach hook — this is also what protects a future "quit to
+// menu" feature (which would call createWorld() again mid-process) from silent data corruption:
+// entity ids restarting at 1 against maps still holding the previous game's components at those
+// ids. The trade-off, stated plainly: this permanently rules out two live Worlds in one process,
+// which was already unsupported (see the entity-id-collision risk this used to just document).
 export function createWorld(): World {
+  resetAllComponentStores();
   let nextId = 1;
   const entities = new Set<EntityId>();
   const stores = new Set<ComponentStore<unknown>>();
