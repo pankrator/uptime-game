@@ -1,4 +1,6 @@
 import { type World } from '../ecs/world';
+import { facilityTags, utilizations } from '../ecs/components';
+import { defaultUtilization } from '../entities';
 import { type SaveStorage, type SaveEnvelope } from './types';
 import { serializeWorld } from './serialize';
 import { deserializeWorld } from './deserialize';
@@ -79,6 +81,17 @@ export function createSaveManager(storage: SaveStorage): SaveManager {
       const envelope = await readEnvelope(slot);
       if (!envelope) return false;
       deserializeWorld(envelope, world);
+
+      // Utilization is deliberately transient (D4) — spawnFacility always seeds it for a
+      // fresh game, but a load bypasses spawnFacility entirely, and every system that
+      // maintains Utilization treats its absence as "not initialized" rather than "create
+      // it" (see defaultUtilization's comment in entities/index.ts). Without this, a loaded
+      // game stalls silently: no HUD top bar, no power/brownout resolution, no new offers.
+      const facility = world.query(facilityTags)[0];
+      if (facility !== undefined && !world.getComponent(utilizations, facility)) {
+        world.addComponent(utilizations, facility, defaultUtilization());
+      }
+
       return true;
     },
 

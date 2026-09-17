@@ -23,6 +23,7 @@ import {
   conditions,
   playerTags,
   facilityTags,
+  type Utilization,
 } from '../ecs/components';
 import {
   RACK_SLOT_CAPACITY,
@@ -101,6 +102,28 @@ const STARTING_INVENTORY: Partial<Record<PurchasableId, number>> = {
   'machine-budget': 2,
 };
 
+// Utilization's zero-valued starting shape. Shared by spawnFacility (a brand-new facility) and
+// save/manager.ts's post-load repair (a facility restored from a save, which never runs
+// through spawnFacility at all). Utilization is deliberately excluded from the save format —
+// it's a derived cache, fully recomputed every tick by resource.ts/capacity.ts/workload-run.ts
+// (see .plans/save-load.md D4) — but every one of those systems, plus workload-spawn.ts and
+// hud.ts/render.ts, treats the component's ABSENCE as "not initialized yet, nothing to do"
+// rather than "create it fresh." A brand-new facility never hits that gap because spawnFacility
+// always seeds it below; a loaded facility would, forever (no HUD top bar, no brownout/online
+// resolution, no new offers), without this same seed applied once after load.
+export function defaultUtilization(): Utilization {
+  return {
+    powerDrawKw: 0,
+    coolingDrawKw: 0,
+    computeTotal: 0,
+    computeFree: 0,
+    traitsTotal: zeroTraits(),
+    traitsFree: zeroTraits(),
+    powerCostPerSecond: 0,
+    revenuePerSecond: 0,
+  };
+}
+
 export function spawnFacility(world: World): EntityId {
   const id = world.createEntity();
   world.addComponent(facilityTags, id, {});
@@ -110,16 +133,7 @@ export function spawnFacility(world: World): EntityId {
   world.addComponent(reputations, id, { value: STARTING_REPUTATION });
   world.addComponent(powerCapacities, id, { kw: STARTING_POWER_KW });
   world.addComponent(coolingCapacities, id, { kw: STARTING_COOLING_KW });
-  world.addComponent(utilizations, id, {
-    powerDrawKw: 0,
-    coolingDrawKw: 0,
-    computeTotal: 0,
-    computeFree: 0,
-    traitsTotal: zeroTraits(),
-    traitsFree: zeroTraits(),
-    powerCostPerSecond: 0,
-    revenuePerSecond: 0,
-  });
+  world.addComponent(utilizations, id, defaultUtilization());
   world.addComponent(resourceWarnings, id, { powerNearLimit: false, coolingNearLimit: false });
   world.addComponent(demandClocks, id, {
     elapsedSeconds: 0,
