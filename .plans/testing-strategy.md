@@ -1,11 +1,20 @@
 # Testing strategy: how to validate this game without a browser
 
-> **Proposal, not yet built.** No test runner is configured today (`package.json` has no test
-> script, no `vitest`/`jest`/`@testing-library` dependency, and no `*.test.ts` file exists
-> anywhere in `src/`). Per CLAUDE.md, validating the *running* game is manual and stays that
-> way — this plan is about everything that can be checked **before** a human ever opens the
-> game, so manual playtesting spends its time on feel and polish, not on catching regressions
-> that a fast, headless check would have caught in CI.
+> **Built.** Vitest is wired up (`npm test` / `npm run test:watch`); all three layers below
+> have a starting suite (123 tests across 13 files). Per CLAUDE.md, validating the *running*
+> game stays manual — this plan is about everything that can be checked **before** a human
+> ever opens the game, so manual playtesting spends its time on feel and polish, not on
+> catching regressions a fast, headless check would have caught in CI.
+>
+> Building Layer 3 surfaced a real wrinkle worth knowing before adding more system tests:
+> component stores (`components.ts`) are module-level singletons, and `World`'s entity-id
+> counter restarts at 1 on every `createWorld()` call — harmless for the real game (exactly one
+> `World` per page load) but a problem for a test file that creates many `World`s, since a
+> fresh world's ids can collide with and read a previous test's leftover component data. Fixed
+> with `resetAllComponentStores()` (`ecs/world.ts`) run via a global `beforeEach`
+> (`src/test/setup.ts`, wired into `vite.config.ts`'s `test.setupFiles`) — every test starts
+> from a clean slate, equivalent to a fresh page load. No production behavior changed; the new
+> function is only ever called from test setup.
 
 ## Why this is worth doing now
 
