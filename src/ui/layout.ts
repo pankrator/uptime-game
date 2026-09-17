@@ -308,7 +308,10 @@ export const RACK_SERVER_ROW_HEIGHT = 162;
 export const RACK_SERVER_ROW_GAP = 10;
 export const RACK_TRAIT_BAR_HEIGHT = 6;
 export const RACK_TRAIT_BAR_GAP = 4;
-export const RACK_CHIP_HEIGHT = 16;
+// 24px, up from 16 — .plans/contract-variety.md's cycle-counter growth already used the full
+// original height for one text line; a second line (progress bar + time-remaining, mirroring
+// the HUD workload panel's "active" rows in hud.ts) needs the extra 8px.
+export const RACK_CHIP_HEIGHT = 24;
 export const RACK_CHIP_GAP = 3;
 // Was 96, wide enough for "Render Farm 🔥0.8" (the longest label+cooling-bonus chip text) at
 // 9px sans-serif. Grown by .plans/contract-variety.md step 2 so a recurring cycle counter
