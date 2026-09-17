@@ -1120,6 +1120,12 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
       const chip = getPlacedChipRect(index, chipIndex, canvasWidth, canvasHeight, serverIds.length, trayIds.length);
       const workload = world.getComponent(workloads, workloadId)!;
       const archetype = WORKLOAD_ARCHETYPES[workload.archetypeId];
+      // Same "doomed" check as hud.ts's active-workload row: the deadline keeps ticking
+      // independent of work-remaining, so a job can be unwinnable while its progress bar still
+      // reads green if only work-remaining were shown here.
+      const doomed = workload.workRemainingSeconds > workload.deadlineRemainingSeconds;
+      const workFraction = 1 - workload.workRemainingSeconds / workload.workSeconds;
+      const workRemaining = Math.max(0, Math.ceil(workload.workRemainingSeconds));
 
       ctx.fillStyle = '#2e343b';
       ctx.fillRect(chip.x, chip.y, chip.width, chip.height);
@@ -1127,7 +1133,7 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
       ctx.strokeRect(chip.x, chip.y, chip.width, chip.height);
       ctx.font = '9px sans-serif';
       ctx.textAlign = 'left';
-      ctx.fillStyle = RACK_PANEL_TEXT;
+      ctx.fillStyle = doomed ? RACK_PANEL_RED : RACK_PANEL_TEXT;
       // Only render-farm/training archetypes carry a cooling bonus (web/batch are 0kW — see
       // WORKLOAD_ARCHETYPES); appending it lets the player see, per workload, what's adding to
       // this server's heat line above without opening a separate tooltip. cycleLabel appends
@@ -1137,7 +1143,25 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
         archetype.label +
         cycleLabel(workload) +
         (archetype.coolingBonusKw > 0 ? ` 🔥${archetype.coolingBonusKw.toFixed(1)}` : '');
-      ctx.fillText(chipLabel, chip.x + 3, chip.y + chip.height / 2, chip.width - 6);
+      ctx.fillText(chipLabel, chip.x + 3, chip.y + chip.height * 0.32, chip.width - 6);
+
+      // Second line: how much work is left before this job pays out/completes — a mini
+      // progress bar (same fraction hud.ts's active rows compute) plus the seconds countdown,
+      // so the player doesn't have to reopen the HUD workload panel to see it.
+      const barX = chip.x + 3;
+      const barY = chip.y + chip.height * 0.68;
+      const barWidth = chip.width - 6 - 24;
+      const barHeight = 4;
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+      ctx.fillRect(barX, barY, barWidth, barHeight);
+      ctx.fillStyle = doomed ? RACK_PANEL_RED : RACK_PANEL_GREEN;
+      ctx.fillRect(barX, barY, barWidth * Math.min(1, Math.max(0, workFraction)), barHeight);
+
+      ctx.font = '8px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillStyle = doomed ? RACK_PANEL_RED : RACK_PANEL_DIM;
+      ctx.fillText(`${workRemaining}s`, chip.x + chip.width - 3, chip.y + chip.height * 0.68 + barHeight / 2);
+      ctx.textAlign = 'left';
     });
   });
 
