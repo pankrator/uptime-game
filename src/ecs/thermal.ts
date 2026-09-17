@@ -3,6 +3,7 @@
 // .plans/thermal-and-cooling.md D3 and Step 2.
 import {
   AMBIENT_C,
+  SUPPLY_AIR_C,
   HEAT_TO_DEGREES,
   COOLING_TO_DEGREES,
   THERMAL_RESPONSE,
@@ -17,10 +18,16 @@ export function coolingFalloff(distanceCells: number, radiusCells: number): numb
   return Math.max(0, 1 - distanceCells / radiusCells);
 }
 
-// AMBIENT_C plus heat pushing it up, minus cooling pulling it down — no clamp: a rack under
-// heavy cooling and no load settling below ambient is fine, there's no failure mode down there.
+// AMBIENT_C plus heat pushing it up, minus cooling pulling it down, floored at SUPPLY_AIR_C.
+// A rack under heavy cooling and no load settling below ambient is fine — there is no failure
+// mode down there — but the subtraction is unbounded, so without the floor surplus cooling walks
+// the target arbitrarily far below zero. Cooling cannot pull a rack below the air its CRACs
+// supply, so clamp there and let over-cooling simply stop paying off.
 export function targetTemperature(heatKw: number, coolingKw: number): number {
-  return AMBIENT_C + heatKw * HEAT_TO_DEGREES - coolingKw * COOLING_TO_DEGREES;
+  return Math.max(
+    SUPPLY_AIR_C,
+    AMBIENT_C + heatKw * HEAT_TO_DEGREES - coolingKw * COOLING_TO_DEGREES,
+  );
 }
 
 // Exponential approach, not an instant jump — thermal mass (D3): switching off a workload cools

@@ -454,6 +454,28 @@ export function getTrayCardRect(
   };
 }
 
+// "Abandon this contract" button (F3) — a small square overlaid in the tray card's top-right
+// corner rather than a 5th text line, which would mean re-growing RACK_TRAY_CARD_HEIGHT again;
+// the card's 4 existing lines (label+cycle, demands, deadline, penalty) already fill its height.
+export const RACK_TRAY_DROP_BUTTON_SIZE = 16;
+export const RACK_TRAY_DROP_BUTTON_MARGIN = 4;
+
+export function getTrayCardDropButtonRect(
+  index: number,
+  canvasWidth: number,
+  canvasHeight: number,
+  serverCount: number,
+  trayCount: number,
+): Rect {
+  const card = getTrayCardRect(index, canvasWidth, canvasHeight, serverCount, trayCount);
+  return {
+    x: card.x + card.width - RACK_TRAY_DROP_BUTTON_SIZE - RACK_TRAY_DROP_BUTTON_MARGIN,
+    y: card.y + RACK_TRAY_DROP_BUTTON_MARGIN,
+    width: RACK_TRAY_DROP_BUTTON_SIZE,
+    height: RACK_TRAY_DROP_BUTTON_SIZE,
+  };
+}
+
 // Y coordinate of the tray section's header text baseline — shared by getTrayCardRect and by
 // render.ts (which draws the "TRAY" header itself, above the cards this function positions).
 export function getTrayTopY(
@@ -559,6 +581,22 @@ export function getShopBuyButtonRect(index: number, canvasWidth: number, canvasH
     y: row.y + (row.height - SHOP_BUY_BUTTON_HEIGHT) / 2,
     width: SHOP_BUY_BUTTON_WIDTH,
     height: SHOP_BUY_BUTTON_HEIGHT,
+  };
+}
+
+// Toast stack (F4/F7) — centered under the HUD bar so it reads as "something just happened"
+// without covering the offers column (left) or workload panel (right) it sits between.
+export const TOAST_WIDTH = 340;
+export const TOAST_HEIGHT = 30;
+export const TOAST_GAP = 6;
+export const TOAST_TOP_MARGIN = 8;
+
+export function getToastRect(stackIndex: number, canvasWidth: number): Rect {
+  return {
+    x: (canvasWidth - TOAST_WIDTH) / 2,
+    y: HUD_BAR_HEIGHT + TOAST_TOP_MARGIN + stackIndex * (TOAST_HEIGHT + TOAST_GAP),
+    width: TOAST_WIDTH,
+    height: TOAST_HEIGHT,
   };
 }
 

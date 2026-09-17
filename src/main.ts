@@ -16,6 +16,7 @@ import { createWorkloadSpawnSystem, createOfferExpirySystem } from './ecs/system
 import { createWorkloadRunSystem } from './ecs/systems/workload-run';
 import { createThermalSystem } from './ecs/systems/thermal';
 import { createWearSystem } from './ecs/systems/wear';
+import { createEffectsSystem } from './ecs/systems/effects';
 import { createRenderSystem } from './ecs/systems/render';
 import { createHudSystem } from './ecs/systems/hud';
 import { createCameraSystem } from './ecs/systems/camera';
@@ -196,6 +197,10 @@ async function runGame(
     createWorkloadSpawnSystem(world, facility),
     createOfferExpirySystem(world),
     createWorkloadRunSystem(world, facility, audio),
+    // Expiry-only (floating text/toasts spawned by workload-run.ts above and resource.ts) — no
+    // ordering dependency, since expiry is timestamp-based, not tick-based; placed here so it
+    // reads naturally as "after the systems that spawn this frame's effects".
+    createEffectsSystem(world),
     // Runs last: it only reads state (has a rack been placed, a machine installed, a workload
     // placed, ...) to advance the guided-tutorial step, so it needs every other system's
     // mutations for this frame to have already landed — no ordering dependency the other way.
@@ -210,7 +215,7 @@ async function runGame(
   const renderSystems = [
     createCameraSystem(world, renderer, input, player, camera),
     createRenderSystem(world, renderer, player, facility, camera, input),
-    createHudSystem(world, renderer, facility, audio, camera),
+    createHudSystem(world, renderer, facility, audio, camera, player),
   ];
 
   const loop = createGameLoop({ renderer, input, state, updateSystems, renderSystems });

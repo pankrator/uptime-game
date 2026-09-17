@@ -8,9 +8,10 @@
 > are sized but deliberately under-specified — promote one to its own `.plans/<name>.md`
 > before implementing, per `ideas-backlog.md`'s convention.
 >
-> **Status:** B1, B2, B3, B4, B5, F6, and F9 are fixed (see each entry). Re-verified against the
-> real click chain (or, for B3, the scaling math directly) the same way each was originally
-> found — not just read back. Everything else in this report is still open.
+> **Status:** B1, B2, B3, B4, B5, F2, F3, F4, F5, F6, F7, F8, and F9 are fixed (see each entry).
+> Re-verified against the real click chain (or, for B3, the scaling math directly; for F2/F5,
+> the constants/draw math directly) the same way each was originally found — not just read
+> back. B6/B7 are still open.
 
 ## How this was measured
 
@@ -228,6 +229,11 @@ nothing but watch. That is the first minute of the game.
 **Fix:** lower `STARTING_REPUTATION` to ~10 so the ladder starts at web/batch, or gate
 `minReputation` on demonstrated capacity rather than reputation, or both.
 
+**Fixed.** `STARTING_REPUTATION` dropped from 50 to 10 (`game-data.ts`), which keeps only
+`web` (`minReputation: 0`) eligible at the start — every offer in the opening minute is
+guaranteed servable on the starting 2× Budget Box hardware. ~4 completed web contracts
+(`REPUTATION_ON_COMPLETION = 3` each) unlocks `batch` (`minReputation: 20`) from there.
+
 ### F3 — Accepting a contract you can't serve is a silent trap
 
 Declining is free (`REPUTATION_ON_DECLINE = 0`) and missing costs **−8**, against **+3** for a
@@ -241,6 +247,13 @@ netted **−1 reputation**.
 
 **Fix:** make unservable Accept require a confirm (or disable it), and add a "drop contract"
 affordance that costs less than a miss.
+
+**Fixed.** An unservable offer's Accept button now requires a second click within 3s to
+confirm (`AcceptConfirm`, `input.ts`/`hud.ts` — same "second click on the same button" shape as
+the existing decommission confirm); a servable offer still accepts on the first click. A new
+`abandonWorkload` (`dispatch.ts`) lets the player drop an accepted contract from a small "✕"
+button on its tray card, costing `ABANDON_REPUTATION_COST` (−4, between a decline's −1 and a
+miss's −8) plus half of `penaltyOnMiss` — strictly better than letting it rot into a full miss.
 
 ### F4 — Brownouts dump work back to the tray with the deadline still running
 
@@ -256,6 +269,13 @@ player then has to hand-replace, while deadlines burn.
 **Fix:** keep the unplacement, but re-place automatically when the same server comes back
 online within a grace window; and warn *before* the brownout (the HUD already has the numbers).
 
+**Fixed.** `unplaceAllOn` (`resource.ts`, shared by brownout/thermal-trip/hardware-failure)
+now tags each unplaced workload with `RecentlyUnplaced` (the server it came from, plus a
+`BROWNOUT_RESTORE_GRACE_SECONDS = 10` expiry); when that same server comes back online, it's
+re-placed automatically if it still fits. A one-shot toast also fires when power or cooling
+draw crosses `RESOURCE_WARNING_FRACTION = 90%` of capacity, before anything actually browns
+out, with hysteresis at `RESOURCE_WARNING_CLEAR_FRACTION = 75%` so it doesn't spam.
+
 ### F5 — Idle hardware bleeds money, which punishes building ahead
 
 Power is billed on draw whether or not a machine is doing anything. A Blade Chassis idles at
@@ -267,6 +287,11 @@ punished, and the demand system (B3) will never grow into that capacity anyway.
 
 **Fix:** bill idle machines at a reduced rate (an idle/active power split is realistic *and*
 better play), or let the player power down a rack.
+
+**Fixed.** An online machine with nothing placed on it now draws `IDLE_POWER_FRACTION = 35%`
+of its full power/cooling instead of the full amount (`resource.ts`'s `drawFor`, which
+`capacity.ts`'s rack-panel readout now calls directly instead of duplicating the calculation,
+so the two can never disagree).
 
 ### F6 — Offer cards reflow under the cursor
 
@@ -295,6 +320,11 @@ visual feedback anywhere in the game is the rejected-drop trait-bar flash.
 **Fix:** floating `+$N` on completion and a red banner on a miss are cheap and would carry a
 lot of the game's feel.
 
+**Fixed.** A new `effects.ts` module (`FloatingText`/`Toast` components) spawns a rising,
+fading green `+$N` over the rack a contract just completed on, and a red toast banner naming
+the contract and its cost on a miss (`workload-run.ts`), plus the F4 near-limit warning toast
+above. Drawn by `render.ts` (world-space) and `hud.ts` (screen-space) respectively.
+
 ### F8 — The playfield is mostly black void
 
 The world is 2400×1600. The starting Server Closet is 6×5 cells — 240×200 px — inside a
@@ -308,6 +338,14 @@ repeating the same `⚡1.2kW / 🔥0.9kW` label — dense, noisy, and visually m
 **Fix:** draw *something* outdoors (ground texture, parking, sky-side gradient); hide per-rack
 draw labels unless the rack is hovered or the facility is small; vary rack appearance by the
 tier installed in it.
+
+**Fixed.** `render.ts` now fills the full world rect with a ground color plus a sparse
+deterministic dot scatter before drawing the building (`drawOutdoors`), so the area outside
+the room/corridor/shop reads as outdoors instead of void. The per-rack `⚡/🔥/°C` label only
+draws for the rack under the pointer, or every rack while the facility is still on the closet
+room tier — `drawThermalBadge`'s overheat/throttle badge is untouched, since it already
+self-gates on an abnormal state. Each occupied slot also gets a thin left-edge accent stripe
+colored by its machine tier (`TIER_ACCENT_COLOR`), additive to the existing status LED/fill.
 
 ### F9 — Jargon in the UI
 

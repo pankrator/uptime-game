@@ -13,6 +13,7 @@ import {
   powerCapacities,
   coolingCapacities,
   utilizations,
+  resourceWarnings,
   demandClocks,
   offers,
   roomTiers,
@@ -119,6 +120,7 @@ export function spawnFacility(world: World): EntityId {
     powerCostPerSecond: 0,
     revenuePerSecond: 0,
   });
+  world.addComponent(resourceWarnings, id, { powerNearLimit: false, coolingNearLimit: false });
   world.addComponent(demandClocks, id, {
     elapsedSeconds: 0,
     nextArrivalInSeconds: FIRST_ARRIVAL_SECONDS,

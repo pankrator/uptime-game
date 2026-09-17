@@ -37,7 +37,9 @@ gesture.
 - `tryStartDrag` — mousedown hit-test against placed chips (checked first, top z-order)
   then tray cards, in content space (`toContentSpace`, which accounts for scroll offset
   and clips to the visible viewport). Only live for an **arrived, dispatching-mode**
-  panel.
+  panel. Skips a tray card's own abandon-contract button corner
+  (`getTrayCardDropButtonRect` — F3) so a press there falls through as a plain click for
+  `input.ts` to handle, rather than starting a drag.
 - `resolveDrop` — mouseup resolution:
   - dropped on the tray, from a server → `unplaceWorkload` immediately (never queued —
     removing load needs no fit-check and no presence gate)

@@ -1,6 +1,6 @@
 # hud
 
-`src/ecs/systems/hud.ts` — `createHudSystem(world, renderer, facility, audio)`
+`src/ecs/systems/hud.ts` — `createHudSystem(world, renderer, facility, audio, camera, controlled)`
 
 ## Purpose
 
@@ -9,7 +9,9 @@ the incoming offers panel. Presentation only, no component writes.
 
 ## Structure
 
-- `drawTopBar` — money, power draw/capacity, cooling draw/capacity, reputation, per-trait
+- `drawTopBar` — money, power draw/capacity, cooling draw/capacity (labelled `❄ COOLING`:
+  it is the facility's work budget, a brownout cap like power, and is unrelated to rack
+  temperature — see [thermal](./thermal.md)), reputation, per-trait
   facility capacity bars (CPU/RAM/storage shown separately — see the D5 comment: compute
   alone hid RAM/storage pressure that could bottleneck placement even with CPU headroom),
   inventory summary (owned-but-unplaced stock), and personal-best counters
@@ -20,7 +22,12 @@ the incoming offers panel. Presentation only, no component writes.
 - `drawOfferCard` / `drawOffersPanel` — one card per open `Offer`, dimmed via
   `anyServerFits` when no online server currently has enough free capacity for it
   (informative only — never blocks accept, since the player may be about to install a
-  bigger box)
+  bigger box). An unservable offer's Accept button shows a "Confirm ×" state
+  (amber/orange) once `AcceptConfirm` is set for that offer (`input.ts` — F3), otherwise
+  reads "Accept" as normal.
+- `drawToasts` — the F4/F7 toast stack (`Toast` entities spawned/expired by `effects.ts`):
+  a miss notice, a resource-near-limit warning. Centered under the HUD bar, stacked by
+  spawn order, fading over the back half of each toast's lifetime.
 - `drawTutorialBanner` — the guided-tutorial step banner, drawn last (topmost) so it stays
   legible over the rack/shop panels' full-screen dim; see [tutorial](./tutorial.md) for the
   step-advance logic this only reads
@@ -30,6 +37,7 @@ the incoming offers panel. Presentation only, no component writes.
 - `anyServerFits` duplicates a capacity check rather than reusing `dispatch.ts`'s
   `checkPlacement` because it needs a "does ANY server fit" existence check across all
   servers, not a single-server validity check — different question, not shared logic.
+  Exported so `input.ts`'s accept-confirm gate (F3) uses this exact same check.
 - Offer card hit-testing (accept/decline buttons) is done in `input.ts`
   (`hitTestOfferButtons`) against the same rects this file draws
   (`ui/layout.ts`'s `getOfferButtonRect`) — keep the two in sync if offer card layout

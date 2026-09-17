@@ -27,8 +27,10 @@ timers, and resolves completion or deadline miss.
    deadline expires counts as a success, not a miss.
 4. Completion: `+REPUTATION_ON_COMPLETION`, updates `peakComputeServed` from the
    workload's own `demands.cpu` (one workload occupies exactly one server, so no
-   cross-machine fold is needed), plays `contractCompleted` (see [audio](./audio.md)). Then,
-   per `.plans/contract-variety.md` D2:
+   cross-machine fold is needed), plays `contractCompleted` (see [audio](./audio.md)), and
+   spawns a rising `+$N` (`effects.ts`'s `spawnFloatingText`) at the rack's grid position —
+   looked up via `placement.serverId` while `placement` is still valid, before any unplace
+   below (F7). Then, per `.plans/contract-variety.md` D2:
    - If `repeatCount > 0`: decrement it, reset `workRemainingSeconds` to `workSeconds` and
      `deadlineRemainingSeconds` to the archetype's `deadlineSeconds`, and leave it placed —
      it keeps running on the same server for another cycle. `contractsServed` is **not**
@@ -38,7 +40,8 @@ timers, and resolves completion or deadline miss.
 5. Deadline miss: `+REPUTATION_ON_MISSED_DEADLINE` (negative), `Wallet.money -=
    workload.penaltyOnMiss` (D1 — only accepted work is penalized; an expired *offer* never
    becomes a `Workload` and so never reaches this system), unplace + destroy, plays
-   `contractMissed`.
+   `contractMissed`, and spawns a red banner toast (`effects.ts`'s `spawnToast`) naming the
+   contract and its cost (F7).
 
 `contractsServed` counts **contracts**, not cycles — a 5-cycle recurring contract increments
 it once, on its last cycle, not five times. `peakComputeServed` updates every cycle since the

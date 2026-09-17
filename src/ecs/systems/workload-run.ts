@@ -9,6 +9,8 @@ import {
   utilizations,
   installedIns,
   temperatures,
+  gridPositions,
+  gridToWorld,
 } from '../components';
 import {
   REPUTATION_ON_MISSED_DEADLINE,
@@ -16,6 +18,7 @@ import {
   WORKLOAD_ARCHETYPES,
   clampReputation,
 } from '../game-data';
+import { spawnFloatingText, spawnToast } from './effects';
 import { type Audio } from '../../audio';
 import { type System } from './system';
 
@@ -66,6 +69,22 @@ export function createWorkloadRunSystem(world: World, facility: EntityId, audio:
           clock.peakComputeServed = Math.max(clock.peakComputeServed, workload.demands.cpu);
           audio.play('contractCompleted');
 
+          // .plans/playtest-findings.md F7: completion previously had no visual feedback beyond
+          // the sound. `placement && server?.online` above is what got us here, so the rack this
+          // workload just ran on is still valid to look up — do it before the placement is
+          // removed further down (recurring cycles keep it placed; the final cycle removes it a
+          // few lines below). Anchored at the RACK's grid position, not the server's own (no
+          // separate Position component on a machine).
+          if (placement) {
+            const rackId = world.getComponent(installedIns, placement.serverId)?.rackId;
+            const gridPos = rackId !== undefined ? world.getComponent(gridPositions, rackId) : undefined;
+            if (gridPos) {
+              const worldPos = gridToWorld(gridPos.gridX, gridPos.gridY);
+              const earned = Math.round(workload.payPerSecond * workload.workSeconds);
+              spawnFloatingText(world, worldPos.x, worldPos.y, `+$${earned}`, '#4caf50');
+            }
+          }
+
           // .plans/contract-variety.md D2: a recurring workload resets and stays placed on the
           // same server instead of being destroyed. Only the FINAL cycle counts toward
           // contractsServed — counting every cycle would inflate that score relative to what it
@@ -92,6 +111,14 @@ export function createWorkloadRunSystem(world: World, facility: EntityId, audio:
           world.removeComponent(placedOns, workloadId);
           world.destroyEntity(workloadId);
           audio.play('contractMissed');
+          // .plans/playtest-findings.md F7: same "no visual feedback beyond sound" gap on the
+          // miss side — a red banner naming the actual cost, not just a beep.
+          const label = WORKLOAD_ARCHETYPES[workload.archetypeId].label;
+          spawnToast(
+            world,
+            `Missed deadline: ${label} — -$${workload.penaltyOnMiss}, ${REPUTATION_ON_MISSED_DEADLINE}★`,
+            '#e53935',
+          );
         }
       }
 

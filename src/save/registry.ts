@@ -26,8 +26,10 @@ import {
   maintenanceTasks,
   serverCapacities,
   utilizations,
+  resourceWarnings,
   demandClocks,
   placedOns,
+  recentlyUnplaceds,
   workloads,
   offers,
   openRackPanels,
@@ -36,10 +38,13 @@ import {
   pendingDrops,
   dragStates,
   decommissionConfirms,
+  acceptConfirms,
   rejectedDrops,
   tutorialProgresses,
   playerTags,
   facilityTags,
+  floatingTexts,
+  toasts,
 } from '../ecs/components';
 
 // `T = unknown` here (rather than a precise per-entry generic) trades some compile-time
@@ -108,6 +113,11 @@ export const SAVE_COMPONENTS: SaveComponentEntry[] = [
         : v.job,
   })),
   entry('demandClock', demandClocks),
+  // Facility-singleton hysteresis latch (owned solely by resource.ts) for the near-capacity
+  // warning toast — same "integrated, not derived" reasoning as ThermalTrip/Condition above.
+  // Left transient, a loaded game would never warn again (resourceWarnings is only ever
+  // spawned once, in spawnFacility) until the next process restart, not just degrade quietly.
+  entry('resourceWarning', resourceWarnings),
   entry('placedOn', placedOns, (v, remap) => ({ serverId: remap(v.serverId) })),
   entry('workload', workloads),
   entry('offer', offers),
@@ -117,7 +127,7 @@ export const SAVE_COMPONENTS: SaveComponentEntry[] = [
 ];
 
 // Components deliberately NOT saved — either a derived cache fully recomputed every tick
-// (rackLoads/serverCapacities/utilizations), or session-local UI/gesture state that's
+// (rackLoads/serverCapacities/utilizations), or session-local UI/gesture/effect state that's
 // meaningless across a reload (everything else here). See .plans/save-load.md D4.
 export const TRANSIENT_COMPONENTS: ComponentStore<unknown>[] = [
   moveTargets,
@@ -132,5 +142,14 @@ export const TRANSIENT_COMPONENTS: ComponentStore<unknown>[] = [
   pendingDrops,
   dragStates,
   decommissionConfirms,
+  acceptConfirms,
   rejectedDrops,
+  // A short (seconds-scale) real-time grace window tied to wall-clock `expiresAtMs` — restoring
+  // it across a save that might sit for days makes no sense; the window either instantly expires
+  // or wrongly extends. Same reasoning as DecommissionConfirm/AcceptConfirm/RejectedDrop above.
+  recentlyUnplaceds,
+  // Presentation-only, wall-clock-timed visual effects (floating "+$N" text, toast banners) —
+  // spawned fresh by whatever triggers them; nothing to restore.
+  floatingTexts,
+  toasts,
 ];
