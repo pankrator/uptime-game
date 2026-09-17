@@ -1459,14 +1459,10 @@ export function createRenderSystem(
           // the first, so the `?? online-idle` fallback only ever applies momentarily.
           const capacityState = world.getComponent(serverCapacities, machineId);
           if (capacityState) {
-            const anyTraitExhausted =
-              capacityState.free.cpu <= 0 ||
-              capacityState.free.ramGb <= 0 ||
-              capacityState.free.storageGb <= 0;
-            const anyTraitUsed =
-              capacityState.free.cpu < capacityState.total.cpu ||
-              capacityState.free.ramGb < capacityState.total.ramGb ||
-              capacityState.free.storageGb < capacityState.total.storageGb;
+            const anyTraitExhausted = TRAIT_KEYS.some((key) => capacityState.free[key] <= 0);
+            const anyTraitUsed = TRAIT_KEYS.some(
+              (key) => capacityState.free[key] < capacityState.total[key],
+            );
             slots[installedIn.slotIndex] = anyTraitExhausted
               ? 'full'
               : anyTraitUsed
