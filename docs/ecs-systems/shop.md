@@ -16,6 +16,12 @@ simpler — no travel state, just in-range or not), and applying a purchase's ef
 - Tracks a module-level `dismissedWhileInRange` flag (set by `dismissShop()`, called from
   `input.ts` on Escape) so dismissing while still in range doesn't reopen the panel the
   very next frame; cleared once the player actually leaves range.
+- Calls [job-panels](./job-panels.md)'s `closeJobPanels` right before opening — only one
+  modal (rack, shop, offers, jobs) is ever open at a time, and proximity to the shop always
+  wins over an already-open offers/jobs panel (which has no proximity trigger of its own to
+  race against). The reverse also holds: pressing `O`/`J` while the shop is open closes it (via
+  this module's own `dismissShop()`, called from job-panels.ts's `closeOtherModals`, so
+  proximity doesn't just reopen it the next frame) and switches straight to the requested panel.
 
 ## `buy(world, facility, purchasableId)`
 

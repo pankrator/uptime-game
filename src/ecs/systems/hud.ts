@@ -8,10 +8,8 @@ import {
   demandClocks,
   workloads,
   offers,
-  machines,
-  installedIns,
-  powereds,
-  serverCapacities,
+  offersPanelScrolls,
+  jobsPanelScrolls,
   inventories,
   tutorialProgresses,
   cycleLabel,
@@ -26,25 +24,34 @@ import {
   type Offer,
 } from '../components';
 import { WORKLOAD_ARCHETYPES, TRAIT_LABELS, TRAIT_KEYS } from '../game-data';
-import { fits } from '../traits';
 import { type Renderer } from '../../rendering';
 import { type Camera } from '../../camera';
 import {
   getHudBarRect,
-  getWorkloadPanelRect,
-  getWorkloadRowRect,
-  getOfferCardRect,
-  getOfferButtonRect,
   getMuteButtonRect,
   getRecenterButtonRect,
   getTutorialBannerRect,
   getTutorialActionButtonRect,
   getTutorialSkipRect,
-  HUD_PANEL_MAX_ROWS,
-  HUD_PANEL_MARGIN,
+  getOffersModalRect,
+  getOffersModalContentRect,
+  getOffersModalFullContentHeight,
+  getOffersModalCloseButtonRect,
+  getOffersModalCardRect,
+  getOffersModalButtonRect,
+  OFFER_BUTTON_HEIGHT,
+  getJobsModalRect,
+  getJobsModalContentRect,
+  getJobsModalContentHeight,
+  getJobsModalCloseButtonRect,
+  JOBS_MODAL_ROW_HEIGHT,
+  JOBS_MODAL_HEADER_ROW_HEIGHT,
+  JOBS_MODAL_PADDING,
   getToastRect,
 } from '../../ui/layout';
+import { maxScrollOffset } from '../../ui/scroll';
 import { isTutorialActionStep, getTutorialStepDef } from './tutorial';
+import { isOffersModalOpen, isJobsModalOpen, jobPanelCounts, anyServerFits } from './job-panels';
 import { type Audio } from '../../audio';
 import { type System } from './system';
 
@@ -218,6 +225,27 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
     x += ctx.measureText(repText).width + 20;
   }
 
+  // Offers/Jobs hint badges — now that both live behind toggled panels instead of a
+  // permanently docked column (.plans/job-panels.md), this is the only always-visible sign
+  // they exist at all.
+  if (x < rightLimit) {
+    const offerCount = world.query(offers).length;
+    ctx.font = 'bold 13px sans-serif';
+    ctx.fillStyle = offerCount > 0 ? AMBER : DIM_COLOR;
+    const offersText = `📥 ${offerCount} offers [O]`;
+    ctx.fillText(offersText, x, midY);
+    x += ctx.measureText(offersText).width + 16;
+  }
+  if (x < rightLimit) {
+    const { pendingCount, activeCount } = jobPanelCounts(world);
+    const jobCount = pendingCount + activeCount;
+    ctx.font = '13px sans-serif';
+    ctx.fillStyle = jobCount > 0 ? TEXT_COLOR : DIM_COLOR;
+    const jobsText = `🗂 ${jobCount} jobs [J]`;
+    ctx.fillText(jobsText, x, midY);
+    x += ctx.measureText(jobsText).width + 20;
+  }
+
   // Per-trait capacity (D5: compute alone hid RAM/storage pressure that could bottleneck
   // placement even while CPU still had headroom).
   ctx.font = '13px sans-serif';
@@ -272,7 +300,10 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
   // Inventory summary — total owned-but-unplaced stock (D5), bought at the shop.
   const inventory = world.getComponent(inventories, facility);
   if (inventory && x < rightLimit) {
-    const totalStock = Object.values(inventory.counts).reduce((sum: number, count) => sum + (count ?? 0), 0);
+    const totalStock = Object.values(inventory.counts).reduce(
+      (sum: number, count) => sum + (count ?? 0),
+      0,
+    );
     ctx.fillStyle = totalStock > 0 ? TEXT_COLOR : DIM_COLOR;
     const inventoryText = `📦 ${totalStock} in stock`;
     ctx.fillText(inventoryText, x, midY);
@@ -283,11 +314,7 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
   const clock = world.getComponent(demandClocks, facility);
   if (clock && x < rightLimit) {
     ctx.fillStyle = DIM_COLOR;
-    ctx.fillText(
-      `served ${clock.contractsServed}  peak ${clock.peakComputeServed}`,
-      x,
-      midY,
-    );
+    ctx.fillText(`served ${clock.contractsServed}  peak ${clock.peakComputeServed}`, x, midY);
   }
 }
 
@@ -296,9 +323,125 @@ interface WorkloadRow {
   workload: Workload;
 }
 
-function drawWorkloadPanel(world: World, renderer: Renderer, facility: EntityId): void {
+// A running workload's deadline never stops ticking (workload-run.ts), independent of its
+// work-remaining countdown — a job can be provably doomed (deadline will hit zero before the
+// work finishes) while still showing a healthy green progress bar, if only work-remaining is on
+// screen. See .plans/playtest-findings.md B4.
+function drawActiveJobRow(
+  ctx: CanvasRenderingContext2D,
+  workload: Workload,
+  rect: { x: number; y: number; width: number },
+): void {
+  const archetype = WORKLOAD_ARCHETYPES[workload.archetypeId];
+  const doomed = workload.workRemainingSeconds > workload.deadlineRemainingSeconds;
+  const fraction = 1 - workload.workRemainingSeconds / workload.workSeconds;
+  const remaining = Math.max(0, Math.ceil(workload.workRemainingSeconds));
+  const deadlineRemaining = Math.max(0, Math.ceil(workload.deadlineRemainingSeconds));
+  const padX = 10;
+  const line1Y = rect.y + 12;
+  const line2Y = rect.y + 30;
+  const line3Y = rect.y + 47;
+
+  ctx.font = '12px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = doomed ? RED : TEXT_COLOR;
+  ctx.fillText(archetype.label + cycleLabel(workload), rect.x + padX, line1Y);
+
+  const barWidth = 70;
+  const barX = rect.x + rect.width - padX - barWidth - 34;
+  drawInlineBar(ctx, barX, line1Y - 4, barWidth, 8, fraction, doomed ? RED : GREEN);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = doomed ? RED : DIM_COLOR;
+  ctx.fillText(`${remaining}s`, rect.x + rect.width - padX, line1Y);
+
+  // Full trait breakdown, not just CPU — the jobs panel's whole point is "all available stats",
+  // where the old docked corner panel only had room for one trait.
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = doomed ? RED : GREEN;
+  const demandsText = TRAIT_KEYS.map((key) => `${TRAIT_LABELS[key]} ${workload.demands[key]}`).join(
+    ' · ',
+  );
+  ctx.fillText(`$${workload.payPerSecond.toFixed(2)}/s · ${demandsText}`, rect.x + padX, line2Y);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = doomed ? RED : AMBER;
+  ctx.fillText(`⏱ ${deadlineRemaining}s`, rect.x + rect.width - padX, line2Y);
+
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = RED;
+  ctx.fillText(`-$${workload.penaltyOnMiss.toFixed(0)} if missed`, rect.x + padX, line3Y);
+  if (workload.repeatTotal > 1) {
+    ctx.textAlign = 'right';
+    ctx.fillStyle = AMBER;
+    ctx.fillText(`recurring · ${workload.repeatTotal} cycles`, rect.x + rect.width - padX, line3Y);
+  }
+}
+
+function drawPendingJobRow(
+  ctx: CanvasRenderingContext2D,
+  workload: Workload,
+  rect: { x: number; y: number; width: number },
+  utilization: { traitsFree: Workload['demands'] },
+): void {
+  const archetype = WORKLOAD_ARCHETYPES[workload.archetypeId];
+  const escalated = workload.deadlineRemainingSeconds < 5;
+  const padX = 10;
+  const line1Y = rect.y + 12;
+  const line2Y = rect.y + 30;
+  const line3Y = rect.y + 47;
+
+  ctx.font = '12px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = escalated ? RED : AMBER;
+  ctx.fillText(`⚠ ${archetype.label}${cycleLabel(workload)}`, rect.x + padX, line1Y);
+  ctx.textAlign = 'right';
+  ctx.fillText(
+    `${Math.max(0, Math.ceil(workload.deadlineRemainingSeconds))}s`,
+    rect.x + rect.width - padX,
+    line1Y,
+  );
+
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = DIM_COLOR;
+  const shortfallText = TRAIT_KEYS.map((key) => {
+    const need = workload.demands[key];
+    const free = utilization.traitsFree[key];
+    return `${TRAIT_LABELS[key]} ${need}${free < need ? '!' : ''}`;
+  }).join(' · ');
+  ctx.fillText(`$${workload.payPerSecond.toFixed(2)}/s · ${shortfallText}`, rect.x + padX, line2Y);
+
+  // .plans/contract-variety.md D1: the miss penalty rides along with the shortfall — the
+  // number the "can I actually place this in time" risk assessment turns on.
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = RED;
+  ctx.fillText(`-$${workload.penaltyOnMiss.toFixed(0)} if missed`, rect.x + padX, line3Y);
+  if (workload.repeatTotal > 1) {
+    ctx.textAlign = 'right';
+    ctx.fillStyle = AMBER;
+    ctx.fillText(`recurring · ${workload.repeatTotal} cycles`, rect.x + rect.width - padX, line3Y);
+  }
+}
+
+// Jobs modal — a scrollable, never-truncated list of every accepted job (unplaced + running)
+// with full stats, opened by the 'j' key (job-panels.ts). Replaces the old always-docked corner
+// panel, which capped/truncated the ACTIVE section against a fixed row budget — this one just
+// scrolls instead. See .plans/job-panels.md.
+function drawJobsModal(
+  world: World,
+  renderer: Renderer,
+  controlled: EntityId,
+  facility: EntityId,
+): void {
+  if (!isJobsModalOpen(world, controlled)) return;
+
   const ctx = renderer.context;
   const canvasWidth = renderer.width;
+  const canvasHeight = renderer.height;
 
   const utilization = world.getComponent(utilizations, facility);
   if (!utilization) return;
@@ -307,186 +450,100 @@ function drawWorkloadPanel(world: World, renderer: Renderer, facility: EntityId)
   const pending: WorkloadRow[] = [];
   for (const id of world.query(workloads)) {
     const workload = world.getComponent(workloads, id)!;
-    if (workload.state === 'running') {
-      active.push({ id, workload });
-    } else {
-      pending.push({ id, workload });
-    }
+    if (workload.state === 'running') active.push({ id, workload });
+    else pending.push({ id, workload });
   }
   active.sort((a, b) => a.id - b.id);
   pending.sort((a, b) => a.id - b.id);
 
-  // Section headers count as rows for layout purposes. Unplaced jobs (accepted but not yet
-  // placed on a server — the tray, until the rack panel exists in step 7) are always shown in
-  // full since they're deadline-timed and self-expire, so the list can't grow unbounded — only
-  // ACTIVE rows are capped/truncated to keep the panel from overflowing the canvas.
-  const pendingLines: { kind: 'header' | 'pending'; row?: WorkloadRow; label?: string }[] = [];
-  if (pending.length > 0) {
-    pendingLines.push({ kind: 'header', label: 'UNPLACED' });
-    for (const row of pending) {
-      // Pending rows take two lines (label+countdown, then shortfall).
-      pendingLines.push({ kind: 'pending', row });
-    }
-  }
-  const pendingLineCount = pendingLines.reduce((sum, line) => sum + (line.kind === 'pending' ? 2 : 1), 0);
+  const contentHeight = getJobsModalContentHeight(pending.length, active.length);
 
-  const activeLines: { kind: 'header' | 'active'; row?: WorkloadRow; label?: string }[] = [];
-  if (active.length > 0) {
-    activeLines.push({ kind: 'header', label: 'ACTIVE' });
-    for (const row of active) activeLines.push({ kind: 'active', row });
-  }
+  // Dim the floor behind the panel so it reads as a modal overlay — same treatment as the
+  // rack/shop panels.
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+  ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-  if (pendingLines.length === 0 && activeLines.length === 0) return;
-
-  // Cap only the ACTIVE section against the remaining budget after reserving space for the
-  // full PENDING section. Active rows take two lines each (label+countdown, then earn/compute).
-  const activeBudget = Math.max(0, HUD_PANEL_MAX_ROWS - pendingLineCount);
-  const visibleActive: typeof activeLines = [];
-  let lineCount = 0;
-  let hiddenCount = 0;
-  for (const line of activeLines) {
-    const lineCost = line.kind === 'active' ? 2 : 1;
-    if (lineCount + lineCost > activeBudget) {
-      if (line.kind !== 'header') hiddenCount += 1;
-      continue;
-    }
-    visibleActive.push(line);
-    lineCount += lineCost;
-  }
-
-  const visible: { kind: 'header' | 'active' | 'pending'; row?: WorkloadRow; label?: string }[] = [
-    ...visibleActive,
-    ...pendingLines,
-  ];
-  lineCount += pendingLineCount;
-
-  const totalRowSlots = lineCount + (hiddenCount > 0 ? 1 : 0);
-  const panel = getWorkloadPanelRect(canvasWidth, totalRowSlots);
-
-  ctx.fillStyle = 'rgba(20, 22, 25, 0.92)';
-  ctx.fillRect(panel.x, panel.y, panel.width, panel.height);
-  ctx.strokeStyle = '#33383f';
+  const modal = getJobsModalRect(canvasWidth, canvasHeight, contentHeight);
+  ctx.fillStyle = 'rgba(24, 27, 31, 0.97)';
+  ctx.fillRect(modal.x, modal.y, modal.width, modal.height);
+  ctx.strokeStyle = '#3a3f47';
   ctx.lineWidth = 1;
-  ctx.strokeRect(panel.x, panel.y, panel.width, panel.height);
+  ctx.strokeRect(modal.x, modal.y, modal.width, modal.height);
 
-  let rowIndex = 0;
-  for (const line of visible) {
-    const rect = getWorkloadRowRect(rowIndex, canvasWidth, totalRowSlots);
-    const padX = 10;
+  ctx.font = 'bold 13px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = TEXT_COLOR;
+  ctx.fillText('Jobs — accepted, in progress', modal.x + JOBS_MODAL_PADDING, modal.y + 25);
 
-    if (line.kind === 'header') {
-      ctx.font = 'bold 11px sans-serif';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = DIM_COLOR;
-      ctx.fillText(line.label!, rect.x + padX, rect.y + rect.height / 2);
-      rowIndex += 1;
-      continue;
-    }
+  const closeRect = getJobsModalCloseButtonRect(canvasWidth, canvasHeight, contentHeight);
+  ctx.strokeStyle = '#666';
+  ctx.strokeRect(closeRect.x, closeRect.y, closeRect.width, closeRect.height);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = DIM_COLOR;
+  ctx.fillText('×', closeRect.x + closeRect.width / 2, closeRect.y + closeRect.height / 2);
 
-    const { workload } = line.row!;
-    const archetype = WORKLOAD_ARCHETYPES[workload.archetypeId];
+  // Content clipped and translated by -scroll, same pattern as the rack panel's own scrollable
+  // region (render.ts's drawRackPanel).
+  const contentRect = getJobsModalContentRect(canvasWidth, canvasHeight, contentHeight);
+  const maxScroll = maxScrollOffset(contentHeight, contentRect.height);
+  const scrollOffsetPx = Math.min(
+    world.getComponent(jobsPanelScrolls, controlled)?.offsetPx ?? 0,
+    maxScroll,
+  );
 
-    if (line.kind === 'active') {
-      // A running workload's deadline never stops ticking (workload-run.ts), independent of
-      // its work-remaining countdown — a job can be provably doomed (deadline will hit zero
-      // before the work finishes) while still showing a healthy green progress bar, if only
-      // work-remaining is on screen. See .plans/playtest-findings.md B4.
-      const doomed = workload.workRemainingSeconds > workload.deadlineRemainingSeconds;
-      const fraction = 1 - workload.workRemainingSeconds / workload.workSeconds;
-      const remaining = Math.max(0, Math.ceil(workload.workRemainingSeconds));
-      const deadlineRemaining = Math.max(0, Math.ceil(workload.deadlineRemainingSeconds));
-      const labelY = rect.y + rect.height * 0.32;
-      const statsY = rect.y + rect.height * 1.0;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(contentRect.x, contentRect.y, contentRect.width, contentRect.height);
+  ctx.clip();
+  ctx.translate(0, -scrollOffsetPx);
 
-      ctx.font = '12px sans-serif';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = doomed ? RED : TEXT_COLOR;
-      ctx.fillText(archetype.label + cycleLabel(workload), rect.x + padX, labelY);
+  let y = contentRect.y;
 
-      const barWidth = 70;
-      const barX = rect.x + rect.width - padX - barWidth - 34;
-      drawInlineBar(ctx, barX, labelY - 4, barWidth, 8, fraction, doomed ? RED : GREEN);
-
-      ctx.textAlign = 'right';
-      ctx.fillStyle = doomed ? RED : DIM_COLOR;
-      ctx.fillText(`${remaining}s`, rect.x + rect.width - padX, labelY);
-
-      ctx.font = '11px sans-serif';
-      ctx.textAlign = 'left';
-      ctx.fillStyle = doomed ? RED : GREEN;
-      ctx.fillText(
-        `$${workload.payPerSecond.toFixed(2)}/s · ▦ ${workload.demands.cpu}`,
-        rect.x + padX,
-        statsY,
-      );
-
-      // Deadline countdown, right-aligned on the same line as pay/compute — the number that
-      // actually decides whether this job survives, previously shown only while unplaced.
-      ctx.textAlign = 'right';
-      ctx.fillStyle = doomed ? RED : AMBER;
-      ctx.fillText(`⏱ ${deadlineRemaining}s`, rect.x + rect.width - padX, statsY);
-
-      rowIndex += 2;
-      continue;
-    }
-
-    // Pending: two lines within one row-rect-and-a-half — draw label/countdown on the first
-    // line, shortfall on the second.
-    const labelY = rect.y + rect.height * 0.32;
-    const shortfallY = rect.y + rect.height * 1.0;
-    const escalated = workload.deadlineRemainingSeconds < 5;
-
+  if (pending.length === 0 && active.length === 0) {
     ctx.font = '12px sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = escalated ? RED : AMBER;
-    ctx.fillText(`⚠ ${archetype.label}${cycleLabel(workload)}`, rect.x + padX, labelY);
-
-    ctx.textAlign = 'right';
-    ctx.fillText(
-      `${Math.max(0, Math.ceil(workload.deadlineRemainingSeconds))}s`,
-      rect.x + rect.width - padX,
-      labelY,
-    );
-
-    ctx.font = '11px sans-serif';
-    ctx.textAlign = 'left';
     ctx.fillStyle = DIM_COLOR;
-    const shortfallText = TRAIT_KEYS.map((key) => {
-      const need = workload.demands[key];
-      const free = utilization.traitsFree[key];
-      return `${TRAIT_LABELS[key]} ${need}${free < need ? '!' : ''}`;
-    }).join(' · ');
-    // .plans/contract-variety.md D1: the workload panel is where an accepted-but-unplaced
-    // contract's risk is most visible, so the miss penalty rides along with the shortfall.
-    ctx.fillText(`${shortfallText} · -$${workload.penaltyOnMiss.toFixed(0)}`, rect.x + padX, shortfallY);
-
-    rowIndex += 2;
+    ctx.fillText(
+      'No accepted jobs yet — open Offers [O] to take one.',
+      contentRect.x + 10,
+      y + JOBS_MODAL_ROW_HEIGHT / 2,
+    );
   }
 
-  if (hiddenCount > 0) {
-    const rect = getWorkloadRowRect(rowIndex, canvasWidth, totalRowSlots);
-    ctx.font = '11px sans-serif';
+  if (pending.length > 0) {
+    ctx.font = 'bold 11px sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = DIM_COLOR;
-    ctx.fillText(`+${hiddenCount} more`, rect.x + HUD_PANEL_MARGIN - 2, rect.y + rect.height / 2);
+    ctx.fillText('UNPLACED', contentRect.x + 10, y + JOBS_MODAL_HEADER_ROW_HEIGHT / 2);
+    y += JOBS_MODAL_HEADER_ROW_HEIGHT;
+    for (const { workload } of pending) {
+      drawPendingJobRow(
+        ctx,
+        workload,
+        { x: contentRect.x, y, width: contentRect.width },
+        utilization,
+      );
+      y += JOBS_MODAL_ROW_HEIGHT;
+    }
   }
-}
 
-// Whether ANY online, installed server currently has enough free capacity for these demands —
-// used to dim an offer the player can't currently serve. Informative, not blocking: they may
-// be about to install a bigger box, so the offer stays acceptable either way. Exported so
-// input.ts's accept-confirm gate (.plans/playtest-findings.md F3) uses this exact same check
-// rather than a second, possibly-diverging one.
-export function anyServerFits(world: World, demands: Offer['demands']): boolean {
-  return world.query(machines, installedIns, powereds, serverCapacities).some((id) => {
-    if (!world.getComponent(powereds, id)!.online) return false;
-    const capacity = world.getComponent(serverCapacities, id)!;
-    return fits(demands, capacity.free);
-  });
+  if (active.length > 0) {
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = DIM_COLOR;
+    ctx.fillText('ACTIVE', contentRect.x + 10, y + JOBS_MODAL_HEADER_ROW_HEIGHT / 2);
+    y += JOBS_MODAL_HEADER_ROW_HEIGHT;
+    for (const { workload } of active) {
+      drawActiveJobRow(ctx, workload, { x: contentRect.x, y, width: contentRect.width });
+      y += JOBS_MODAL_ROW_HEIGHT;
+    }
+  }
+
+  ctx.restore();
 }
 
 function drawOfferCard(
@@ -497,7 +554,7 @@ function drawOfferCard(
   controlled: EntityId,
 ): void {
   const ctx = renderer.context;
-  const card = getOfferCardRect(offer.slot);
+  const card = getOffersModalCardRect(offer.slot, renderer.width, renderer.height);
   const archetype = WORKLOAD_ARCHETYPES[offer.archetypeId];
   const servable = anyServerFits(world, offer.demands);
 
@@ -522,13 +579,19 @@ function drawOfferCard(
   ctx.textAlign = 'right';
   ctx.fillStyle = offer.secondsRemaining < 5 ? RED : AMBER;
   ctx.font = '11px sans-serif';
-  ctx.fillText(`${Math.max(0, Math.ceil(offer.secondsRemaining))}s`, card.x + card.width - padX, textY);
+  ctx.fillText(
+    `${Math.max(0, Math.ceil(offer.secondsRemaining))}s`,
+    card.x + card.width - padX,
+    textY,
+  );
 
   textY += 14;
   ctx.font = '10px sans-serif';
   ctx.textAlign = 'left';
   ctx.fillStyle = DIM_COLOR;
-  const demandsText = TRAIT_KEYS.map((key) => `${TRAIT_LABELS[key]} ${offer.demands[key]}`).join(' · ');
+  const demandsText = TRAIT_KEYS.map((key) => `${TRAIT_LABELS[key]} ${offer.demands[key]}`).join(
+    ' · ',
+  );
   ctx.fillText(demandsText, card.x + padX, textY);
 
   textY += 14;
@@ -576,7 +639,7 @@ function drawOfferCard(
   const confirmingAccept =
     !servable && acceptConfirm?.offerId === offerId && performance.now() < acceptConfirm.expiresAtMs;
 
-  const acceptRect = getOfferButtonRect(offer.slot, 'accept');
+  const acceptRect = getOffersModalButtonRect(offer.slot, 'accept', renderer.width, renderer.height);
   ctx.fillStyle = confirmingAccept ? '#6f3a2f' : '#2f6f4f';
   ctx.fillRect(acceptRect.x, acceptRect.y, acceptRect.width, acceptRect.height);
   ctx.strokeStyle = confirmingAccept ? AMBER : GREEN;
@@ -590,25 +653,100 @@ function drawOfferCard(
     acceptRect.y + acceptRect.height / 2,
   );
 
-  const declineRect = getOfferButtonRect(offer.slot, 'decline');
+  const declineRect = getOffersModalButtonRect(
+    offer.slot,
+    'decline',
+    renderer.width,
+    renderer.height,
+  );
   ctx.fillStyle = '#3a3f47';
   ctx.fillRect(declineRect.x, declineRect.y, declineRect.width, declineRect.height);
   ctx.strokeStyle = '#666';
   ctx.strokeRect(declineRect.x, declineRect.y, declineRect.width, declineRect.height);
   ctx.fillStyle = TEXT_COLOR;
-  ctx.fillText('Decline', declineRect.x + declineRect.width / 2, declineRect.y + declineRect.height / 2);
+  ctx.fillText(
+    'Decline',
+    declineRect.x + declineRect.width / 2,
+    declineRect.y + declineRect.height / 2,
+  );
 
   ctx.globalAlpha = 1;
   ctx.textAlign = 'left';
 }
 
-function drawOffersPanel(world: World, renderer: Renderer, controlled: EntityId): void {
-  // Each offer carries its own stable slot (see Offer.slot) — no positional indexing here, so
-  // an earlier offer expiring doesn't shift a later one's card into a different slot mid-read.
-  for (const offerId of world.query(offers)) {
-    const offer = world.getComponent(offers, offerId)!;
-    drawOfferCard(world, renderer, offerId, offer, controlled);
+// Offers modal — a scrollable list of offer cards, opened by the 'o' key (job-panels.ts).
+// Replaces the old always-docked column: each card still renders at its own stable slot (see
+// the module comment above getOffersModalCardRect in ui/layout.ts and .plans/playtest-findings.md
+// F6) rather than a position in a sorted-by-id array, so a button's position can never silently
+// shift under the pointer between the frame the panel was drawn and the frame a click on it is
+// processed. See .plans/job-panels.md.
+function drawOffersModal(world: World, renderer: Renderer, controlled: EntityId): void {
+  if (!isOffersModalOpen(world, controlled)) return;
+
+  const ctx = renderer.context;
+  const canvasWidth = renderer.width;
+  const canvasHeight = renderer.height;
+
+  // Dim the floor behind the panel so it reads as a modal overlay — same treatment as the
+  // rack/shop panels.
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+  ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+  const modal = getOffersModalRect(canvasWidth, canvasHeight);
+  ctx.fillStyle = 'rgba(24, 27, 31, 0.97)';
+  ctx.fillRect(modal.x, modal.y, modal.width, modal.height);
+  ctx.strokeStyle = '#3a3f47';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(modal.x, modal.y, modal.width, modal.height);
+
+  ctx.font = 'bold 13px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = TEXT_COLOR;
+  ctx.fillText('Offers — jobs available to accept', modal.x + 14, modal.y + 25);
+
+  const closeRect = getOffersModalCloseButtonRect(canvasWidth, canvasHeight);
+  ctx.strokeStyle = '#666';
+  ctx.strokeRect(closeRect.x, closeRect.y, closeRect.width, closeRect.height);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = DIM_COLOR;
+  ctx.fillText('×', closeRect.x + closeRect.width / 2, closeRect.y + closeRect.height / 2);
+
+  const contentRect = getOffersModalContentRect(canvasWidth, canvasHeight);
+  const contentHeight = getOffersModalFullContentHeight();
+  const maxScroll = maxScrollOffset(contentHeight, contentRect.height);
+  const scrollOffsetPx = Math.min(
+    world.getComponent(offersPanelScrolls, controlled)?.offsetPx ?? 0,
+    maxScroll,
+  );
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(contentRect.x, contentRect.y, contentRect.width, contentRect.height);
+  ctx.clip();
+  ctx.translate(0, -scrollOffsetPx);
+
+  const offerIds = world.query(offers);
+  if (offerIds.length === 0) {
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = DIM_COLOR;
+    ctx.fillText(
+      'No offers right now — check back soon.',
+      contentRect.x,
+      contentRect.y + OFFER_BUTTON_HEIGHT,
+    );
+  } else {
+    // Each offer carries its own stable slot (see Offer.slot) — no positional indexing here, so
+    // an earlier offer expiring doesn't shift a later one's card into a different slot mid-read.
+    for (const offerId of offerIds) {
+      const offer = world.getComponent(offers, offerId)!;
+      drawOfferCard(world, renderer, offerId, offer, controlled);
+    }
   }
+
+  ctx.restore();
 }
 
 // Toast stack (F4/F7) — stacked in spawn order, newest at the bottom (offers/hud precedent is
@@ -712,18 +850,18 @@ function drawTutorialBanner(world: World, renderer: Renderer, facility: EntityId
 export function createHudSystem(
   world: World,
   renderer: Renderer,
+  controlled: EntityId,
   facility: EntityId,
   audio: Audio,
   camera: Camera,
-  controlled: EntityId,
 ): System {
   return {
     update() {
       drawTopBar(world, renderer, facility);
       drawMuteButton(renderer, audio);
       drawRecenterButton(renderer, camera);
-      drawOffersPanel(world, renderer, controlled);
-      drawWorkloadPanel(world, renderer, facility);
+      drawOffersModal(world, renderer, controlled);
+      drawJobsModal(world, renderer, controlled, facility);
       drawToasts(world, renderer);
       drawTutorialBanner(world, renderer, facility);
     },

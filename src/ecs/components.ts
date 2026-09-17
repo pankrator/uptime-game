@@ -315,6 +315,30 @@ export interface PendingDrop {
   serverId: EntityId;
 }
 
+// Marker on the player — the offers panel (jobs available to accept) is open. Toggled by the
+// `O` key (job-panels.ts) rather than opened automatically — mirrors ShopOpen's shape (a plain
+// toggle, no travel/arrival state) but is player-initiated instead of proximity-driven. Only one
+// of this, JobsPanelOpen, OpenRackPanel, or ShopOpen is ever open at a time — see job-panels.ts.
+export interface OffersPanelOpen {
+  open: true;
+}
+
+// How far the offers panel's list has scrolled, in pixels. Attached to the player alongside
+// OffersPanelOpen; reset to 0 whenever the panel opens.
+export interface OffersPanelScroll {
+  offsetPx: number;
+}
+
+// Marker on the player — the jobs panel (every accepted job — unplaced + running — with full
+// stats) is open. Same toggle shape as OffersPanelOpen, bound to the `J` key.
+export interface JobsPanelOpen {
+  open: true;
+}
+
+export interface JobsPanelScroll {
+  offsetPx: number;
+}
+
 // A decommission button was clicked once — the second click on the SAME button, within the
 // window, actually destroys the machine (D6: "a second click to confirm on the same button is
 // enough; no modal"). Attached to the player; cleared on confirm, expiry, or the panel closing.
@@ -436,6 +460,13 @@ export interface TutorialProgress {
   skipped: boolean;
 }
 
+// Marker on the player entity — lets save/load (src/save/) find the player singleton after a
+// load without hardcoding an entity id in the save format. See .plans/save-load.md D5.
+export type PlayerTag = Record<string, never>;
+
+// Marker on the facility entity — same reasoning as PlayerTag.
+export type FacilityTag = Record<string, never>;
+
 // Presentation-only "+$N" (or similar) text that rises and fades at a fixed world position —
 // e.g. over the rack a contract just completed on. Its own entity (no Position/Renderable: it
 // needs no pathfinding/collision/z-ordering, just a world coordinate to draw at), spawned and
@@ -497,11 +528,17 @@ export const offers = createComponentStore<Offer>();
 export const openRackPanels = createComponentStore<OpenRackPanel>();
 export const rackScrolls = createComponentStore<RackScroll>();
 export const shopOpens = createComponentStore<ShopOpen>();
+export const offersPanelOpens = createComponentStore<OffersPanelOpen>();
+export const offersPanelScrolls = createComponentStore<OffersPanelScroll>();
+export const jobsPanelOpens = createComponentStore<JobsPanelOpen>();
+export const jobsPanelScrolls = createComponentStore<JobsPanelScroll>();
 export const pendingDrops = createComponentStore<PendingDrop>();
 export const dragStates = createComponentStore<DragState>();
 export const decommissionConfirms = createComponentStore<DecommissionConfirm>();
 export const acceptConfirms = createComponentStore<AcceptConfirm>();
 export const rejectedDrops = createComponentStore<RejectedDrop>();
 export const tutorialProgresses = createComponentStore<TutorialProgress>();
+export const playerTags = createComponentStore<PlayerTag>();
+export const facilityTags = createComponentStore<FacilityTag>();
 export const floatingTexts = createComponentStore<FloatingText>();
 export const toasts = createComponentStore<Toast>();

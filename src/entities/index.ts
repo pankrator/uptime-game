@@ -21,6 +21,9 @@ import {
   temperatures,
   coolingUnits,
   conditions,
+  playerTags,
+  facilityTags,
+  type Utilization,
 } from '../ecs/components';
 import {
   RACK_SLOT_CAPACITY,
@@ -50,6 +53,7 @@ export function spawnPlayer(world: World, start: { x: number; y: number }): Enti
   world.addComponent(positions, id, { x: start.x, y: start.y });
   world.addComponent(speeds, id, { pixelsPerSecond: PLAYER_SPEED });
   world.addComponent(renderables, id, { kind: 'player-circle' });
+  world.addComponent(playerTags, id, {});
   return id;
 }
 
@@ -98,15 +102,17 @@ const STARTING_INVENTORY: Partial<Record<PurchasableId, number>> = {
   'machine-budget': 2,
 };
 
-export function spawnFacility(world: World): EntityId {
-  const id = world.createEntity();
-  world.addComponent(roomTiers, id, { index: 0 });
-  world.addComponent(inventories, id, { counts: { ...STARTING_INVENTORY } });
-  world.addComponent(wallets, id, { money: STARTING_MONEY });
-  world.addComponent(reputations, id, { value: STARTING_REPUTATION });
-  world.addComponent(powerCapacities, id, { kw: STARTING_POWER_KW });
-  world.addComponent(coolingCapacities, id, { kw: STARTING_COOLING_KW });
-  world.addComponent(utilizations, id, {
+// Utilization's zero-valued starting shape. Shared by spawnFacility (a brand-new facility) and
+// save/manager.ts's post-load repair (a facility restored from a save, which never runs
+// through spawnFacility at all). Utilization is deliberately excluded from the save format —
+// it's a derived cache, fully recomputed every tick by resource.ts/capacity.ts/workload-run.ts
+// (see .plans/save-load.md D4) — but every one of those systems, plus workload-spawn.ts and
+// hud.ts/render.ts, treats the component's ABSENCE as "not initialized yet, nothing to do"
+// rather than "create it fresh." A brand-new facility never hits that gap because spawnFacility
+// always seeds it below; a loaded facility would, forever (no HUD top bar, no brownout/online
+// resolution, no new offers), without this same seed applied once after load.
+export function defaultUtilization(): Utilization {
+  return {
     powerDrawKw: 0,
     coolingDrawKw: 0,
     computeTotal: 0,
@@ -115,7 +121,19 @@ export function spawnFacility(world: World): EntityId {
     traitsFree: zeroTraits(),
     powerCostPerSecond: 0,
     revenuePerSecond: 0,
-  });
+  };
+}
+
+export function spawnFacility(world: World): EntityId {
+  const id = world.createEntity();
+  world.addComponent(facilityTags, id, {});
+  world.addComponent(roomTiers, id, { index: 0 });
+  world.addComponent(inventories, id, { counts: { ...STARTING_INVENTORY } });
+  world.addComponent(wallets, id, { money: STARTING_MONEY });
+  world.addComponent(reputations, id, { value: STARTING_REPUTATION });
+  world.addComponent(powerCapacities, id, { kw: STARTING_POWER_KW });
+  world.addComponent(coolingCapacities, id, { kw: STARTING_COOLING_KW });
+  world.addComponent(utilizations, id, defaultUtilization());
   world.addComponent(resourceWarnings, id, { powerNearLimit: false, coolingNearLimit: false });
   world.addComponent(demandClocks, id, {
     elapsedSeconds: 0,
@@ -143,7 +161,11 @@ function lowestFreeOfferSlot(world: World): number {
 // Spawns an Offer awaiting accept/decline — NOT a live Workload. Accepting (dispatch.ts's
 // acceptOffer) is what turns an offer into a Workload entity; see .plans/workload-dispatch.md
 // step 5.
-export function spawnOffer(world: World, archetypeId: WorkloadArchetypeId, valueScale: number): EntityId {
+export function spawnOffer(
+  world: World,
+  archetypeId: WorkloadArchetypeId,
+  valueScale: number,
+): EntityId {
   const archetype = WORKLOAD_ARCHETYPES[archetypeId];
   // Two different scales past this point — see .plans/compute-scale-fix.md D2. PAY (and the
   // miss penalty, which tracks it) keeps climbing with valueScale, uncapped by what any server
@@ -224,7 +246,9 @@ export function applyStressPreset(world: World, facility: EntityId): void {
     const rackId = spawnRack(world, gridX, gridY);
     for (let slotIndex = 0; slotIndex < STRESS_MACHINES_PER_RACK; slotIndex++) {
       const tierId =
-        STRESS_MACHINE_TIERS[(rackIndex * STRESS_MACHINES_PER_RACK + slotIndex) % STRESS_MACHINE_TIERS.length];
+        STRESS_MACHINE_TIERS[
+          (rackIndex * STRESS_MACHINES_PER_RACK + slotIndex) % STRESS_MACHINE_TIERS.length
+        ];
       const machineId = spawnMachine(world, rackId, tierId, slotIndex);
       if (!firstMachineByTier.has(tierId)) firstMachineByTier.set(tierId, machineId);
     }
