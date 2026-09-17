@@ -38,6 +38,7 @@ import {
   getServerRowRect,
   getTrayCardRect,
   getTrayDropRect,
+  getTrayCardDropButtonRect,
   getPlacedChipRect,
   getRackPanelContentRect,
   getRackPanelContentHeight,
@@ -229,6 +230,16 @@ export function tryStartDrag(
       serverIds.length,
       trayIds.length,
     );
+    // The abandon-contract button (F3, input.ts) overlays this card's corner — a press there
+    // must fall through as a plain click, not start a drag, or its click handler never sees it.
+    const dropButton = getTrayCardDropButtonRect(
+      trayIndex,
+      canvasWidth,
+      canvasHeight,
+      serverIds.length,
+      trayIds.length,
+    );
+    if (pointerInRect(contentPoint, dropButton)) continue;
     if (pointerInRect(contentPoint, card)) {
       world.addComponent(dragStates, controlled, {
         workloadId: trayIds[trayIndex],

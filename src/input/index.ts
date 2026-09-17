@@ -149,6 +149,13 @@ export function createInput(canvas: HTMLCanvasElement, target: Window = window):
     if (activePointers.has(event.pointerId)) {
       activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     }
+    // Mouse-hover tracking (.plans/playtest-findings.md F8: hover reveals a rack's power/heat
+    // label). No press is active yet, so there's no primary pointer/pressOrigin to protect —
+    // touch has no equivalent idle-hover state (a touch's first pointermove always follows a
+    // pointerdown, which already claims primaryPointerId), so this never fires for touch/pen.
+    if (primaryPointerId === null && event.pointerType === 'mouse') {
+      pointerPosition = canvasPoint(event);
+    }
     if (event.pointerId === primaryPointerId) {
       pointerPosition = canvasPoint(event);
 

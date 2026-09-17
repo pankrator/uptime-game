@@ -245,6 +245,17 @@ export interface Utilization {
   revenuePerSecond: number;
 }
 
+// Facility singleton — one-shot "we're near the wall" toast tracking, owned solely by
+// resource.ts (see RESOURCE_WARNING_FRACTION/RESOURCE_WARNING_CLEAR_FRACTION in game-data.ts
+// and .plans/playtest-findings.md F4). true once the warning toast has fired for that resource
+// at the current approach; resource.ts resets it back to false once draw falls back under the
+// (lower) clear threshold, so the SAME crossing never re-fires every tick but a later, separate
+// approach still gets its own warning.
+export interface ResourceWarning {
+  powerNearLimit: boolean;
+  coolingNearLimit: boolean;
+}
+
 export interface DemandClock {
   elapsedSeconds: number;
   nextArrivalInSeconds: number;
@@ -257,6 +268,19 @@ export interface DemandClock {
 // machine). Replaces Assignment as of step 3.
 export interface PlacedOn {
   serverId: EntityId;
+}
+
+// Attached to a workload when resource.ts's unplaceAllOn forcibly unplaces it (a brownout or
+// thermal trip taking its server offline — NOT a player-initiated drag back to the tray, which
+// never tags this). If `serverId` comes back online again before `expiresAtMs`, resource.ts
+// re-places the workload there automatically instead of leaving it for the player to notice and
+// re-drag. One-shot: consumed (removed) the first time that server is checked, whether or not
+// the restore actually happens (already re-placed elsewhere, no longer fits, or the window
+// lapsed). See .plans/playtest-findings.md F4 and BROWNOUT_RESTORE_GRACE_SECONDS in
+// game-data.ts.
+export interface RecentlyUnplaced {
+  serverId: EntityId;
+  expiresAtMs: number;
 }
 
 // Which rack's panel is open. Attached to the player. A panel can be opened purely to view
@@ -321,6 +345,17 @@ export interface JobsPanelScroll {
 // See .plans/hardware-failure.md Step 6.
 export interface DecommissionConfirm {
   serverId: EntityId;
+  expiresAtMs: number;
+}
+
+// An unservable offer's Accept button was clicked once — the second click on the SAME button,
+// within the window, actually accepts it. Same "second click to confirm, no modal" shape as
+// DecommissionConfirm above; a SERVABLE offer never sets this at all, so the common case (most
+// offers, most of the time) still accepts on the first click exactly as before. Attached to the
+// player; cleared on confirm, expiry, or accepting/declining any other offer. See
+// .plans/playtest-findings.md F3.
+export interface AcceptConfirm {
+  offerId: EntityId;
   expiresAtMs: number;
 }
 
@@ -425,6 +460,37 @@ export interface TutorialProgress {
   skipped: boolean;
 }
 
+// Marker on the player entity — lets save/load (src/save/) find the player singleton after a
+// load without hardcoding an entity id in the save format. See .plans/save-load.md D5.
+export type PlayerTag = Record<string, never>;
+
+// Marker on the facility entity — same reasoning as PlayerTag.
+export type FacilityTag = Record<string, never>;
+
+// Presentation-only "+$N" (or similar) text that rises and fades at a fixed world position —
+// e.g. over the rack a contract just completed on. Its own entity (no Position/Renderable: it
+// needs no pathfinding/collision/z-ordering, just a world coordinate to draw at), spawned and
+// expired by effects.ts, drawn by render.ts inside the camera transform so it tracks the floor
+// like any other world object. See .plans/playtest-findings.md F7.
+export interface FloatingText {
+  text: string;
+  color: string;
+  worldX: number;
+  worldY: number;
+  spawnedAtMs: number;
+  expiresAtMs: number;
+}
+
+// Presentation-only screen-space banner — e.g. a contract-missed notice or a resource-near-limit
+// warning. Unlike FloatingText this has no world position; drawn by hud.ts, stacked by spawn
+// order. Spawned and expired by effects.ts. See .plans/playtest-findings.md F4/F7.
+export interface Toast {
+  text: string;
+  color: string;
+  spawnedAtMs: number;
+  expiresAtMs: number;
+}
+
 export const positions = createComponentStore<Position>();
 export const moveTargets = createComponentStore<MoveTarget>();
 export const speeds = createComponentStore<Speed>();
@@ -453,8 +519,10 @@ export const maintenanceTasks = createComponentStore<MaintenanceTask>();
 export const serverCapacities = createComponentStore<ServerCapacity>();
 
 export const utilizations = createComponentStore<Utilization>();
+export const resourceWarnings = createComponentStore<ResourceWarning>();
 export const demandClocks = createComponentStore<DemandClock>();
 export const placedOns = createComponentStore<PlacedOn>();
+export const recentlyUnplaceds = createComponentStore<RecentlyUnplaced>();
 export const workloads = createComponentStore<Workload>();
 export const offers = createComponentStore<Offer>();
 export const openRackPanels = createComponentStore<OpenRackPanel>();
@@ -467,5 +535,10 @@ export const jobsPanelScrolls = createComponentStore<JobsPanelScroll>();
 export const pendingDrops = createComponentStore<PendingDrop>();
 export const dragStates = createComponentStore<DragState>();
 export const decommissionConfirms = createComponentStore<DecommissionConfirm>();
+export const acceptConfirms = createComponentStore<AcceptConfirm>();
 export const rejectedDrops = createComponentStore<RejectedDrop>();
 export const tutorialProgresses = createComponentStore<TutorialProgress>();
+export const playerTags = createComponentStore<PlayerTag>();
+export const facilityTags = createComponentStore<FacilityTag>();
+export const floatingTexts = createComponentStore<FloatingText>();
+export const toasts = createComponentStore<Toast>();

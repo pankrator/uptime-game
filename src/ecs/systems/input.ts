@@ -22,6 +22,7 @@ import {
   decommissionConfirms,
   type BuildableDef,
 } from '../components';
+import { abandonWorkload } from '../dispatch';
 import {
   advanceTutorial,
   skipTutorial,
@@ -71,6 +72,7 @@ import {
   getTutorialSkipRect,
   getServerRepairButtonRect,
   getServerDecommissionButtonRect,
+  getTrayCardDropButtonRect,
 } from '../../ui/layout';
 import {
   findRackAt,
@@ -400,7 +402,10 @@ export function createInputSystem(
       // each other and with the rack/shop panels (job-panels.ts's otherModalBlocking / the two
       // panels' own closeJobPanels calls), so checking them here — ahead of everything below —
       // is safe: at most one of these five branches (offers, jobs, maintenance, rack, shop) is
-      // ever live at once.
+      // ever live at once. The accept-confirm gate (.plans/playtest-findings.md F3 — accepting a
+      // contract nothing can currently serve needs a second click, same shape as
+      // DecommissionConfirm) lives inside handleOffersModalClick now, since offer accept/decline
+      // buttons only exist inside this modal.
       if (isOffersModalOpen(world, controlled)) {
         handleOffersModalClick(world, renderer, controlled, facility, pointer, audio);
         return;
@@ -490,6 +495,19 @@ export function createInputSystem(
                 expiresAtMs: performance.now() + DECOMMISSION_CONFIRM_WINDOW_MS,
               });
             }
+            return;
+          }
+        }
+
+        // Abandon-contract button on each tray card (F3) — immediate, no confirm: it's already
+        // strictly better than letting the same contract rot into a full miss, so there's
+        // nothing a second click needs to protect against.
+        const trayIds = trayWorkloadIds(world);
+        for (let index = 0; index < trayIds.length; index++) {
+          const dropRect = getTrayCardDropButtonRect(index, renderer.width, renderer.height, serverCount, trayCount);
+          if (pointerInRect(pointer, dropRect)) {
+            audio.play('uiClick');
+            abandonWorkload(world, facility, trayIds[index]);
             return;
           }
         }

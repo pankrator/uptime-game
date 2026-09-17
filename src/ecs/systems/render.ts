@@ -8,6 +8,7 @@ import {
   GRID_CELL_SIZE,
   BUILDING_MARGIN,
   gridToWorld,
+  worldToGrid,
   rackSlots,
   rackLoads,
   machines,
@@ -33,6 +34,8 @@ import {
   thermalTrips,
   coolingUnits,
   decommissionConfirms,
+  floatingTexts,
+  roomTiers,
 } from '../components';
 import {
   RACK_SLOT_CAPACITY,
@@ -46,6 +49,8 @@ import {
   THROTTLE_C,
   TRIP_C,
   REPAIRABLE_WEAR_THRESHOLD,
+  WORLD_WIDTH,
+  WORLD_HEIGHT,
   type Traits,
   type PurchasableId,
   type MachineTierId,
@@ -71,6 +76,7 @@ import {
   getServerTraitBarRect,
   getPlacedChipRect,
   getTrayCardRect,
+  getTrayCardDropButtonRect,
   getTrayTopY,
   getServerRepairButtonRect,
   getServerDecommissionButtonRect,
@@ -83,6 +89,7 @@ import {
   pointerInRect,
 } from '../../ui/layout';
 import { serversOn, trayWorkloadIds, placedWorkloadIds, maxRackScroll } from './rack-panel';
+import { FLOATING_TEXT_RISE_PX } from './effects';
 import { type System } from './system';
 
 const PLAYER_RADIUS = 12;
@@ -94,6 +101,35 @@ function gridBoundsToPixelRect(bounds: GridBounds): { x: number; y: number; w: n
   const w = (bounds.maxGridX - bounds.minGridX + 1) * GRID_CELL_SIZE;
   const h = (bounds.maxGridY - bounds.minGridY + 1) * GRID_CELL_SIZE;
   return { x, y, w, h };
+}
+
+// .plans/playtest-findings.md F8: everything outside the room/corridor/shop used to be an
+// uncleared canvas — transparent over the page's #000 background, reading as a black void
+// rather than "outdoors". A flat ground fill plus a sparse dot scatter (cheap, no images) gives
+// it a texture without competing with the building art drawn on top of it. Drawn first, so
+// drawBuilding/drawShopAndCorridor paint over it exactly like before.
+const OUTDOOR_DOT_SEED_COLS = 40;
+const OUTDOOR_DOT_SEED_ROWS = 27;
+
+function drawOutdoors(renderer: Renderer): void {
+  const ctx = renderer.context;
+  ctx.fillStyle = '#14171a';
+  ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+
+  // Deterministic scatter (no Math.random — would repaint differently every frame) laid out on
+  // a coarse grid with a per-cell jitter, so it reads as texture rather than an obvious repeat.
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
+  const colGap = WORLD_WIDTH / OUTDOOR_DOT_SEED_COLS;
+  const rowGap = WORLD_HEIGHT / OUTDOOR_DOT_SEED_ROWS;
+  for (let row = 0; row < OUTDOOR_DOT_SEED_ROWS; row++) {
+    for (let col = 0; col < OUTDOOR_DOT_SEED_COLS; col++) {
+      const jitterX = ((row * 7 + col * 13) % 11) - 5;
+      const jitterY = ((row * 5 + col * 17) % 9) - 4;
+      const x = col * colGap + colGap / 2 + jitterX;
+      const y = row * rowGap + rowGap / 2 + jitterY;
+      ctx.fillRect(x, y, 2, 2);
+    }
+  }
 }
 
 function drawBuilding(renderer: Renderer, world: World, facility: EntityId): void {
@@ -277,7 +313,25 @@ const SLOT_LED_COLOR: Record<SlotState, string | null> = {
   failed: '#e5484d',
 };
 
-function drawRack(renderer: Renderer, gridX: number, gridY: number, slots: SlotState[]): void {
+// .plans/playtest-findings.md F8: a built-out facility used to be visually monotonous — every
+// installed slat looked identical regardless of which tier it held. A thin left-edge accent per
+// tier is additive (drawn on top of the existing slat fill/LED, never replacing either) so the
+// carefully-tuned status visualization (SLOT_SLAT_FILL/SLOT_LED_COLOR) stays exactly as legible.
+const TIER_ACCENT_COLOR: Record<MachineTierId, string> = {
+  budget: '#6b7280',
+  basic: '#4dabf7',
+  dense: '#c77dff',
+  storage: '#f7b731',
+  memory: '#3ddc84',
+};
+
+function drawRack(
+  renderer: Renderer,
+  gridX: number,
+  gridY: number,
+  slots: SlotState[],
+  tiers: (MachineTierId | null)[],
+): void {
   const ctx = renderer.context;
   const x = gridX * GRID_CELL_SIZE + RACK_PADDING;
   const y = gridY * GRID_CELL_SIZE + RACK_PADDING;
@@ -302,6 +356,13 @@ function drawRack(renderer: Renderer, gridX: number, gridY: number, slots: SlotS
 
     ctx.fillStyle = SLOT_SLAT_FILL[state];
     ctx.fillRect(x + unitGap, unitY, size - unitGap * 2, unitHeight);
+
+    // Tier accent stripe — only for an occupied slot (an empty slot has no tier to show).
+    const tier = tiers[i];
+    if (tier) {
+      ctx.fillStyle = TIER_ACCENT_COLOR[tier];
+      ctx.fillRect(x + unitGap, unitY, 3, unitHeight);
+    }
 
     // Status LED per unit
     const ledColor = SLOT_LED_COLOR[state];
@@ -484,6 +545,28 @@ function drawCoolingUnit(
   ctx.arc(centerX, centerY, radiusCells * GRID_CELL_SIZE, 0, Math.PI * 2);
   ctx.stroke();
   ctx.restore();
+}
+
+// F7: rises and fades over its lifetime — position/color/text are fixed at spawn (effects.ts),
+// this only derives how far in [0,1] the animation is from spawnedAtMs/expiresAtMs, world-space
+// so it tracks the rack it was anchored over exactly like any other floor object.
+function drawFloatingTexts(renderer: Renderer, world: World): void {
+  const ctx = renderer.context;
+  const now = performance.now();
+  for (const id of world.query(floatingTexts)) {
+    const text = world.getComponent(floatingTexts, id)!;
+    const total = text.expiresAtMs - text.spawnedAtMs;
+    const progress = total > 0 ? Math.min(1, Math.max(0, (now - text.spawnedAtMs) / total)) : 1;
+
+    ctx.save();
+    ctx.globalAlpha = 1 - progress;
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = text.color;
+    ctx.fillText(text.text, text.worldX, text.worldY - progress * FLOATING_TEXT_RISE_PX);
+    ctx.restore();
+  }
 }
 
 function drawManager(renderer: Renderer, x: number, y: number): void {
@@ -1108,6 +1191,20 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
       ctx.font = '9px sans-serif';
       ctx.fillStyle = RACK_PANEL_RED;
       ctx.fillText(`-$${workload.penaltyOnMiss.toFixed(0)} if missed`, card.x + 6, card.y + card.height * 0.88);
+
+      // Abandon-contract button (F3) — overlaid in the card's corner rather than a 5th text
+      // line, matching the same button geometry input.ts hit-tests against.
+      const dropButton = getTrayCardDropButtonRect(index, canvasWidth, canvasHeight, serverIds.length, trayIds.length);
+      ctx.fillStyle = 'rgba(229, 72, 77, 0.18)';
+      ctx.fillRect(dropButton.x, dropButton.y, dropButton.width, dropButton.height);
+      ctx.strokeStyle = RACK_PANEL_RED;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(dropButton.x, dropButton.y, dropButton.width, dropButton.height);
+      ctx.font = 'bold 10px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = RACK_PANEL_RED;
+      ctx.fillText('✕', dropButton.x + dropButton.width / 2, dropButton.y + dropButton.height / 2);
     });
   }
 
@@ -1267,6 +1364,7 @@ export function createRenderSystem(
     update() {
       camera.applyTransform(renderer.context);
 
+      drawOutdoors(renderer);
       drawBuilding(renderer, world, facility);
       drawShopAndCorridor(renderer);
       // Before racks, after the floor (D8) — the cabinet art draws on top of the wash.
@@ -1298,6 +1396,20 @@ export function createRenderSystem(
         }
       }
 
+      // .plans/playtest-findings.md F8: the per-rack ⚡/🔥/°C readout used to draw unconditionally
+      // under EVERY rack, all the time — fine for a couple of racks, noise once a facility has
+      // dozens. Only draw it for the rack under the pointer, or (closet tier, the smallest room)
+      // for every rack, since a small facility has too few racks for the noise to matter yet.
+      // drawThermalBadge is untouched — it already self-gates on tripped/throttled, the "urgent"
+      // signal this declutter is meant to preserve, not hide further.
+      const hoverGrid = (() => {
+        const pointer = input.getPointerPosition();
+        if (!pointer) return null;
+        const worldPoint = camera.screenToWorld(pointer);
+        return worldToGrid(worldPoint.x, worldPoint.y);
+      })();
+      const isSmallFacility = (world.getComponent(roomTiers, facility)?.index ?? 0) === 0;
+
       for (const id of world.query(renderables, gridPositions)) {
         const renderable = world.getComponent(renderables, id)!;
         if (renderable.kind !== 'rack') continue;
@@ -1307,8 +1419,10 @@ export function createRenderSystem(
         const installedMachines = machinesByRack.get(id) ?? [];
 
         const slots: SlotState[] = new Array(capacity).fill('empty');
+        const tiers: (MachineTierId | null)[] = new Array(capacity).fill(null);
         for (const machineId of installedMachines) {
           const installedIn = world.getComponent(installedIns, machineId)!;
+          tiers[installedIn.slotIndex] = world.getComponent(machines, machineId)!.tierId;
           const powered = world.getComponent(powereds, machineId);
           if (!powered?.online) {
             slots[installedIn.slotIndex] = world.getComponent(faileds, machineId) ? 'failed' : 'offline';
@@ -1339,7 +1453,7 @@ export function createRenderSystem(
           }
         }
 
-        drawRack(renderer, grid.gridX, grid.gridY, slots);
+        drawRack(renderer, grid.gridX, grid.gridY, slots, tiers);
 
         const load = world.getComponent(rackLoads, id);
         if (load) {
@@ -1353,16 +1467,19 @@ export function createRenderSystem(
             coolingCapacity && utilization && utilization.coolingDrawKw > coolingCapacity.kw,
           );
           const temperature = world.getComponent(temperatures, id);
-          drawRackLoadLabel(
-            renderer,
-            grid.gridX,
-            grid.gridY,
-            load,
-            facilityOverPower,
-            facilityOverCooling,
-            temperature,
-            worstRackWear(world, installedMachines),
-          );
+          const isHovered = hoverGrid && hoverGrid.gridX === grid.gridX && hoverGrid.gridY === grid.gridY;
+          if (isHovered || isSmallFacility) {
+            drawRackLoadLabel(
+              renderer,
+              grid.gridX,
+              grid.gridY,
+              load,
+              facilityOverPower,
+              facilityOverCooling,
+              temperature,
+              worstRackWear(world, installedMachines),
+            );
+          }
           if (temperature) {
             drawThermalBadge(
               renderer,
@@ -1386,6 +1503,8 @@ export function createRenderSystem(
         drawShopHint(renderer, facility, world, position);
         drawFailureHint(renderer, world, position);
       }
+
+      drawFloatingTexts(renderer, world);
 
       camera.resetTransform(renderer.context);
 

@@ -16,19 +16,32 @@ not here).
 One `draw*` function per visual piece, called in back-to-front order from the returned
 `System.update`. Notable ones:
 
+- `drawOutdoors` — flat ground fill + a sparse deterministic dot scatter over the full
+  world rect, drawn FIRST so the building/shop/corridor paint over it. Without this the
+  area outside the room/corridor/shop was an uncleared, transparent canvas reading as a
+  black void (F8).
 - `drawBuilding` — floor, floor-grid tiles, walls, and a ghost outline of the next room
   tier (legible upgrade preview without a menu)
 - `drawShopAndCorridor` — the shop building and the outdoor corridor connecting it to the
   room (the second walkable location the camera needs to reach)
 - `drawRack` / `drawRackLoadLabel` — rack cabinet + per-slot state
   (`online-idle` / `'partial'` / `'full'`, based on whether any/all `ServerCapacity.free`
-  traits are exhausted) + under-rack power/heat readout colored against facility headroom.
-  The third label line carries the rack's temperature and, past
-  `RACK_LABEL_WEAR_THRESHOLD`, its worst machine wear (`worstRackWear`) side by side — one
-  line, not two, because the block is already 29px deep under a 40px `GRID_CELL_SIZE` and a
-  fourth row would overlap the rack below. Wear colors match the rack panel's wear bar so
-  the floor and the panel agree. Heat drives wear (up to `HEAT_WEAR_MULTIPLIER_MAX`), so the
-  adjacency is the point: it is the only place the player can see that link.
+  traits are exhausted), plus a thin per-slot `TIER_ACCENT_COLOR` stripe keyed by
+  `MachineTierId` (additive, drawn on top of the existing slat fill/LED — F8) + under-rack
+  power/heat readout colored against facility headroom. The third label line carries the
+  rack's temperature and, past `RACK_LABEL_WEAR_THRESHOLD`, its worst machine wear
+  (`worstRackWear`) side by side — one line, not two, because the block is already 29px
+  deep under a 40px `GRID_CELL_SIZE` and a fourth row would overlap the rack below. Wear
+  colors match the rack panel's wear bar so the floor and the panel agree; heat drives
+  wear (up to `HEAT_WEAR_MULTIPLIER_MAX`), so the adjacency is the point — it is the only
+  place the player can see that link. The whole label only draws for the rack under the
+  pointer (`input.getPointerPosition()` → `camera.screenToWorld` → `worldToGrid`) or,
+  regardless of hover, every rack while the facility is still on the closet room tier
+  (`RoomTier.index === 0`) — see F8; `drawThermalBadge` is untouched since it already
+  self-gates on an abnormal state.
+- `drawFloatingTexts` — world-space, rising/fading `FloatingText` entities (e.g. a
+  completed contract's `+$N` — F7), drawn just before `camera.resetTransform` so it
+  tracks the floor like any other world object.
 - `drawManager` — the player sprite
 - `drawShopHint` — arrow pointing from player to shop door when inventory is empty
 - `drawBuildPanel` / `drawBuildPanelTooltip` — the build hotbar and its hover tooltip

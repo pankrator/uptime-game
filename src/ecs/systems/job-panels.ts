@@ -15,8 +15,15 @@ import {
   shopOpens,
   offers,
   workloads,
+  acceptConfirms,
+  machines,
+  installedIns,
+  powereds,
+  serverCapacities,
+  type Offer,
 } from '../components';
 import { acceptOffer, declineOffer } from '../dispatch';
+import { fits } from '../traits';
 import {
   getOffersModalContentRect,
   getOffersModalFullContentHeight,
@@ -33,11 +40,31 @@ import { type Renderer } from '../../rendering';
 import { type Audio } from '../../audio';
 import { type System } from './system';
 
+// .plans/playtest-findings.md F3: accepting a contract nothing can currently serve used to be a
+// single click into a doomed deadline. A SERVABLE offer still accepts on the first click,
+// exactly as before — this only gates the unservable case, same "second click on the same
+// button, within a window, confirms" shape as rack-panel.ts's DecommissionConfirm.
+const ACCEPT_CONFIRM_WINDOW_MS = 3000;
+
+// Whether ANY online, installed server currently has enough free capacity for these demands —
+// used both to dim an offer the player can't currently serve (hud.ts, which imports this rather
+// than defining its own — a second, possibly-diverging copy) and to gate the accept-confirm
+// check below. Informative-dimming aside, this never blocks accept outright: the player may be
+// about to install a bigger box, so an unservable offer is still acceptable, just double-checked.
+export function anyServerFits(world: World, demands: Offer['demands']): boolean {
+  return world.query(machines, installedIns, powereds, serverCapacities).some((id) => {
+    if (!world.getComponent(powereds, id)!.online) return false;
+    const capacity = world.getComponent(serverCapacities, id)!;
+    return fits(demands, capacity.free);
+  });
+}
+
 export function closeJobPanels(world: World, controlled: EntityId): void {
   world.removeComponent(offersPanelOpens, controlled);
   world.removeComponent(offersPanelScrolls, controlled);
   world.removeComponent(jobsPanelOpens, controlled);
   world.removeComponent(jobsPanelScrolls, controlled);
+  world.removeComponent(acceptConfirms, controlled);
 }
 
 export function isOffersModalOpen(world: World, controlled: EntityId): boolean {
@@ -129,7 +156,22 @@ export function handleOffersModalClick(
       )
     ) {
       audio.play('uiClick');
-      acceptOffer(world, offerId);
+      // F3: a servable offer accepts on the first click, exactly as before. An unservable one
+      // needs a second click within ACCEPT_CONFIRM_WINDOW_MS on the SAME offer's Accept button —
+      // same "second click on the same button, within a window, confirms" shape as
+      // DecommissionConfirm (rack-panel.ts).
+      const confirm = world.getComponent(acceptConfirms, controlled);
+      const alreadyConfirming =
+        confirm && confirm.offerId === offerId && performance.now() < confirm.expiresAtMs;
+      if (anyServerFits(world, offer.demands) || alreadyConfirming) {
+        world.removeComponent(acceptConfirms, controlled);
+        acceptOffer(world, offerId);
+      } else {
+        world.addComponent(acceptConfirms, controlled, {
+          offerId,
+          expiresAtMs: performance.now() + ACCEPT_CONFIRM_WINDOW_MS,
+        });
+      }
       return;
     }
     if (
@@ -139,6 +181,7 @@ export function handleOffersModalClick(
       )
     ) {
       audio.play('uiClick');
+      world.removeComponent(acceptConfirms, controlled);
       declineOffer(world, facility, offerId);
       return;
     }
@@ -185,6 +228,15 @@ export function createJobPanelsSystem(
 
   return {
     update() {
+      // Expire an unconfirmed accept-confirm click (F3: the confirm window, not a modal) —
+      // same per-frame expiry rack-panel.ts's own System does for DecommissionConfirm. Runs
+      // unconditionally (not gated on the offers modal being open) so a confirm window started
+      // just before the player closed the panel still times out on schedule.
+      const acceptConfirm = world.getComponent(acceptConfirms, controlled);
+      if (acceptConfirm && performance.now() >= acceptConfirm.expiresAtMs) {
+        world.removeComponent(acceptConfirms, controlled);
+      }
+
       // Wheel-scroll clamping — only one of the two panels can be open at a time (see
       // otherModalBlocking/closeJobPanels), so at most one branch below ever consumes the
       // frame's wheel delta. Clamped every frame (not just on wheel input), same reasoning as
