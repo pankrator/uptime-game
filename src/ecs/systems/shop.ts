@@ -21,7 +21,7 @@ import {
 import { SHOP_DOOR } from '../world-map';
 import { addToInventory } from '../inventory';
 import { type System } from './system';
-import { closeJobPanels } from './job-panels';
+import { registerModalCloser, closeOtherModals } from '../modal';
 
 const SHOP_REACH_PX = 80; // ~2 grid cells — close enough to the shop door to browse
 
@@ -33,6 +33,16 @@ let dismissedWhileInRange = false;
 export function dismissShop(): void {
   dismissedWhileInRange = true;
 }
+
+// Registered as the 'shop' modal closer — see ../modal.ts. Also used directly by input.ts's
+// close-button handler and Escape, which need the same "don't let proximity reopen it next
+// frame" behavior.
+export function closeShop(world: World, controlled: EntityId): void {
+  world.removeComponent(shopOpens, controlled);
+  dismissShop();
+}
+
+registerModalCloser('shop', closeShop);
 
 // Shared UI state: which category tab is selected. Module-level (not per-entity) since there's
 // only ever one player and one shop panel — input.ts (click handling) and render.ts (drawing)
@@ -118,9 +128,9 @@ export function createShopSystem(world: World, controlled: EntityId): System {
       }
 
       if (inRange && !isOpen && !dismissedWhileInRange) {
-        // Only one modal at a time (see job-panels.ts) — proximity to the shop always wins over
-        // an open offers/jobs panel.
-        closeJobPanels(world, controlled);
+        // Only one modal at a time (see ../modal.ts) — proximity to the shop always wins over
+        // any other open panel.
+        closeOtherModals(world, controlled, 'shop');
         world.addComponent(shopOpens, controlled, { open: true });
       } else if (!inRange && isOpen) {
         world.removeComponent(shopOpens, controlled);

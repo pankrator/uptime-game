@@ -37,6 +37,7 @@ import {
 } from './job-panels';
 import { repairCost, repairSeconds } from '../wear';
 import { findLowestFreeSlot } from './maintenance';
+import { activeModal } from '../modal';
 import {
   isWalkable,
   findPath,
@@ -53,7 +54,7 @@ import {
 } from '../game-data';
 import { getRoomRect } from '../room';
 import { takeFromInventory, addToInventory } from '../inventory';
-import { buy, dismissShop, shopTab, shopCategories, shopCatalogForTab } from './shop';
+import { buy, closeShop, shopTab, shopCategories, shopCatalogForTab } from './shop';
 import { type InputState } from '../../input';
 import { spawnRack, spawnCoolingUnit } from '../../entities';
 import { type Renderer } from '../../rendering';
@@ -275,8 +276,7 @@ export function createInputSystem(
 ): System {
   input.onKeyDown('Escape', () => {
     if (world.getComponent(shopOpens, controlled)) {
-      world.removeComponent(shopOpens, controlled);
-      dismissShop();
+      closeShop(world, controlled);
       return;
     }
     if (world.getComponent(buildModes, controlled)) {
@@ -388,19 +388,20 @@ export function createInputSystem(
 
       // 0.7. Offers / Jobs panels — centered modals like the rack/shop panels below, toggled by
       // the 'o'/'j' keys (job-panels.ts) instead of docked HUD chrome. Mutually exclusive with
-      // each other and with the rack/shop panels (job-panels.ts's closeOtherModals / the two
-      // panels' own closeJobPanels calls — pressing O/J while a rack/shop panel is open SWITCHES
-      // to the requested panel rather than being blocked), so checking them here — ahead of
-      // everything below — is safe: at most one of these five branches (offers, jobs,
-      // maintenance, rack, shop) is ever live at once. The accept-confirm gate (.plans/playtest-findings.md F3 — accepting a
-      // contract nothing can currently serve needs a second click, same shape as
-      // DecommissionConfirm) lives inside handleOffersModalClick now, since offer accept/decline
-      // buttons only exist inside this modal.
-      if (isOffersModalOpen(world, controlled)) {
+      // each other and with the rack/shop panels (../modal.ts's closeOtherModals — pressing O/J
+      // while a rack/shop panel is open SWITCHES to the requested panel rather than being
+      // blocked), so checking them here — ahead of everything below — is safe: at most one of
+      // these five branches (offers, jobs, maintenance, rack, shop) is ever live at once. The
+      // accept-confirm gate (.plans/playtest-findings.md F3 — accepting a contract nothing can
+      // currently serve needs a second click, same shape as DecommissionConfirm) lives inside
+      // handleOffersModalClick now, since offer accept/decline buttons only exist inside this
+      // modal.
+      const modal = activeModal(world, controlled);
+      if (modal === 'offers') {
         handleOffersModalClick(world, renderer, controlled, facility, pointer, audio);
         return;
       }
-      if (isJobsModalOpen(world, controlled)) {
+      if (modal === 'jobs') {
         handleJobsModalClick(world, renderer, controlled, pointer, audio);
         return;
       }
@@ -416,11 +417,11 @@ export function createInputSystem(
       // until the player arrives — see rack-panel.ts's arrival check and render.ts's early
       // return — so while still walking there, a click falls through to plain movement below
       // (redirecting the walk, same as clicking anywhere else always does) rather than being
-      // absorbed by a panel that isn't even on screen yet.
+      // absorbed by a panel that isn't even on screen yet. activeModal() applies exactly this
+      // same visibility gate (see ../modal.ts).
       const openPanel = world.getComponent(openRackPanels, controlled);
-      const panelVisible = openPanel && (openPanel.mode === 'viewing' || openPanel.arrived);
-      if (panelVisible) {
-        const serverIds = serversOn(world, openPanel.rackId);
+      if (modal === 'rack') {
+        const serverIds = serversOn(world, openPanel!.rackId);
         const serverCount = serverIds.length;
         const trayCount = trayWorkloadIds(world).length;
         const closeRect = getRackPanelCloseButtonRect(
@@ -515,12 +516,11 @@ export function createInputSystem(
       // load-bearing for the same reason (both absorb every click while open). Opened/closed
       // purely by proximity (shop.ts), so there's no travel state to check here — just whether
       // it's currently open.
-      if (world.getComponent(shopOpens, controlled)) {
+      if (modal === 'shop') {
         const rowCount = shopCatalogForTab(shopTab.current).length;
         const closeRect = getShopCloseButtonRect(renderer.width, renderer.height, rowCount);
         if (pointerInRect(pointer, closeRect)) {
-          world.removeComponent(shopOpens, controlled);
-          dismissShop();
+          closeShop(world, controlled);
           return;
         }
 

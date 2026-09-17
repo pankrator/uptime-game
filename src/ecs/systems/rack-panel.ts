@@ -47,7 +47,7 @@ import {
 import { maxScrollOffset } from '../../ui/scroll';
 import { type Renderer } from '../../rendering';
 import { type System } from './system';
-import { closeJobPanels } from './job-panels';
+import { registerModalCloser, closeOtherModals } from '../modal';
 
 // Same reach radius/approach as maintenance.ts's MAINTENANCE_REACH_PX — the established
 // "close enough to interact with this rack" pattern.
@@ -94,6 +94,8 @@ export function closeRackPanel(world: World, controlled: EntityId): void {
     world.removeComponent(pendingDrops, workloadId);
   }
 }
+
+registerModalCloser('rack', closeRackPanel);
 
 // Highest legal scroll offset for the given content/viewport heights — 0 once content fits
 // without scrolling. Shared by the wheel handler (clamping the new offset) and render.ts
@@ -150,9 +152,9 @@ export function openOrPromoteRackPanel(
     return false; // already dispatching (or already arrived) at this rack — nothing to do
   }
 
-  // Only one modal at a time (see job-panels.ts) — a rack click always wins over an open
-  // offers/jobs panel.
-  closeJobPanels(world, controlled);
+  // Only one modal at a time (see ../modal.ts) — a rack click always wins over any other open
+  // panel.
+  closeOtherModals(world, controlled, 'rack');
   world.addComponent(openRackPanels, controlled, { rackId, mode: 'dispatching', arrived: false });
   world.addComponent(rackScrolls, controlled, { offsetPx: 0 });
   return true;
@@ -505,12 +507,12 @@ export function createRackPanelSystem(
       // Right-clicking a rack that's already open dispatching keeps it dispatching — viewing
       // is strictly weaker, so this is a no-op rather than a demotion.
       if (!existing || existing.mode !== 'dispatching' || existing.rackId !== rackId) {
-        // Only one modal at a time (see job-panels.ts) — right-click, like left-click above,
-        // always wins over an open offers/jobs panel. This branch bypasses input.ts's own
+        // Only one modal at a time (see ../modal.ts) — right-click, like left-click above,
+        // always wins over any other open panel. This branch bypasses input.ts's own
         // click-priority chain entirely (it's driven by wasRightClicked(), a separate gesture),
         // so it needs its own guard rather than relying on that chain having already absorbed
         // the click.
-        closeJobPanels(world, controlled);
+        closeOtherModals(world, controlled, 'rack');
         world.addComponent(openRackPanels, controlled, { rackId, mode: 'viewing', arrived: false });
         world.addComponent(rackScrolls, controlled, { offsetPx: 0 });
       }

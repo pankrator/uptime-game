@@ -57,6 +57,7 @@ import {
 } from '../game-data';
 import { repairCost } from '../wear';
 import { UI, bar } from '../../ui/draw';
+import { activeModal } from '../modal';
 import { type Renderer } from '../../rendering';
 import { type Camera } from '../../camera';
 import { type InputState } from '../../input';
@@ -1530,18 +1531,21 @@ export function createRenderSystem(
       drawPendingBorder(world, renderer);
 
       // The rack panel and shop panel are both full-screen modals that replace the build panel
-      // rather than drawing over/under it. Same priority order as input.ts's click chain: rack
-      // panel first, then shop. A dispatching-mode rack panel draws nothing until the player
-      // arrives (see drawRackPanel's early return) — while still walking there, the build panel
-      // stays visible instead of leaving the corner blank.
-      const rackPanel = world.getComponent(openRackPanels, controlled);
-      const rackPanelVisible = rackPanel !== undefined && (rackPanel.mode !== 'dispatching' || rackPanel.arrived);
-      if (rackPanelVisible) {
-        drawRackPanel(world, renderer, controlled);
-      } else if (world.getComponent(shopOpens, controlled)) {
-        drawShopPanel(world, renderer, controlled, facility);
-      } else {
-        drawBuildPanel(world, renderer, controlled, facility, input.getPointerPosition());
+      // rather than drawing over/under it. activeModal() (../modal.ts) is the same priority
+      // order input.ts's click chain reads, so the two can no longer silently disagree about
+      // which panel is showing. A dispatching-mode rack panel draws nothing until the player
+      // arrives (activeModal only reports 'rack' once visible; see drawRackPanel's own early
+      // return too) — while still walking there, the build panel stays visible instead of
+      // leaving the corner blank.
+      switch (activeModal(world, controlled)) {
+        case 'rack':
+          drawRackPanel(world, renderer, controlled);
+          break;
+        case 'shop':
+          drawShopPanel(world, renderer, controlled, facility);
+          break;
+        default:
+          drawBuildPanel(world, renderer, controlled, facility, input.getPointerPosition());
       }
     },
   };
