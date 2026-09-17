@@ -34,12 +34,12 @@ Systems run in this order every tick; several depend on it (noted below):
 5. `rack-panel` — panel open/close, arrival, scroll, pending-drop commit
 6. `shop` — proximity-based shop panel open/close
 7. `resource` — power/cooling brownout decisions (must run before `capacity`)
-8. `capacity` — recomputes free capacity per server/rack/facility (must run after `resource`, before `workload-run`)
 9. `thermal` — integrates per-rack `Temperature`, throttles and trips (must run after `capacity` for this tick's `RackLoad.heatKw`, before `wear` and `workload-run`)
 10. `wear` — accrues wear and rolls for hardware failure (must run after `resource` and `thermal`)
 11. `workload-spawn` — spawns new offers, ticks offer expiry
 12. `workload-run` — advances placed workloads, pays out, resolves completion/deadline miss (must run after `capacity` and `thermal`)
-13. `tutorial` — advances the guided-tutorial step (must run last: reads this frame's mutations from every system above)
+13. `effects` — expires `FloatingText`/`Toast` entities spawned by `resource`/`workload-run` (timestamp-based, no ordering dependency)
+14. `tutorial` — advances the guided-tutorial step (must run last: reads this frame's mutations from every system above)
 
 **`renderSystems`** (presentation only, skipped when tab hidden):
 1. `camera` — eases camera toward the player
@@ -60,6 +60,7 @@ Systems run in this order every tick; several depend on it (noted below):
 - [thermal](./thermal.md) — per-rack temperature from local heat and CRAC placement; throttle band and overheat trips
 - [workload-spawn](./workload-spawn.md) — offer arrival cadence and offer expiry
 - [workload-run](./workload-run.md) — ticks placed/unplaced workloads: payout, completion, deadline miss
+- [effects](./effects.md) — floating text / toast banners: spawn-where-it-happens, expire centrally
 - [render](./render.md) — all Canvas drawing of the floor, racks, panels, build UI (presentation only)
 - [hud](./hud.md) — top bar, workload panel, offers panel (presentation only)
 - [tutorial](./tutorial.md) — first-time guided-tutorial step advance (banner drawn by hud.ts)

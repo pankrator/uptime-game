@@ -6,21 +6,28 @@ import {
   placedOns,
   workloads,
   utilizations,
+  resourceWarnings,
   powerCapacities,
   coolingCapacities,
   wallets,
   thermalTrips,
   coolingUnits,
   faileds,
+  recentlyUnplaceds,
 } from '../components';
 import {
   MACHINE_TIERS,
   WORKLOAD_ARCHETYPES,
   BROWNOUT_COOLDOWN_SECONDS,
+  BROWNOUT_RESTORE_GRACE_SECONDS,
+  RESOURCE_WARNING_FRACTION,
+  RESOURCE_WARNING_CLEAR_FRACTION,
+  IDLE_POWER_FRACTION,
   POWER_COST_PER_KW_SECOND,
   CRAC_UNIT,
 } from '../game-data';
-import { unplaceWorkload } from '../dispatch';
+import { unplaceWorkload, checkPlacement, placeWorkload } from '../dispatch';
+import { spawnToast } from './effects';
 import { type Audio } from '../../audio';
 import { type System } from './system';
 
@@ -68,27 +75,64 @@ function workloadsOn(world: World, serverId: EntityId): EntityId[] {
 // Losing a server to a brownout (or, per .plans/thermal-and-cooling.md D6, a thermal trip)
 // unplaces every workload on it — they return to the tray still holding their deadline, a
 // visible/recoverable setback rather than silent progress loss (see .plans/workload-dispatch.md,
-// "Changed: resource.ts"). Exported so thermal.ts's trip handling reuses this exactly rather
-// than a second, likely-diverging implementation (D6: "no new failure path").
+// "Changed: resource.ts"). Exported so thermal.ts's/wear.ts's trip/failure handling reuses this
+// exactly rather than a second, likely-diverging implementation (D6: "no new failure path").
+//
+// .plans/playtest-findings.md F4: also tags each unplaced workload with RecentlyUnplaced so that
+// if THIS SAME server comes back online within BROWNOUT_RESTORE_GRACE_SECONDS, the online-
+// transition branch below re-places it automatically instead of leaving the player to notice and
+// re-drag it for a squeeze that already resolved itself.
 export function unplaceAllOn(world: World, serverId: EntityId): void {
+  const now = performance.now();
   for (const workloadId of workloadsOn(world, serverId)) {
     unplaceWorkload(world, workloadId);
+    world.addComponent(recentlyUnplaceds, workloadId, {
+      serverId,
+      expiresAtMs: now + BROWNOUT_RESTORE_GRACE_SECONDS * 1000,
+    });
   }
 }
 
-function drawFor(world: World, machineId: EntityId): MachineDraw {
+// Exported so capacity.ts's rack-panel draw readout calls this exact function instead of
+// duplicating the calculation (the two used to drift — see .plans/playtest-findings.md F5).
+//
+// F5: an ONLINE machine with nothing PLACED on it draws IDLE_POWER_FRACTION of its full
+// power/cooling instead of the full amount — previously idle capacity billed exactly like busy
+// capacity, so buying ahead of demand (the fun part of a tycoon game) was strictly punished.
+export function drawFor(world: World, machineId: EntityId): MachineDraw {
   const machine = world.getComponent(machines, machineId)!;
   const tier = MACHINE_TIERS[machine.tierId];
-  let coolingKw = tier.coolingKw;
+  const placedWorkloadIds = workloadsOn(world, machineId);
+  const idleFraction = placedWorkloadIds.length === 0 ? IDLE_POWER_FRACTION : 1;
+  let coolingKw = tier.coolingKw * idleFraction;
 
-  for (const workloadId of workloadsOn(world, machineId)) {
+  for (const workloadId of placedWorkloadIds) {
     const workload = world.getComponent(workloads, workloadId);
     if (workload) {
       coolingKw += WORKLOAD_ARCHETYPES[workload.archetypeId].coolingBonusKw;
     }
   }
 
-  return { id: machineId, powerKw: tier.powerKw, coolingKw };
+  return { id: machineId, powerKw: tier.powerKw * idleFraction, coolingKw };
+}
+
+// F4's restore half: a server just came back online — re-place any workload still tagged with
+// RecentlyUnplaced for THIS server, if it hasn't expired and still fits. One-shot per tag: it's
+// removed here whether or not the restore actually happens (already re-placed elsewhere by the
+// player, no longer fits, or the grace window lapsed), so a workload is never silently retried
+// forever.
+function restoreRecentlyUnplaced(world: World, serverId: EntityId): void {
+  const now = performance.now();
+  for (const workloadId of world.query(recentlyUnplaceds)) {
+    const tag = world.getComponent(recentlyUnplaceds, workloadId)!;
+    if (tag.serverId !== serverId) continue;
+    world.removeComponent(recentlyUnplaceds, workloadId);
+    if (now >= tag.expiresAtMs) continue;
+    if (world.getComponent(placedOns, workloadId)) continue; // already placed elsewhere
+    if (checkPlacement(world, workloadId, serverId) === null) {
+      placeWorkload(world, workloadId, serverId);
+    }
+  }
 }
 
 export function createResourceSystem(world: World, facility: EntityId, audio: Audio): System {
@@ -152,6 +196,7 @@ export function createResourceSystem(world: World, facility: EntityId, audio: Au
         if (shouldBeOnline && !powered.online) {
           powered.online = true;
           powered.offlineCooldown = 0;
+          restoreRecentlyUnplaced(world, id);
         } else if (!shouldBeOnline && powered.online) {
           powered.online = false;
           powered.offlineCooldown = BROWNOUT_COOLDOWN_SECONDS;
@@ -187,6 +232,35 @@ export function createResourceSystem(world: World, facility: EntityId, audio: Au
         (powerDrawKw + cracPowerKw + coolingDrawKw) * POWER_COST_PER_KW_SECOND;
       const wallet = world.getComponent(wallets, facility);
       if (wallet) wallet.money -= utilization.powerCostPerSecond * deltaSeconds;
+
+      // F4's warn-before-the-brownout half: fire a one-shot toast the first tick draw crosses
+      // RESOURCE_WARNING_FRACTION of capacity, before anything is actually taken offline.
+      // RESOURCE_WARNING_CLEAR_FRACTION is the lower hysteresis line draw must fall back under
+      // before the SAME warning can fire again, so hovering right at the line doesn't spam a
+      // toast every tick.
+      const resourceWarning = world.getComponent(resourceWarnings, facility);
+      if (resourceWarning) {
+        const powerAvailableKw = Math.max(0, powerCapacity.kw - cracPowerKw);
+        const powerRatio = powerAvailableKw > 0 ? (powerDrawKw + cracPowerKw) / powerCapacity.kw : 1;
+        const coolingRatio = coolingCapacity.kw > 0 ? coolingDrawKw / coolingCapacity.kw : 1;
+
+        if (!resourceWarning.powerNearLimit && powerRatio >= RESOURCE_WARNING_FRACTION) {
+          resourceWarning.powerNearLimit = true;
+          spawnToast(world, 'Power draw nearing capacity — a brownout may hit soon', '#f5a623');
+        } else if (resourceWarning.powerNearLimit && powerRatio < RESOURCE_WARNING_CLEAR_FRACTION) {
+          resourceWarning.powerNearLimit = false;
+        }
+
+        if (!resourceWarning.coolingNearLimit && coolingRatio >= RESOURCE_WARNING_FRACTION) {
+          resourceWarning.coolingNearLimit = true;
+          spawnToast(world, 'Cooling draw nearing capacity — a brownout may hit soon', '#f5a623');
+        } else if (
+          resourceWarning.coolingNearLimit &&
+          coolingRatio < RESOURCE_WARNING_CLEAR_FRACTION
+        ) {
+          resourceWarning.coolingNearLimit = false;
+        }
+      }
     },
   };
 }

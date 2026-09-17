@@ -21,9 +21,11 @@ import {
   faileds,
   machines,
   decommissionConfirms,
+  acceptConfirms,
   type BuildableDef,
 } from '../components';
-import { acceptOffer, declineOffer } from '../dispatch';
+import { acceptOffer, declineOffer, abandonWorkload } from '../dispatch';
+import { anyServerFits } from './hud';
 import { advanceTutorial, skipTutorial, isTutorialActionStep, recordShopPurchase } from './tutorial';
 import { repairCost, repairSeconds } from '../wear';
 import {
@@ -63,6 +65,7 @@ import {
   getTutorialSkipRect,
   getServerRepairButtonRect,
   getServerDecommissionButtonRect,
+  getTrayCardDropButtonRect,
 } from '../../ui/layout';
 import {
   findRackAt,
@@ -214,6 +217,7 @@ function tryInstallIntoRack(
 }
 
 const DECOMMISSION_CONFIRM_WINDOW_MS = 3000;
+const ACCEPT_CONFIRM_WINDOW_MS = 3000;
 
 // Repair/decommission both queue a MaintenanceTask exactly like install does — click from
 // anywhere (viewing-mode panel included), then walk there, then the work happens. See
@@ -313,6 +317,13 @@ export function createInputSystem(
 
   return {
     update() {
+      // Expire an unconfirmed accept-confirm click (F3: the confirm window, not a modal) —
+      // same per-frame expiry rack-panel.ts's own System does for DecommissionConfirm.
+      const acceptConfirm = world.getComponent(acceptConfirms, controlled);
+      if (acceptConfirm && performance.now() >= acceptConfirm.expiresAtMs) {
+        world.removeComponent(acceptConfirms, controlled);
+      }
+
       // --- Drag lifecycle (step 8) — runs every frame, independent of wasClicked(), since a
       // drag spans multiple frames between mousedown and mouseup. Owned here (not in
       // rack-panel.ts) for the same single-consumer reason as the click chain below: a drag's
@@ -409,8 +420,26 @@ export function createInputSystem(
       if (offerHit) {
         audio.play('uiClick');
         if (offerHit.kind === 'accept') {
-          acceptOffer(world, offerHit.offerId);
+          // .plans/playtest-findings.md F3: accepting a contract nothing can currently serve
+          // used to be a single click into a doomed deadline. A SERVABLE offer still accepts on
+          // the first click, exactly as before — this only gates the unservable case, same
+          // "second click on the same button, within a window, confirms" shape as
+          // DecommissionConfirm.
+          const offer = world.getComponent(offers, offerHit.offerId)!;
+          const confirm = world.getComponent(acceptConfirms, controlled);
+          const alreadyConfirming =
+            confirm && confirm.offerId === offerHit.offerId && performance.now() < confirm.expiresAtMs;
+          if (anyServerFits(world, offer.demands) || alreadyConfirming) {
+            world.removeComponent(acceptConfirms, controlled);
+            acceptOffer(world, offerHit.offerId);
+          } else {
+            world.addComponent(acceptConfirms, controlled, {
+              offerId: offerHit.offerId,
+              expiresAtMs: performance.now() + ACCEPT_CONFIRM_WINDOW_MS,
+            });
+          }
         } else {
+          world.removeComponent(acceptConfirms, controlled);
           declineOffer(world, facility, offerHit.offerId);
         }
         return;
@@ -480,6 +509,19 @@ export function createInputSystem(
                 expiresAtMs: performance.now() + DECOMMISSION_CONFIRM_WINDOW_MS,
               });
             }
+            return;
+          }
+        }
+
+        // Abandon-contract button on each tray card (F3) — immediate, no confirm: it's already
+        // strictly better than letting the same contract rot into a full miss, so there's
+        // nothing a second click needs to protect against.
+        const trayIds = trayWorkloadIds(world);
+        for (let index = 0; index < trayIds.length; index++) {
+          const dropRect = getTrayCardDropButtonRect(index, renderer.width, renderer.height, serverCount, trayCount);
+          if (pointerInRect(pointer, dropRect)) {
+            audio.play('uiClick');
+            abandonWorkload(world, facility, trayIds[index]);
             return;
           }
         }

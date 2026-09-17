@@ -2,8 +2,23 @@
 // the `Workload.state` / `PlacedOn` / `ServerCapacity.free` invariant lives in one file. See
 // .plans/workload-dispatch.md D1 and the "New module: src/ecs/dispatch.ts" section.
 import { type World, type EntityId } from './world';
-import { placedOns, serverCapacities, powereds, workloads, offers, reputations, type Workload } from './components';
-import { type TraitKey, REPUTATION_ON_DECLINE, clampReputation } from './game-data';
+import {
+  placedOns,
+  serverCapacities,
+  powereds,
+  workloads,
+  offers,
+  reputations,
+  wallets,
+  type Workload,
+} from './components';
+import {
+  type TraitKey,
+  REPUTATION_ON_DECLINE,
+  ABANDON_REPUTATION_COST,
+  ABANDON_PENALTY_FRACTION,
+  clampReputation,
+} from './game-data';
 import { fits, shortfall } from './traits';
 
 // Validity check, no mutation. Returns null if the workload fits on the server (which must
@@ -82,4 +97,26 @@ export function declineOffer(world: World, facility: EntityId, offerId: EntityId
   const reputation = world.getComponent(reputations, facility);
   if (reputation) reputation.value = clampReputation(reputation.value + REPUTATION_ON_DECLINE);
   world.destroyEntity(offerId);
+}
+
+// .plans/playtest-findings.md F3: cutting losses on an accepted-but-doomed contract used to mean
+// either finding a server for it or letting it rot into a full miss (REPUTATION_ON_MISSED_DEADLINE
+// plus 100% of penaltyOnMiss). Costs more than a decline (already committed capacity/attention a
+// decline never spends) but strictly less than a miss, so it's always the better move once a
+// contract is clearly unservable. Works whether the workload is sitting in the tray or currently
+// placed — unplaces first so ServerCapacity.free recomputes next tick same as any other unplace.
+export function abandonWorkload(world: World, facility: EntityId, workloadId: EntityId): void {
+  const workload = world.getComponent(workloads, workloadId);
+  if (!workload) return;
+
+  const reputation = world.getComponent(reputations, facility);
+  if (reputation) reputation.value = clampReputation(reputation.value + ABANDON_REPUTATION_COST);
+
+  const wallet = world.getComponent(wallets, facility);
+  if (wallet) wallet.money -= workload.penaltyOnMiss * ABANDON_PENALTY_FRACTION;
+
+  if (world.getComponent(placedOns, workloadId)) {
+    world.removeComponent(placedOns, workloadId);
+  }
+  world.destroyEntity(workloadId);
 }
