@@ -31,6 +31,12 @@ from an agent.
 | [playtest-findings.md](playtest-findings.md) | Bugs, friction and proposals from a played session |
 | [compute-scale-fix.md](compute-scale-fix.md) | Fix for B3 (the demand-scaling deadlock) |
 
+## Code health
+
+| Review | What it covers |
+| --- | --- |
+| [design-review.md](design-review.md) | Code smells, readability and structural debt in `src/`, numbered `F1`-`F17` and sequenced. Changes no behavior. **Start at F1** — two tests are currently failing on `main`. |
+
 ## Proposed
 
 Recommended build order. Each is independently shippable; the dependency notes say what
