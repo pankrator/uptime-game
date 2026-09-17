@@ -54,32 +54,18 @@ import { isTutorialActionStep, getTutorialStepDef } from './tutorial';
 import { isOffersModalOpen, isJobsModalOpen, jobPanelCounts, anyServerFits } from './job-panels';
 import { type Audio } from '../../audio';
 import { type System } from './system';
+import { UI, bar as drawBar } from '../../ui/draw';
 
-const TEXT_COLOR = '#e6e8eb';
-const DIM_COLOR = '#9aa0a6';
-const RED = '#e5484d';
-const AMBER = '#f7b731';
-const GREEN = '#3ddc84';
+const TEXT_COLOR = UI.text;
+const DIM_COLOR = UI.dim;
+const RED = UI.bad;
+const AMBER = UI.warn;
+const GREEN = UI.ok;
 
 function repColor(value: number): string {
   if (value < 30) return RED;
   if (value < 60) return AMBER;
   return GREEN;
-}
-
-function drawInlineBar(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  fraction: number,
-  color: string,
-): void {
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
-  ctx.fillRect(x, y, width, height);
-  ctx.fillStyle = color;
-  ctx.fillRect(x, y, width * Math.min(1, fraction), height);
 }
 
 function drawMuteButton(renderer: Renderer, audio: Audio): void {
@@ -194,12 +180,9 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
     tryDraw(textWidth + 6 + 36 + 20, () => {
       ctx.fillStyle = overPower ? RED : TEXT_COLOR;
       ctx.fillText(powerText, x, midY);
-      drawInlineBar(
+      drawBar(
         ctx,
-        x + textWidth + 6,
-        midY - 4,
-        36,
-        8,
+        { x: x + textWidth + 6, y: midY - 4, width: 36, height: 8 },
         utilization.powerDrawKw / powerCapacity.kw,
         overPower ? RED : GREEN,
       );
@@ -219,12 +202,9 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
     tryDraw(textWidth + 6 + 36 + 20, () => {
       ctx.fillStyle = overCooling ? RED : TEXT_COLOR;
       ctx.fillText(coolingText, x, midY);
-      drawInlineBar(
+      drawBar(
         ctx,
-        x + textWidth + 6,
-        midY - 4,
-        36,
-        8,
+        { x: x + textWidth + 6, y: midY - 4, width: 36, height: 8 },
         utilization.coolingDrawKw / coolingCapacity.kw,
         overCooling ? RED : GREEN,
       );
@@ -275,7 +255,12 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
     tryDraw(textWidth + 6 + 36 + 16, () => {
       ctx.fillStyle = over ? RED : TEXT_COLOR;
       ctx.fillText(traitText, x, midY);
-      drawInlineBar(ctx, x + textWidth + 6, midY - 4, 36, 8, total > 0 ? used / total : 0, over ? RED : GREEN);
+      drawBar(
+        ctx,
+        { x: x + textWidth + 6, y: midY - 4, width: 36, height: 8 },
+        total > 0 ? used / total : 0,
+        over ? RED : GREEN,
+      );
     });
   }
 
@@ -373,7 +358,7 @@ function drawActiveJobRow(
 
   const barWidth = 70;
   const barX = rect.x + rect.width - padX - barWidth - 34;
-  drawInlineBar(ctx, barX, line1Y - 4, barWidth, 8, fraction, doomed ? RED : GREEN);
+  drawBar(ctx, { x: barX, y: line1Y - 4, width: barWidth, height: 8 }, fraction, doomed ? RED : GREEN);
   ctx.textAlign = 'right';
   ctx.fillStyle = doomed ? RED : DIM_COLOR;
   ctx.fillText(`${remaining}s`, rect.x + rect.width - padX, line1Y);

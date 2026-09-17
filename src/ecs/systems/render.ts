@@ -56,6 +56,7 @@ import {
   type MachineTierId,
 } from '../game-data';
 import { repairCost } from '../wear';
+import { UI, bar } from '../../ui/draw';
 import { type Renderer } from '../../rendering';
 import { type Camera } from '../../camera';
 import { type InputState } from '../../input';
@@ -878,11 +879,11 @@ function formatDemands(demands: Traits): string {
   return TRAIT_KEYS.map((key) => `${demands[key]}${TRAIT_UNITS[key]}`).join('/');
 }
 
-const RACK_PANEL_TEXT = '#e6e8eb';
-const RACK_PANEL_DIM = '#9aa0a6';
-const RACK_PANEL_GREEN = '#3ddc84';
-const RACK_PANEL_AMBER = '#f7b731';
-const RACK_PANEL_RED = '#e5484d';
+const RACK_PANEL_TEXT = UI.text;
+const RACK_PANEL_DIM = UI.dim;
+const RACK_PANEL_GREEN = UI.ok;
+const RACK_PANEL_AMBER = UI.warn;
+const RACK_PANEL_RED = UI.bad;
 
 // Read-only as of step 7 — every server row and tray card draws but does not yet accept drops
 // or drags; that lands in step 8. Viewing-mode panels draw identically to dispatching-mode
@@ -1047,10 +1048,7 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
       ctx.fillStyle = flashing ? RACK_PANEL_RED : RACK_PANEL_DIM;
       ctx.fillText(`${TRAIT_LABELS[key]} ${used}/${total}`, barRect.x, barRect.y - 6);
 
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
-      ctx.fillRect(barRect.x, barRect.y, barRect.width, barRect.height);
-      ctx.fillStyle = exhausted ? RACK_PANEL_RED : RACK_PANEL_GREEN;
-      ctx.fillRect(barRect.x, barRect.y, barRect.width * Math.min(1, fraction), barRect.height);
+      bar(ctx, barRect, fraction, exhausted ? RACK_PANEL_RED : RACK_PANEL_GREEN);
 
       if (flashing) {
         ctx.strokeStyle = `rgba(229, 72, 77, ${0.5 + flashPulse * 0.5})`;
@@ -1071,10 +1069,7 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
       ctx.fillStyle = failed ? RACK_PANEL_RED : RACK_PANEL_DIM;
       ctx.fillText(`WEAR ${Math.round(condition.wear * 100)}%`, wearRect.x, wearRect.y - 6);
 
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
-      ctx.fillRect(wearRect.x, wearRect.y, wearRect.width, wearRect.height);
-      ctx.fillStyle = wearColor;
-      ctx.fillRect(wearRect.x, wearRect.y, wearRect.width * Math.min(1, condition.wear), wearRect.height);
+      bar(ctx, wearRect, condition.wear, wearColor);
     }
 
     // Repair/decommission buttons (Step 6). Repair only shown once there's something worth
@@ -1152,10 +1147,12 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
       const barY = chip.y + chip.height * 0.68;
       const barWidth = chip.width - 6 - 24;
       const barHeight = 4;
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
-      ctx.fillRect(barX, barY, barWidth, barHeight);
-      ctx.fillStyle = doomed ? RACK_PANEL_RED : RACK_PANEL_GREEN;
-      ctx.fillRect(barX, barY, barWidth * Math.min(1, Math.max(0, workFraction)), barHeight);
+      bar(
+        ctx,
+        { x: barX, y: barY, width: barWidth, height: barHeight },
+        workFraction,
+        doomed ? RACK_PANEL_RED : RACK_PANEL_GREEN,
+      );
 
       ctx.font = '8px sans-serif';
       ctx.textAlign = 'right';
@@ -1279,9 +1276,9 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
   }
 }
 
-const SHOP_TEXT = '#e6e8eb';
-const SHOP_DIM = '#9aa0a6';
-const SHOP_GREEN = '#3ddc84';
+const SHOP_TEXT = UI.text;
+const SHOP_DIM = UI.dim;
+const SHOP_GREEN = UI.ok;
 
 function drawShopPanel(world: World, renderer: Renderer, controlled: EntityId, facility: EntityId): void {
   if (!world.getComponent(shopOpens, controlled)) return;
