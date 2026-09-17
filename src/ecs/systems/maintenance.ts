@@ -27,12 +27,18 @@ import { type System } from './system';
 // enough to interact with this rack" pattern.
 const MAINTENANCE_REACH_PX = GRID_CELL_SIZE * 1.2;
 
-function findLowestFreeSlot(world: World, rackId: EntityId, capacity: number): number | null {
+function occupiedSlots(world: World, rackId: EntityId): Set<number> {
   const occupied = new Set<number>();
   for (const id of world.query(installedIns)) {
     const installedIn = world.getComponent(installedIns, id)!;
     if (installedIn.rackId === rackId) occupied.add(installedIn.slotIndex);
   }
+  return occupied;
+}
+
+// Exported for input.ts: F4, one copy instead of two byte-identical bodies.
+export function findLowestFreeSlot(world: World, rackId: EntityId, capacity: number): number | null {
+  const occupied = occupiedSlots(world, rackId);
   for (let slot = 0; slot < capacity; slot++) {
     if (!occupied.has(slot)) return slot;
   }
@@ -80,12 +86,7 @@ export function createMaintenanceSystem(
         }
 
         let slotIndex = job.slotIndex;
-        const occupied = new Set<number>();
-        for (const id of world.query(installedIns)) {
-          const installedIn = world.getComponent(installedIns, id)!;
-          if (installedIn.rackId === task.rackId) occupied.add(installedIn.slotIndex);
-        }
-        if (occupied.has(slotIndex)) {
+        if (occupiedSlots(world, task.rackId).has(slotIndex)) {
           const freeSlot = findLowestFreeSlot(world, task.rackId, slots.capacity);
           if (freeSlot === null) {
             addToInventory(world, facility, `machine-${job.tierId}` as PurchasableId);

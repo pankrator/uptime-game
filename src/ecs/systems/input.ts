@@ -36,6 +36,7 @@ import {
   handleJobsModalClick,
 } from './job-panels';
 import { repairCost, repairSeconds } from '../wear';
+import { findLowestFreeSlot } from './maintenance';
 import {
   isWalkable,
   findPath,
@@ -101,18 +102,6 @@ function isGridCellOccupied(world: World, gridX: number, gridY: number): boolean
     const grid = world.getComponent(gridPositions, id)!;
     return grid.gridX === gridX && grid.gridY === gridY;
   });
-}
-
-function findLowestFreeSlot(world: World, rackId: EntityId, capacity: number): number | null {
-  const occupied = new Set<number>();
-  for (const id of world.query(installedIns)) {
-    const installedIn = world.getComponent(installedIns, id)!;
-    if (installedIn.rackId === rackId) occupied.add(installedIn.slotIndex);
-  }
-  for (let slot = 0; slot < capacity; slot++) {
-    if (!occupied.has(slot)) return slot;
-  }
-  return null;
 }
 
 // Exported for rack-panel.ts: walking to a clicked rack (an obstacle — see D4's dispatching
