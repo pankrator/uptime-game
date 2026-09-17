@@ -24,8 +24,7 @@ export function pointerInRect(point: { x: number; y: number }, rect: Rect): bool
   );
 }
 
-// Total height of the build panel's stacked entries — shared with getTutorialBannerRect below,
-// which anchors above this panel rather than risk overlapping it.
+// Total height of the build panel's stacked entries.
 function getBuildPanelHeight(): number {
   return (
     BUILDABLES.length * BUILD_PANEL_ENTRY_HEIGHT + (BUILDABLES.length - 1) * BUILD_PANEL_ENTRY_GAP
@@ -808,12 +807,16 @@ export function pointerInHud(point: { x: number; y: number }, canvas: HTMLCanvas
 }
 
 // Tutorial banner — a persistent, always-on-top overlay (drawn last, by hud.ts) explaining the
-// current guided-tutorial step. Anchored to the BOTTOM of the canvas, above the build panel
-// (see getBuildPanelHeight) — not centered under the HUD bar, where it used to sit directly on
-// top of the shop door (the camera clamps the world's top edge to a fixed screen position, so
-// anything docked under the HUD bar covers the same world location for the whole tutorial; see
-// .plans/playtest-findings.md B1). Its own action/skip buttons are hit-tested in input.ts,
-// ahead of everything else in the priority chain, same treatment as the mute button.
+// current guided-tutorial step. Docked to the canvas's BOTTOM-RIGHT corner. It used to be
+// centered along the bottom instead, which planted a 460x118 near-opaque box in the middle of
+// the play area — exactly where a top-down game gets the most click-to-move traffic, so the
+// banner ended up hiding the floor tile you were about to click on. The corner keeps the whole
+// center of the screen clear. Not the bottom-left corner either — that's the build panel's
+// column (see getBuildPanelHeight/minX below). Not docked under the HUD bar either — the camera
+// clamps the world's top edge to a fixed screen position, so anything docked there covers the
+// same world location (e.g. the shop door) for the whole tutorial; see
+// .plans/playtest-findings.md B1. Its own action/skip buttons are hit-tested in input.ts, ahead
+// of everything else in the priority chain, same treatment as the mute button.
 export const TUTORIAL_BANNER_WIDTH = 460;
 // Generous height for up to 3 wrapped body lines plus the title and (on welcome/done) a
 // primary button — see hud.ts's drawTutorialBanner, the only place that measures actual text
@@ -826,19 +829,13 @@ export const TUTORIAL_SKIP_WIDTH = 92;
 export const TUTORIAL_SKIP_HEIGHT = 18;
 
 export function getTutorialBannerRect(canvasWidth: number, canvasHeight: number): Rect {
-  // Width and horizontal position both fit within the game viewport's gap between the offers
-  // column (left) and the workload panel column (right) — see getGameViewportRect — rather
-  // than centering against the raw canvas, which could still overlap a tall offers column on
-  // a short/narrow canvas even after the vertical (build-panel) fix below. See
-  // .plans/playtest-findings.md B5.
-  const viewport = getGameViewportRect(canvasWidth, canvasHeight);
-  const width = Math.min(TUTORIAL_BANNER_WIDTH, Math.max(0, viewport.width - HUD_PANEL_MARGIN * 2));
-  // Reserve the build panel's full column (not just its current width) so the banner never
-  // overlaps it regardless of canvas width — same "reserve the column" reasoning as above.
-  const bottomReserved = BUILD_PANEL_MARGIN + getBuildPanelHeight() + TUTORIAL_BANNER_MARGIN_BOTTOM;
+  // Leave a full build-panel-column's width plus a margin clear on the left, so the banner
+  // never overlaps it even when shrunk to fit a narrow canvas.
+  const minX = BUILD_PANEL_MARGIN + BUILD_PANEL_ENTRY_WIDTH + HUD_PANEL_MARGIN;
+  const width = Math.min(TUTORIAL_BANNER_WIDTH, Math.max(0, canvasWidth - HUD_PANEL_MARGIN - minX));
   return {
-    x: viewport.x + (viewport.width - width) / 2,
-    y: canvasHeight - bottomReserved - TUTORIAL_BANNER_HEIGHT,
+    x: canvasWidth - HUD_PANEL_MARGIN - width,
+    y: canvasHeight - TUTORIAL_BANNER_MARGIN_BOTTOM - TUTORIAL_BANNER_HEIGHT,
     width,
     height: TUTORIAL_BANNER_HEIGHT,
   };
