@@ -268,6 +268,51 @@ describe('shop panel', () => {
   });
 });
 
+describe('modal panels never go under the HUD bar', () => {
+  // Short canvas heights simulate browser zoom shrinking the CSS-pixel viewport — the panels
+  // used to center on the raw canvas, so a panel tall enough relative to canvasHeight would
+  // start above HUD_BAR_HEIGHT and render underneath the HUD bar (drawn last, on top).
+  const SHORT_HEIGHTS: [number, number][] = [
+    [1280, 500],
+    [1280, 320],
+    [1280, 150],
+    [1280, 44],
+  ];
+
+  it('rack panel never overlaps the HUD bar, even at short canvas heights', () => {
+    for (const [w, h] of SHORT_HEIGHTS) {
+      const bar = getHudBarRect(w);
+      const panel = getRackPanelRect(w, h, 6, 10);
+      expect(rectsOverlap(panel, bar)).toBe(false);
+    }
+  });
+
+  it('shop panel never overlaps the HUD bar, even at short canvas heights', () => {
+    for (const [w, h] of SHORT_HEIGHTS) {
+      const bar = getHudBarRect(w);
+      const panel = getShopPanelRect(w, h, 20);
+      expect(rectsOverlap(panel, bar)).toBe(false);
+    }
+  });
+
+  it('offers modal never overlaps the HUD bar, even at short canvas heights', () => {
+    for (const [w, h] of SHORT_HEIGHTS) {
+      const bar = getHudBarRect(w);
+      const modal = getOffersModalRect(w, h);
+      expect(rectsOverlap(modal, bar)).toBe(false);
+    }
+  });
+
+  it('jobs modal never overlaps the HUD bar, even at short canvas heights', () => {
+    for (const [w, h] of SHORT_HEIGHTS) {
+      const bar = getHudBarRect(w);
+      const contentHeight = getJobsModalContentHeight(5, 5);
+      const modal = getJobsModalRect(w, h, contentHeight);
+      expect(rectsOverlap(modal, bar)).toBe(false);
+    }
+  });
+});
+
 describe('game viewport', () => {
   it('never goes negative even on a very narrow canvas', () => {
     const viewport = getGameViewportRect(200, 200);
