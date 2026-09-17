@@ -82,6 +82,10 @@ export function createInput(canvas: HTMLCanvasElement, target: Window = window):
   canvas.style.touchAction = 'none';
 
   target.addEventListener('keydown', (event) => {
+    // F5 is bound in-game to quicksave (see main.ts) — without this, the browser's own
+    // refresh would fire on the same keypress and tear the page down before the save (and its
+    // confirmation toast) ever completes.
+    if (event.key === 'F5') event.preventDefault();
     keysDown.add(event.key);
     for (const handler of keyDownHandlers.get(event.key) ?? []) {
       handler();
