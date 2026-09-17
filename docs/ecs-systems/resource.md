@@ -41,3 +41,13 @@ flips that flag.
 - A workload's cooling contribution (`WORKLOAD_ARCHETYPES[...].coolingBonusKw`) is added
   on top of a machine's idle draw in `drawFor` — `capacity.ts`'s `RackLoad.heatKw`
   mirrors this exact calculation, so the two must be kept in sync if either changes.
+- **`CoolingCapacity` means "how much work the datacenter can run", nothing else.** It is a
+  brownout cap here and it is *not* read by [thermal](./thermal.md) — rack temperature is
+  local (flat baseline + CRAC units in range + that rack's own heat). Do not reintroduce a
+  per-rack cooling term derived from it: it is a facility-wide total, so spreading it over
+  racks hands every rack the whole floor's cooling. See `.plans/thermal-and-cooling.md` D5.
+- Power and cooling are not redundant budgets. Every machine tier draws more power than
+  cooling at idle, and `drawFor` holds `powerKw` fixed under load while summing workload
+  `coolingBonusKw` — so power caps *fleet size* and cooling caps *workload mix*. Cooling only
+  becomes the binding constraint once the player runs `render` (+0.8 kW) or `training`
+  (+2.2 kW) contracts.

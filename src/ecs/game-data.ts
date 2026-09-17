@@ -143,19 +143,32 @@ export const COOLING_UPGRADE_KW = 5;
 // target toward; THERMAL_RESPONSE is the per-second fraction of the gap to target closed each
 // tick (thermal mass — a rack does not jump straight to its target).
 export const AMBIENT_C = 20;
-export const HEAT_TO_DEGREES = 14;
-export const COOLING_TO_DEGREES = 14;
+// 6 °C per kW, not the 14 this shipped with: the throttle band (THROTTLE_C…TRIP_C) is 20 °C
+// wide, so at 14 it spanned only 1.4 kW of heat and a rack snapped from fine to tripped with no
+// visible warning — which defeats D6's point. At 6 the band is 3.3 kW wide.
+export const HEAT_TO_DEGREES = 6;
+export const COOLING_TO_DEGREES = 6;
 export const THERMAL_RESPONSE = 0.25;
 export const THROTTLE_C = 45;
 export const TRIP_C = 65;
 // Hysteresis (D3/Step 3): a trip clears once the rack cools to this, not merely back under
 // THROTTLE_C, or a rack sitting right at the boundary would flicker online/offline every tick.
 export const TRIP_RECOVER_C = THROTTLE_C - 5;
-// D5: facility CoolingCapacity stays as a flat, position-independent baseline applied to every
-// rack — this fraction of it, not divided across racks. Weak enough that it stops sufficing once
-// the player has enough hardware for heat to matter; CRAC units (placed, radius-limited) are the
-// answer once it does.
-export const BASELINE_COOLING_SHARE = 0.5;
+// The coldest a rack can read, however much cooling reaches it — cooling cannot pull a rack
+// below the air its CRACs supply. Without this floor, surplus cooling keeps subtracting
+// COOLING_TO_DEGREES per kW without bound, and an over-cooled rack displays hundreds of degrees
+// below zero. There is no failure mode down here, so the floor is purely about the model (and
+// the number on screen) staying physical.
+export const SUPPLY_AIR_C = 14;
+// D5: building ventilation — a flat amount of cooling every rack gets for free, wherever it
+// sits, so the early game needs no spatial planning. Deliberately an ABSOLUTE kW figure and NOT
+// a share of the facility's CoolingCapacity: CoolingCapacity is a facility-wide budget (how much
+// work the datacenter can run at once, enforced by resource.ts), while this is per rack. Scaling
+// one off the other handed every rack the entire floor's cooling, so temperature fell linearly
+// with rack count (~ -450 °C on a ten-rack floor) and a thermal trip became unreachable past two
+// racks. Past this baseline, a rack's temperature is CRAC placement and the work it is running —
+// nothing facility-wide.
+export const BASELINE_COOLING_KW = 0.6;
 
 export interface CoolingUnitDef {
   id: 'crac';

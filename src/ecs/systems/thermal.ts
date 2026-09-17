@@ -12,11 +12,10 @@ import {
   machines,
   installedIns,
   powereds,
-  coolingCapacities,
   demandClocks,
 } from '../components';
 import {
-  BASELINE_COOLING_SHARE,
+  BASELINE_COOLING_KW,
   TRIP_C,
   TRIP_RECOVER_C,
   BROWNOUT_COOLDOWN_SECONDS,
@@ -38,10 +37,6 @@ import { type System } from './system';
 export function createThermalSystem(world: World, facility: EntityId, audio: Audio): System {
   return {
     update(deltaSeconds: number) {
-      const coolingCapacity = world.getComponent(coolingCapacities, facility);
-      // D5: a flat baseline applied to every rack regardless of position, not divided across
-      // racks — building ventilation, not something the player has to plan around early on.
-      const baselineKw = (coolingCapacity?.kw ?? 0) * BASELINE_COOLING_SHARE;
       const elapsedSeconds = world.getComponent(demandClocks, facility)?.elapsedSeconds ?? 0;
 
       const cracIds = world.query(coolingUnits, gridPositions);
@@ -66,7 +61,13 @@ export function createThermalSystem(world: World, facility: EntityId, audio: Aud
           serverCount: 0,
         };
 
-        let delivered = baselineKw;
+        // D5: BASELINE_COOLING_KW is building ventilation — a flat, position-independent amount
+        // every rack gets for free. Deliberately NOT derived from the facility's CoolingCapacity:
+        // that is a facility-wide budget for how much work the datacenter can run (resource.ts
+        // enforces it as a brownout cap), and spreading it across racks gave every rack the whole
+        // floor's cooling. A rack's temperature is this baseline, its own RackLoad.heatKw, and
+        // the CRACs in range — nothing else facility-wide.
+        let delivered = BASELINE_COOLING_KW;
         for (const cracId of cracIds) {
           const crac = world.getComponent(coolingUnits, cracId)!;
           const cracGrid = world.getComponent(gridPositions, cracId)!;

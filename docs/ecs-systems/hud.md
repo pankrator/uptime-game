@@ -10,7 +10,9 @@ no component writes.
 
 ## Structure
 
-- `drawTopBar` — money, power draw/capacity, cooling draw/capacity, reputation, per-trait
+- `drawTopBar` — money, power draw/capacity, cooling draw/capacity (labelled `❄ COOLING`:
+  it is the facility's work budget, a brownout cap like power, and is unrelated to rack
+  temperature — see [thermal](./thermal.md)), reputation, per-trait
   facility capacity bars (CPU/RAM/storage shown separately — see the D5 comment: compute
   alone hid RAM/storage pressure that could bottleneck placement even with CPU headroom),
   offers/jobs hint badges (the only always-visible sign those two panels exist, now that
