@@ -231,10 +231,8 @@ export interface MaintenanceTask {
 export interface Utilization {
   powerDrawKw: number;
   coolingDrawKw: number;
-  computeTotal: number;
-  computeFree: number;
-  // Step 2: added alongside computeTotal/computeFree, filled by capacity.ts. Step 3/4 removes
-  // the compute-only pair once capacity.ts is the sole source of facility-wide free capacity.
+  // Facility-wide free capacity; capacity.ts is the sole source (see .plans/power-billing.md
+  // step 3/4).
   traitsTotal: Traits;
   traitsFree: Traits;
   // .plans/power-billing.md: derived (power + cooling) * POWER_COST_PER_KW_SECOND, written by

@@ -115,8 +115,6 @@ export function defaultUtilization(): Utilization {
   return {
     powerDrawKw: 0,
     coolingDrawKw: 0,
-    computeTotal: 0,
-    computeFree: 0,
     traitsTotal: zeroTraits(),
     traitsFree: zeroTraits(),
     powerCostPerSecond: 0,

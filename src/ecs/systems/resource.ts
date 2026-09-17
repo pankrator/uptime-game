@@ -186,8 +186,6 @@ export function createResourceSystem(world: World, facility: EntityId, audio: Au
 
       let powerDrawKw = 0;
       let coolingDrawKw = 0;
-      let computeTotal = 0;
-      let computeFree = 0;
 
       for (const id of machineIds) {
         const powered = world.getComponent(powereds, id)!;
@@ -209,21 +207,10 @@ export function createResourceSystem(world: World, facility: EntityId, audio: Au
         const draw = drawFor(world, id);
         powerDrawKw += draw.powerKw;
         coolingDrawKw += draw.coolingKw;
-
-        const machine = world.getComponent(machines, id)!;
-        const tier = MACHINE_TIERS[machine.tierId];
-        computeTotal += tier.traits.cpu;
-        const used = workloadsOn(world, id).reduce(
-          (sum, workloadId) => sum + (world.getComponent(workloads, workloadId)?.demands.cpu ?? 0),
-          0,
-        );
-        computeFree += Math.max(0, tier.traits.cpu - used);
       }
 
       utilization.powerDrawKw = powerDrawKw + cracPowerKw;
       utilization.coolingDrawKw = coolingDrawKw;
-      utilization.computeTotal = computeTotal;
-      utilization.computeFree = computeFree;
 
       // .plans/power-billing.md D1/D2: billed on draw (offline machines already `continue`d
       // above and contribute 0), power + cooling at one rate. Includes CRAC power draw
