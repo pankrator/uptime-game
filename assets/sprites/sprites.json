@@ -1,0 +1,592 @@
+{
+  "generator": "tools/generate-sprites.ts",
+  "note": "Standalone assets — not loaded by the game yet.",
+  "scales": [
+    1,
+    2
+  ],
+  "sprites": {
+    "rack-empty": {
+      "width": 32,
+      "height": 32,
+      "files": {
+        "1x": "1x/rack-empty.png",
+        "2x": "2x/rack-empty.png"
+      }
+    },
+    "rack-partial": {
+      "width": 32,
+      "height": 32,
+      "files": {
+        "1x": "1x/rack-partial.png",
+        "2x": "2x/rack-partial.png"
+      }
+    },
+    "rack-full": {
+      "width": 32,
+      "height": 32,
+      "files": {
+        "1x": "1x/rack-full.png",
+        "2x": "2x/rack-full.png"
+      }
+    },
+    "rack-offline": {
+      "width": 32,
+      "height": 32,
+      "files": {
+        "1x": "1x/rack-offline.png",
+        "2x": "2x/rack-offline.png"
+      }
+    },
+    "rack-failed": {
+      "width": 32,
+      "height": 32,
+      "files": {
+        "1x": "1x/rack-failed.png",
+        "2x": "2x/rack-failed.png"
+      }
+    },
+    "crac-0": {
+      "width": 32,
+      "height": 32,
+      "files": {
+        "1x": "1x/crac-0.png",
+        "2x": "2x/crac-0.png"
+      }
+    },
+    "crac-1": {
+      "width": 32,
+      "height": 32,
+      "files": {
+        "1x": "1x/crac-1.png",
+        "2x": "2x/crac-1.png"
+      }
+    },
+    "floor-tile": {
+      "width": 32,
+      "height": 32,
+      "files": {
+        "1x": "1x/floor-tile.png",
+        "2x": "2x/floor-tile.png"
+      }
+    },
+    "floor-tile-vent": {
+      "width": 32,
+      "height": 32,
+      "files": {
+        "1x": "1x/floor-tile-vent.png",
+        "2x": "2x/floor-tile-vent.png"
+      }
+    },
+    "server-budget": {
+      "width": 64,
+      "height": 16,
+      "files": {
+        "1x": "1x/server-budget.png",
+        "2x": "2x/server-budget.png"
+      }
+    },
+    "server-basic": {
+      "width": 64,
+      "height": 16,
+      "files": {
+        "1x": "1x/server-basic.png",
+        "2x": "2x/server-basic.png"
+      }
+    },
+    "server-dense": {
+      "width": 64,
+      "height": 16,
+      "files": {
+        "1x": "1x/server-dense.png",
+        "2x": "2x/server-dense.png"
+      }
+    },
+    "server-storage": {
+      "width": 64,
+      "height": 16,
+      "files": {
+        "1x": "1x/server-storage.png",
+        "2x": "2x/server-storage.png"
+      }
+    },
+    "server-memory": {
+      "width": 64,
+      "height": 16,
+      "files": {
+        "1x": "1x/server-memory.png",
+        "2x": "2x/server-memory.png"
+      }
+    },
+    "manager-down-0": {
+      "width": 24,
+      "height": 32,
+      "files": {
+        "1x": "1x/manager-down-0.png",
+        "2x": "2x/manager-down-0.png"
+      }
+    },
+    "manager-down-1": {
+      "width": 24,
+      "height": 32,
+      "files": {
+        "1x": "1x/manager-down-1.png",
+        "2x": "2x/manager-down-1.png"
+      }
+    },
+    "manager-down-2": {
+      "width": 24,
+      "height": 32,
+      "files": {
+        "1x": "1x/manager-down-2.png",
+        "2x": "2x/manager-down-2.png"
+      }
+    },
+    "manager-left-0": {
+      "width": 24,
+      "height": 32,
+      "files": {
+        "1x": "1x/manager-left-0.png",
+        "2x": "2x/manager-left-0.png"
+      }
+    },
+    "manager-left-1": {
+      "width": 24,
+      "height": 32,
+      "files": {
+        "1x": "1x/manager-left-1.png",
+        "2x": "2x/manager-left-1.png"
+      }
+    },
+    "manager-left-2": {
+      "width": 24,
+      "height": 32,
+      "files": {
+        "1x": "1x/manager-left-2.png",
+        "2x": "2x/manager-left-2.png"
+      }
+    },
+    "manager-right-0": {
+      "width": 24,
+      "height": 32,
+      "files": {
+        "1x": "1x/manager-right-0.png",
+        "2x": "2x/manager-right-0.png"
+      }
+    },
+    "manager-right-1": {
+      "width": 24,
+      "height": 32,
+      "files": {
+        "1x": "1x/manager-right-1.png",
+        "2x": "2x/manager-right-1.png"
+      }
+    },
+    "manager-right-2": {
+      "width": 24,
+      "height": 32,
+      "files": {
+        "1x": "1x/manager-right-2.png",
+        "2x": "2x/manager-right-2.png"
+      }
+    },
+    "manager-up-0": {
+      "width": 24,
+      "height": 32,
+      "files": {
+        "1x": "1x/manager-up-0.png",
+        "2x": "2x/manager-up-0.png"
+      }
+    },
+    "manager-up-1": {
+      "width": 24,
+      "height": 32,
+      "files": {
+        "1x": "1x/manager-up-1.png",
+        "2x": "2x/manager-up-1.png"
+      }
+    },
+    "manager-up-2": {
+      "width": 24,
+      "height": 32,
+      "files": {
+        "1x": "1x/manager-up-2.png",
+        "2x": "2x/manager-up-2.png"
+      }
+    },
+    "icon-power": {
+      "width": 16,
+      "height": 16,
+      "files": {
+        "1x": "1x/icon-power.png",
+        "2x": "2x/icon-power.png"
+      }
+    },
+    "icon-heat": {
+      "width": 16,
+      "height": 16,
+      "files": {
+        "1x": "1x/icon-heat.png",
+        "2x": "2x/icon-heat.png"
+      }
+    },
+    "icon-cooling": {
+      "width": 16,
+      "height": 16,
+      "files": {
+        "1x": "1x/icon-cooling.png",
+        "2x": "2x/icon-cooling.png"
+      }
+    },
+    "icon-temperature": {
+      "width": 16,
+      "height": 16,
+      "files": {
+        "1x": "1x/icon-temperature.png",
+        "2x": "2x/icon-temperature.png"
+      }
+    },
+    "icon-money": {
+      "width": 16,
+      "height": 16,
+      "files": {
+        "1x": "1x/icon-money.png",
+        "2x": "2x/icon-money.png"
+      }
+    },
+    "icon-wrench": {
+      "width": 16,
+      "height": 16,
+      "files": {
+        "1x": "1x/icon-wrench.png",
+        "2x": "2x/icon-wrench.png"
+      }
+    },
+    "icon-warning": {
+      "width": 16,
+      "height": 16,
+      "files": {
+        "1x": "1x/icon-warning.png",
+        "2x": "2x/icon-warning.png"
+      }
+    },
+    "icon-workload": {
+      "width": 16,
+      "height": 16,
+      "files": {
+        "1x": "1x/icon-workload.png",
+        "2x": "2x/icon-workload.png"
+      }
+    },
+    "icon-network": {
+      "width": 16,
+      "height": 16,
+      "files": {
+        "1x": "1x/icon-network.png",
+        "2x": "2x/icon-network.png"
+      }
+    },
+    "icon-clock": {
+      "width": 16,
+      "height": 16,
+      "files": {
+        "1x": "1x/icon-clock.png",
+        "2x": "2x/icon-clock.png"
+      }
+    },
+    "icon-ok": {
+      "width": 16,
+      "height": 16,
+      "files": {
+        "1x": "1x/icon-ok.png",
+        "2x": "2x/icon-ok.png"
+      }
+    },
+    "icon-fail": {
+      "width": 16,
+      "height": 16,
+      "files": {
+        "1x": "1x/icon-fail.png",
+        "2x": "2x/icon-fail.png"
+      }
+    }
+  },
+  "sheets": {
+    "racks": {
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "columns": 5,
+      "rows": 1,
+      "files": {
+        "1x": "sheets/racks.png",
+        "2x": "sheets/racks@2x.png"
+      },
+      "frames": {
+        "rack-empty": {
+          "x": 0,
+          "y": 0,
+          "w": 32,
+          "h": 32
+        },
+        "rack-partial": {
+          "x": 32,
+          "y": 0,
+          "w": 32,
+          "h": 32
+        },
+        "rack-full": {
+          "x": 64,
+          "y": 0,
+          "w": 32,
+          "h": 32
+        },
+        "rack-offline": {
+          "x": 96,
+          "y": 0,
+          "w": 32,
+          "h": 32
+        },
+        "rack-failed": {
+          "x": 128,
+          "y": 0,
+          "w": 32,
+          "h": 32
+        }
+      }
+    },
+    "crac": {
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "columns": 2,
+      "rows": 1,
+      "files": {
+        "1x": "sheets/crac.png",
+        "2x": "sheets/crac@2x.png"
+      },
+      "frames": {
+        "crac-0": {
+          "x": 0,
+          "y": 0,
+          "w": 32,
+          "h": 32
+        },
+        "crac-1": {
+          "x": 32,
+          "y": 0,
+          "w": 32,
+          "h": 32
+        }
+      }
+    },
+    "servers": {
+      "frameWidth": 64,
+      "frameHeight": 16,
+      "columns": 1,
+      "rows": 5,
+      "files": {
+        "1x": "sheets/servers.png",
+        "2x": "sheets/servers@2x.png"
+      },
+      "frames": {
+        "server-budget": {
+          "x": 0,
+          "y": 0,
+          "w": 64,
+          "h": 16
+        },
+        "server-basic": {
+          "x": 0,
+          "y": 16,
+          "w": 64,
+          "h": 16
+        },
+        "server-dense": {
+          "x": 0,
+          "y": 32,
+          "w": 64,
+          "h": 16
+        },
+        "server-storage": {
+          "x": 0,
+          "y": 48,
+          "w": 64,
+          "h": 16
+        },
+        "server-memory": {
+          "x": 0,
+          "y": 64,
+          "w": 64,
+          "h": 16
+        }
+      }
+    },
+    "manager": {
+      "frameWidth": 24,
+      "frameHeight": 32,
+      "columns": 3,
+      "rows": 4,
+      "files": {
+        "1x": "sheets/manager.png",
+        "2x": "sheets/manager@2x.png"
+      },
+      "frames": {
+        "manager-down-0": {
+          "x": 0,
+          "y": 0,
+          "w": 24,
+          "h": 32
+        },
+        "manager-down-1": {
+          "x": 24,
+          "y": 0,
+          "w": 24,
+          "h": 32
+        },
+        "manager-down-2": {
+          "x": 48,
+          "y": 0,
+          "w": 24,
+          "h": 32
+        },
+        "manager-left-0": {
+          "x": 0,
+          "y": 32,
+          "w": 24,
+          "h": 32
+        },
+        "manager-left-1": {
+          "x": 24,
+          "y": 32,
+          "w": 24,
+          "h": 32
+        },
+        "manager-left-2": {
+          "x": 48,
+          "y": 32,
+          "w": 24,
+          "h": 32
+        },
+        "manager-right-0": {
+          "x": 0,
+          "y": 64,
+          "w": 24,
+          "h": 32
+        },
+        "manager-right-1": {
+          "x": 24,
+          "y": 64,
+          "w": 24,
+          "h": 32
+        },
+        "manager-right-2": {
+          "x": 48,
+          "y": 64,
+          "w": 24,
+          "h": 32
+        },
+        "manager-up-0": {
+          "x": 0,
+          "y": 96,
+          "w": 24,
+          "h": 32
+        },
+        "manager-up-1": {
+          "x": 24,
+          "y": 96,
+          "w": 24,
+          "h": 32
+        },
+        "manager-up-2": {
+          "x": 48,
+          "y": 96,
+          "w": 24,
+          "h": 32
+        }
+      }
+    },
+    "icons": {
+      "frameWidth": 16,
+      "frameHeight": 16,
+      "columns": 6,
+      "rows": 2,
+      "files": {
+        "1x": "sheets/icons.png",
+        "2x": "sheets/icons@2x.png"
+      },
+      "frames": {
+        "icon-power": {
+          "x": 0,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "icon-heat": {
+          "x": 16,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "icon-cooling": {
+          "x": 32,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "icon-temperature": {
+          "x": 48,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "icon-money": {
+          "x": 64,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "icon-wrench": {
+          "x": 80,
+          "y": 0,
+          "w": 16,
+          "h": 16
+        },
+        "icon-warning": {
+          "x": 0,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "icon-workload": {
+          "x": 16,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "icon-network": {
+          "x": 32,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "icon-clock": {
+          "x": 48,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "icon-ok": {
+          "x": 64,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        },
+        "icon-fail": {
+          "x": 80,
+          "y": 16,
+          "w": 16,
+          "h": 16
+        }
+      }
+    }
+  }
+}
