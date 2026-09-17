@@ -17,7 +17,7 @@ import { createWorkloadSpawnSystem, createOfferExpirySystem } from './ecs/system
 import { createWorkloadRunSystem } from './ecs/systems/workload-run';
 import { createThermalSystem } from './ecs/systems/thermal';
 import { createWearSystem } from './ecs/systems/wear';
-import { createEffectsSystem } from './ecs/systems/effects';
+import { createEffectsSystem, spawnToast } from './ecs/systems/effects';
 import { createRenderSystem } from './ecs/systems/render';
 import { createHudSystem } from './ecs/systems/hud';
 import { createCameraSystem } from './ecs/systems/camera';
@@ -146,10 +146,16 @@ async function runGame(
   // call) — there's no in-game slot switcher, only the landing screen's picker chooses a slot.
   // Mirrors camera.ts's own direct `input.onKeyDown(' ', ...)` — a key bound straight at the
   // call site that owns it, not routed through ecs/systems/input.ts's click-priority chain.
+  // input.ts prevents F5's default browser refresh, so this is the only thing F5 does — the
+  // toast (effects.ts's spawnToast, already used for miss/warning banners) is the player's only
+  // feedback that the save happened, in place of the page reload they'd otherwise see.
   input.onKeyDown('F5', () => {
     void saveManager.save(world, slot).then(
-      () => console.info(`[save] game saved to "${slot}"`),
-      (err: unknown) => console.error('[save] failed to save', err),
+      () => spawnToast(world, `Game saved to ${slot}`, '#4caf50'),
+      (err: unknown) => {
+        console.error('[save] failed to save', err);
+        spawnToast(world, 'Save failed — see console', '#e53935');
+      },
     );
   });
 
