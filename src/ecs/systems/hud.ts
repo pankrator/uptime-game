@@ -150,47 +150,60 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
 
   // Below this, an item would start drawing under (or push past) the mute button — always
   // reachable regardless of window width (see getMuteButtonRect's own comment). Items are
-  // listed most- to least-important; each is skipped once x reaches this budget, and since
-  // skipping leaves x unmoved, every item after the first skip is skipped too — a narrow
-  // window truncates the tail of the bar instead of overlapping the mute button or running off
-  // the canvas. See .plans/playtest-findings.md B5.
+  // listed most- to least-important; tryDraw skips an item (leaving x unmoved) once it no
+  // longer fits before this budget, so every item after the first skip is skipped too — a
+  // narrow window truncates the tail of the bar instead of overlapping the mute button or
+  // running off the canvas. See .plans/playtest-findings.md B5.
   const rightLimit = getMuteButtonRect(renderer.width).x - 10;
+
+  // Checks the item's full width (text plus any trailing bar/gap) against rightLimit before
+  // drawing, and only advances x on success — the single choke point every top-bar item goes
+  // through, so a twelfth item cannot be added without this check the way eleven hand-written
+  // `if (x < rightLimit)` guards could be (and three already were, silently).
+  const tryDraw = (width: number, draw: () => void): void => {
+    if (x + width > rightLimit) return;
+    draw();
+    x += width;
+  };
 
   // Money — red with a minus sign once negative (.plans/power-billing.md D4/D5).
   const negative = wallet.money < 0;
   ctx.font = 'bold 14px sans-serif';
-  ctx.fillStyle = negative ? RED : GREEN;
   const moneyText = `${negative ? '-' : ''}$${Math.floor(Math.abs(wallet.money)).toLocaleString()}`;
-  ctx.fillText(moneyText, x, midY);
-  x += ctx.measureText(moneyText).width + 12;
+  tryDraw(ctx.measureText(moneyText).width + 12, () => {
+    ctx.fillStyle = negative ? RED : GREEN;
+    ctx.fillText(moneyText, x, midY);
+  });
 
   // Net income rate: revenue - power/cooling cost, the whole point of D5 — makes the tier
   // trade-off visible instead of just a slower income curve.
   const netPerSecond = utilization.revenuePerSecond - utilization.powerCostPerSecond;
   ctx.font = '12px sans-serif';
-  ctx.fillStyle = netPerSecond >= 0 ? GREEN : RED;
   const netText = `${netPerSecond >= 0 ? '+' : ''}${netPerSecond.toFixed(2)}/s`;
-  ctx.fillText(netText, x, midY);
-  x += ctx.measureText(netText).width + 20;
+  tryDraw(ctx.measureText(netText).width + 20, () => {
+    ctx.fillStyle = netPerSecond >= 0 ? GREEN : RED;
+    ctx.fillText(netText, x, midY);
+  });
 
   // Power
-  if (x < rightLimit) {
+  {
     const overPower = utilization.powerDrawKw > powerCapacity.kw;
     ctx.font = '13px sans-serif';
-    ctx.fillStyle = overPower ? RED : TEXT_COLOR;
     const powerText = `⚡ ${utilization.powerDrawKw.toFixed(1)} / ${powerCapacity.kw.toFixed(1)} kW  (-${utilization.powerCostPerSecond.toFixed(2)}/s)`;
-    ctx.fillText(powerText, x, midY);
-    x += ctx.measureText(powerText).width + 6;
-    drawInlineBar(
-      ctx,
-      x,
-      midY - 4,
-      36,
-      8,
-      utilization.powerDrawKw / powerCapacity.kw,
-      overPower ? RED : GREEN,
-    );
-    x += 36 + 20;
+    const textWidth = ctx.measureText(powerText).width;
+    tryDraw(textWidth + 6 + 36 + 20, () => {
+      ctx.fillStyle = overPower ? RED : TEXT_COLOR;
+      ctx.fillText(powerText, x, midY);
+      drawInlineBar(
+        ctx,
+        x + textWidth + 6,
+        midY - 4,
+        36,
+        8,
+        utilization.powerDrawKw / powerCapacity.kw,
+        overPower ? RED : GREEN,
+      );
+    });
   }
 
   // Cooling. Spelled out rather than left as a bare ❄ figure: this is the facility's cooling
@@ -199,67 +212,71 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
   // is local (flat baseline + CRACs in range + that rack's own heat) and is shown per rack on the
   // floor in °C, so a lone snowflake here invited reading the two as the same thing. See
   // .plans/thermal-and-cooling.md D5.
-  if (x < rightLimit) {
+  {
     const overCooling = utilization.coolingDrawKw > coolingCapacity.kw;
-    ctx.fillStyle = overCooling ? RED : TEXT_COLOR;
     const coolingText = `❄ COOLING ${utilization.coolingDrawKw.toFixed(1)} / ${coolingCapacity.kw.toFixed(1)} kW`;
-    ctx.fillText(coolingText, x, midY);
-    x += ctx.measureText(coolingText).width + 6;
-    drawInlineBar(
-      ctx,
-      x,
-      midY - 4,
-      36,
-      8,
-      utilization.coolingDrawKw / coolingCapacity.kw,
-      overCooling ? RED : GREEN,
-    );
-    x += 36 + 20;
+    const textWidth = ctx.measureText(coolingText).width;
+    tryDraw(textWidth + 6 + 36 + 20, () => {
+      ctx.fillStyle = overCooling ? RED : TEXT_COLOR;
+      ctx.fillText(coolingText, x, midY);
+      drawInlineBar(
+        ctx,
+        x + textWidth + 6,
+        midY - 4,
+        36,
+        8,
+        utilization.coolingDrawKw / coolingCapacity.kw,
+        overCooling ? RED : GREEN,
+      );
+    });
   }
 
   // Reputation
-  if (x < rightLimit) {
-    ctx.fillStyle = repColor(reputation.value);
+  {
     const repText = `★ ${Math.round(reputation.value)}`;
-    ctx.fillText(repText, x, midY);
-    x += ctx.measureText(repText).width + 20;
+    tryDraw(ctx.measureText(repText).width + 20, () => {
+      ctx.fillStyle = repColor(reputation.value);
+      ctx.fillText(repText, x, midY);
+    });
   }
 
   // Offers/Jobs hint badges — now that both live behind toggled panels instead of a
   // permanently docked column (.plans/job-panels.md), this is the only always-visible sign
   // they exist at all.
-  if (x < rightLimit) {
+  {
     const offerCount = world.query(offers).length;
     ctx.font = 'bold 13px sans-serif';
-    ctx.fillStyle = offerCount > 0 ? AMBER : DIM_COLOR;
     const offersText = `📥 ${offerCount} offers [O]`;
-    ctx.fillText(offersText, x, midY);
-    x += ctx.measureText(offersText).width + 16;
+    tryDraw(ctx.measureText(offersText).width + 16, () => {
+      ctx.fillStyle = offerCount > 0 ? AMBER : DIM_COLOR;
+      ctx.fillText(offersText, x, midY);
+    });
   }
-  if (x < rightLimit) {
+  {
     const { pendingCount, activeCount } = jobPanelCounts(world);
     const jobCount = pendingCount + activeCount;
     ctx.font = '13px sans-serif';
-    ctx.fillStyle = jobCount > 0 ? TEXT_COLOR : DIM_COLOR;
     const jobsText = `🗂 ${jobCount} jobs [J]`;
-    ctx.fillText(jobsText, x, midY);
-    x += ctx.measureText(jobsText).width + 20;
+    tryDraw(ctx.measureText(jobsText).width + 20, () => {
+      ctx.fillStyle = jobCount > 0 ? TEXT_COLOR : DIM_COLOR;
+      ctx.fillText(jobsText, x, midY);
+    });
   }
 
   // Per-trait capacity (D5: compute alone hid RAM/storage pressure that could bottleneck
   // placement even while CPU still had headroom).
   ctx.font = '13px sans-serif';
   for (const key of TRAIT_KEYS) {
-    if (x >= rightLimit) break;
     const total = utilization.traitsTotal[key];
     const used = total - utilization.traitsFree[key];
     const over = used > total;
-    ctx.fillStyle = over ? RED : TEXT_COLOR;
     const traitText = `${TRAIT_LABELS[key]} ${used}/${total}`;
-    ctx.fillText(traitText, x, midY);
-    x += ctx.measureText(traitText).width + 6;
-    drawInlineBar(ctx, x, midY - 4, 36, 8, total > 0 ? used / total : 0, over ? RED : GREEN);
-    x += 36 + 16;
+    const textWidth = ctx.measureText(traitText).width;
+    tryDraw(textWidth + 6 + 36 + 16, () => {
+      ctx.fillStyle = over ? RED : TEXT_COLOR;
+      ctx.fillText(traitText, x, midY);
+      drawInlineBar(ctx, x + textWidth + 6, midY - 4, 36, 8, total > 0 ? used / total : 0, over ? RED : GREEN);
+    });
   }
 
   // Overheat alert — reuses the brownout path's "count of racks in trouble" shape (D8 point 4):
@@ -276,13 +293,14 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
   }
   if (trippedCount > 0 || throttledCount > 0) {
     ctx.font = 'bold 13px sans-serif';
-    ctx.fillStyle = trippedCount > 0 ? RED : AMBER;
     const parts: string[] = [];
     if (trippedCount > 0) parts.push(`⛔ ${trippedCount} overheated`);
     if (throttledCount > 0) parts.push(`🌡 ${throttledCount} throttled`);
     const overheatText = parts.join('  ');
-    ctx.fillText(overheatText, x, midY);
-    x += ctx.measureText(overheatText).width + 20;
+    tryDraw(ctx.measureText(overheatText).width + 20, () => {
+      ctx.fillStyle = trippedCount > 0 ? RED : AMBER;
+      ctx.fillText(overheatText, x, midY);
+    });
   }
 
   // Failure alert (.plans/hardware-failure.md D7) — a failed machine never recovers on its
@@ -291,30 +309,35 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
   const failedCount = world.query(faileds).length;
   if (failedCount > 0) {
     ctx.font = 'bold 13px sans-serif';
-    ctx.fillStyle = RED;
     const failedText = `⚠ ${failedCount} failed`;
-    ctx.fillText(failedText, x, midY);
-    x += ctx.measureText(failedText).width + 20;
+    tryDraw(ctx.measureText(failedText).width + 20, () => {
+      ctx.fillStyle = RED;
+      ctx.fillText(failedText, x, midY);
+    });
   }
 
   // Inventory summary — total owned-but-unplaced stock (D5), bought at the shop.
   const inventory = world.getComponent(inventories, facility);
-  if (inventory && x < rightLimit) {
+  if (inventory) {
     const totalStock = Object.values(inventory.counts).reduce(
       (sum: number, count) => sum + (count ?? 0),
       0,
     );
-    ctx.fillStyle = totalStock > 0 ? TEXT_COLOR : DIM_COLOR;
     const inventoryText = `📦 ${totalStock} in stock`;
-    ctx.fillText(inventoryText, x, midY);
-    x += ctx.measureText(inventoryText).width + 20;
+    tryDraw(ctx.measureText(inventoryText).width + 20, () => {
+      ctx.fillStyle = totalStock > 0 ? TEXT_COLOR : DIM_COLOR;
+      ctx.fillText(inventoryText, x, midY);
+    });
   }
 
   // Personal-best counters (cheap, already tracked) — lowest priority, first to drop.
   const clock = world.getComponent(demandClocks, facility);
-  if (clock && x < rightLimit) {
-    ctx.fillStyle = DIM_COLOR;
-    ctx.fillText(`served ${clock.contractsServed}  peak ${clock.peakComputeServed}`, x, midY);
+  if (clock) {
+    const clockText = `served ${clock.contractsServed}  peak ${clock.peakComputeServed}`;
+    tryDraw(ctx.measureText(clockText).width, () => {
+      ctx.fillStyle = DIM_COLOR;
+      ctx.fillText(clockText, x, midY);
+    });
   }
 }
 
