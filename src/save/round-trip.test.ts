@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { createWorld } from '../ecs/world';
+import { describe, expect, it } from 'vitest';
+import { createWorld, resetAllComponentStores } from '../ecs/world';
 import { spawnPlayer, spawnFacility, spawnRack, spawnMachine, spawnOffer } from '../entities';
 import { acceptOffer, placeWorkload } from '../ecs/dispatch';
 import {
@@ -15,14 +15,9 @@ import {
 } from '../ecs/components';
 import { serializeWorld } from './serialize';
 import { deserializeWorld } from './deserialize';
-import { clearAllComponentStores } from './test-utils';
 
-// Component stores are module-level singletons shared by every World instance (see
-// test-utils.ts) — clearing between tests keeps one test's entities from leaking into the
-// next's, the same way a real page load always starts with empty stores.
-beforeEach(() => {
-  clearAllComponentStores();
-});
+// Per-test isolation (one test's entities never leaking into the next's) is already handled
+// globally by src/test/setup.ts's beforeEach — no per-file reset needed here.
 
 describe('serializeWorld / deserializeWorld round trip', () => {
   it('restores a facility, a rack, an installed machine, and a running workload with references intact', () => {
@@ -42,10 +37,10 @@ describe('serializeWorld / deserializeWorld round trip', () => {
     const envelope = serializeWorld(world);
 
     // Simulates a fresh page load: `world` is only ever read via `envelope` from here on,
-    // never touched directly again, and its underlying (shared, see test-utils.ts) component
-    // storage is wiped before a second World reuses it — exactly what a real load does,
-    // since the browser tab has touched these stores exactly zero times before a load runs.
-    clearAllComponentStores();
+    // never touched directly again, and its underlying (shared — see world.ts's createWorld
+    // comment) component storage is reset before a second World reuses it, same as a real load
+    // does (the browser tab has touched these stores exactly zero times before a load runs).
+    resetAllComponentStores();
     const loaded = createWorld();
     deserializeWorld(envelope, loaded);
 

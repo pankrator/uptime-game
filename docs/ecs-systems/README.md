@@ -13,9 +13,10 @@ exists and to find the right place in the update order for new logic.
   `destroyEntity` sweeps every store it has ever seen, so removing an entity always
   cleans up its components — callers never need to remove components one by one first.
   Component stores are module-level singletons shared by every `World` instance (only the id
-  counter and `entities` set are per-instance) — see the comment on `createWorld` and
-  `src/save/test-utils.ts` for what that means for anything that creates more than one `World`
-  in the same process.
+  counter and `entities` set are per-instance) — see the comment on `createWorld` for what that
+  means for anything that creates more than one `World` in the same process.
+  `resetAllComponentStores()` (also in `world.ts`) is the escape hatch, wired into every test
+  globally via `src/test/setup.ts`.
 - **System interface** (`src/ecs/systems/system.ts`) — one method: `update(deltaSeconds: number): void`.
   Every system factory (`createXSystem(...)`) returns an object matching this interface.
 - **Components** (`src/ecs/components.ts`) — all component type definitions and their
@@ -44,12 +45,12 @@ Systems run in this order every tick; several depend on it (noted below):
 5. `rack-panel` — panel open/close, arrival, scroll, pending-drop commit
 6. `shop` — proximity-based shop panel open/close
 7. `resource` — power/cooling brownout decisions (must run before `capacity`)
-9. `thermal` — integrates per-rack `Temperature`, throttles and trips (must run after `capacity` for this tick's `RackLoad.heatKw`, before `wear` and `workload-run`)
-10. `wear` — accrues wear and rolls for hardware failure (must run after `resource` and `thermal`)
-11. `workload-spawn` — spawns new offers, ticks offer expiry
-12. `workload-run` — advances placed workloads, pays out, resolves completion/deadline miss (must run after `capacity` and `thermal`)
-13. `effects` — expires `FloatingText`/`Toast` entities spawned by `resource`/`workload-run` (timestamp-based, no ordering dependency)
-14. `tutorial` — advances the guided-tutorial step (must run last: reads this frame's mutations from every system above)
+8. `thermal` — integrates per-rack `Temperature`, throttles and trips (must run after `capacity` for this tick's `RackLoad.heatKw`, before `wear` and `workload-run`)
+9. `wear` — accrues wear and rolls for hardware failure (must run after `resource` and `thermal`)
+10. `workload-spawn` — spawns new offers, ticks offer expiry
+11. `workload-run` — advances placed workloads, pays out, resolves completion/deadline miss (must run after `capacity` and `thermal`)
+12. `effects` — expires `FloatingText`/`Toast` entities spawned by `resource`/`workload-run` (timestamp-based, no ordering dependency)
+13. `tutorial` — advances the guided-tutorial step (must run last: reads this frame's mutations from every system above)
 
 **`renderSystems`** (presentation only, skipped when tab hidden):
 

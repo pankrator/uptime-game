@@ -4,8 +4,29 @@ export interface ComponentStore<T> {
   readonly map: Map<EntityId, T>;
 }
 
+// Every store ever created, regardless of which World(s) end up using it — components.ts
+// creates one module-level singleton set of these for the whole process, shared by every
+// World instance (see createWorld's own per-instance entity-id counter below). Only consulted
+// by resetAllComponentStores, which nothing in the running game calls.
+const allComponentStores: ComponentStore<unknown>[] = [];
+
 export function createComponentStore<T>(): ComponentStore<T> {
-  return { map: new Map<EntityId, T>() };
+  const store: ComponentStore<T> = { map: new Map<EntityId, T>() };
+  allComponentStores.push(store as ComponentStore<unknown>);
+  return store;
+}
+
+// Test-only escape hatch. The real game creates exactly one World per page load, so component
+// stores being module-level singletons (not owned per-World) never matters there. A test suite
+// that calls createWorld() many times in one process is not that world: entity ids restart at 1
+// each call, but the singleton stores from components.ts keep every previous test's entries —
+// so a fresh World can collide with, and read, stale components an earlier test left behind at
+// the same numeric id. Call this between tests (see src/test/setup.ts) to give each one a clean
+// slate, equivalent to a fresh page load.
+export function resetAllComponentStores(): void {
+  for (const store of allComponentStores) {
+    store.map.clear();
+  }
 }
 
 export interface World {
@@ -26,8 +47,8 @@ export interface World {
 // `World.createEntity`'s id counter and `entities` Set are the only state actually scoped to
 // one World instance. The real app never notices (exactly one World is ever created per page
 // load), but two Worlds live at once in the same process WILL collide: both id sequences start
-// at 1 and both write into the same underlying Maps. src/save/test-utils.ts's
-// clearAllComponentStores() is how the save/load tests work around this — see its comment.
+// at 1 and both write into the same underlying Maps. resetAllComponentStores() above (wired
+// into every test via src/test/setup.ts) is how the test suite works around this.
 export function createWorld(): World {
   let nextId = 1;
   const entities = new Set<EntityId>();

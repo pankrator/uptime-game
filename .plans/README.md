@@ -22,6 +22,7 @@ from an agent.
 | — | [workload-dispatch.md](workload-dispatch.md) | Traits, offers, drag-and-drop dispatch |
 | — | [hud-and-escalation.md](hud-and-escalation.md) | HUD, alerts, difficulty curve |
 | — | [facility-shop-inventory.md](facility-shop-inventory.md) | Camera, world map, shop, inventory, room tiers |
+| — | [testing-strategy.md](testing-strategy.md) | Vitest, headless ECS/layout unit tests (no browser automation involved) |
 
 ## Playtest reports
 
