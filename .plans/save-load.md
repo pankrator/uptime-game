@@ -207,6 +207,20 @@ Classification (component → decision, from the current `components.ts`):
 This table becomes `SAVE_COMPONENTS` (persist column) and `TRANSIENT_COMPONENTS` (skip
 column) verbatim — see D2's exhaustiveness test.
 
+**Bug found post-ship, fixed:** "recomputed every tick" was true for `RackLoad`/
+`ServerCapacity` (capacity.ts creates them fresh via `addComponent` every tick, no precondition
+on prior existence) but NOT for `Utilization` — resource.ts, capacity.ts, workload-spawn.ts,
+hud.ts, and render.ts all *read* `Utilization` off the facility as a precondition (`if
+(!utilization) return`) before doing anything, rather than creating it. A fresh game never hit
+this because `spawnFacility` always seeds it; a loaded game skips `spawnFacility` entirely, so
+the facility had no `Utilization` from the moment of load onward — no system ever wrote one, so
+none of them ever ran again. Symptom: HUD top bar never draws after Continue (looks like the
+save lost your money), and no new offers ever spawn. Fixed by seeding a fresh
+`Utilization` (via the new `defaultUtilization()` in `entities/index.ts`, shared with
+`spawnFacility`) onto the facility inside `SaveManager.load()` right after deserializing — the
+one place that's true for every caller, not just `main.ts`'s. Regression test:
+`src/save/manager.test.ts`.
+
 ### D5. Two new marker components find the singletons, instead of hardcoding ids in the save format
 
 The save format is just "an array of entities + their components" — nothing in it says which
