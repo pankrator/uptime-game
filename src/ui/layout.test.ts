@@ -9,10 +9,13 @@ import {
   getHudBarRect,
   getMuteButtonRect,
   getRecenterButtonRect,
-  getWorkloadPanelRect,
-  getWorkloadRowRect,
-  getOfferCardRect,
-  getOfferButtonRect,
+  getOffersModalRect,
+  getOffersModalCardRect,
+  getOffersModalButtonRect,
+  getJobsModalRect,
+  getJobsModalContentRect,
+  getJobsModalContentHeight,
+  getJobsModalCloseButtonRect,
   getRackPanelRect,
   getRackPanelContentRect,
   getServerRowRect,
@@ -25,7 +28,6 @@ import {
   getTutorialBannerRect,
   getTutorialActionButtonRect,
   getTutorialSkipRect,
-  HUD_PANEL_MAX_ROWS,
 } from './layout';
 import { BUILDABLES } from '../ecs/components';
 import { MAX_OFFERS } from '../ecs/game-data';
@@ -84,67 +86,88 @@ describe('HUD bar / mute / recenter buttons', () => {
   });
 });
 
-describe('offer cards (F6 regression: offer card slots reflowed under the cursor)', () => {
-  it('every slot rect stays fully distinct from every other slot', () => {
-    for (let a = 0; a < MAX_OFFERS; a++) {
-      for (let b = a + 1; b < MAX_OFFERS; b++) {
-        expect(rectsOverlap(getOfferCardRect(a), getOfferCardRect(b))).toBe(false);
+describe('offers modal (F6 regression: offer card slots reflowed under the cursor)', () => {
+  it('every slot rect stays fully distinct from every other slot, at every known canvas size', () => {
+    for (const [w, h] of CANVAS_SIZES) {
+      for (let a = 0; a < MAX_OFFERS; a++) {
+        for (let b = a + 1; b < MAX_OFFERS; b++) {
+          expect(rectsOverlap(getOffersModalCardRect(a, w, h), getOffersModalCardRect(b, w, h))).toBe(
+            false,
+          );
+        }
       }
     }
   });
 
   it('accept/decline buttons fit inside their own card, for every slot', () => {
-    for (let slot = 0; slot < MAX_OFFERS; slot++) {
-      const card = getOfferCardRect(slot);
-      expect(isWithin(getOfferButtonRect(slot, 'accept'), card)).toBe(true);
-      expect(isWithin(getOfferButtonRect(slot, 'decline'), card)).toBe(true);
+    for (const [w, h] of CANVAS_SIZES) {
+      for (let slot = 0; slot < MAX_OFFERS; slot++) {
+        const card = getOffersModalCardRect(slot, w, h);
+        expect(isWithin(getOffersModalButtonRect(slot, 'accept', w, h), card)).toBe(true);
+        expect(isWithin(getOffersModalButtonRect(slot, 'decline', w, h), card)).toBe(true);
+      }
     }
   });
 
   it('accept and decline buttons in the same slot never overlap each other', () => {
-    for (let slot = 0; slot < MAX_OFFERS; slot++) {
-      expect(rectsOverlap(getOfferButtonRect(slot, 'accept'), getOfferButtonRect(slot, 'decline'))).toBe(false);
+    for (const [w, h] of CANVAS_SIZES) {
+      for (let slot = 0; slot < MAX_OFFERS; slot++) {
+        expect(
+          rectsOverlap(
+            getOffersModalButtonRect(slot, 'accept', w, h),
+            getOffersModalButtonRect(slot, 'decline', w, h),
+          ),
+        ).toBe(false);
+      }
+    }
+  });
+
+  it('the modal never exceeds the canvas bounds', () => {
+    for (const [w, h] of CANVAS_SIZES) {
+      const modal = getOffersModalRect(w, h);
+      expect(modal.x).toBeGreaterThanOrEqual(0);
+      expect(modal.y).toBeGreaterThanOrEqual(0);
+      expect(modal.x + modal.width).toBeLessThanOrEqual(w + 0.01);
+      expect(modal.y + modal.height).toBeLessThanOrEqual(h + 0.01);
     }
   });
 });
 
-describe('workload panel rows', () => {
-  it('rows never overlap each other and stay within the panel', () => {
-    for (const [w] of CANVAS_SIZES) {
-      const rowCount = 5;
-      const panel = getWorkloadPanelRect(w, rowCount);
-      const rows = Array.from({ length: rowCount }, (_, i) => getWorkloadRowRect(i, w, rowCount));
-      for (const row of rows) expect(isWithin(row, panel)).toBe(true);
-      for (let i = 0; i < rows.length; i++) {
-        for (let j = i + 1; j < rows.length; j++) {
-          expect(rectsOverlap(rows[i], rows[j])).toBe(false);
+describe('jobs modal', () => {
+  it('the scrollable content rect stays within the outer modal rect, for any job counts', () => {
+    for (const [w, h] of CANVAS_SIZES) {
+      for (const pendingCount of [0, 1, 8]) {
+        for (const activeCount of [0, 1, 8]) {
+          const contentHeight = getJobsModalContentHeight(pendingCount, activeCount);
+          const modal = getJobsModalRect(w, h, contentHeight);
+          const content = getJobsModalContentRect(w, h, contentHeight);
+          expect(isWithin(content, modal)).toBe(true);
         }
       }
     }
+  });
+
+  it('the close button fits inside the modal', () => {
+    for (const [w, h] of CANVAS_SIZES) {
+      const contentHeight = getJobsModalContentHeight(3, 3);
+      const modal = getJobsModalRect(w, h, contentHeight);
+      expect(isWithin(getJobsModalCloseButtonRect(w, h, contentHeight), modal)).toBe(true);
+    }
+  });
+
+  it('content height grows with more jobs rather than truncating (unlike the old docked panel)', () => {
+    const fewer = getJobsModalContentHeight(1, 1);
+    const more = getJobsModalContentHeight(5, 5);
+    expect(more).toBeGreaterThan(fewer);
   });
 });
 
 describe(
   'tutorial banner (B1 regression: the banner used to sit on top of the shop door, ' +
-    'blocking clicks the tutorial itself required)',
+    'blocking clicks the tutorial itself required). The offers/workload columns this used to ' +
+    'also check against are gone — both are toggled modals now (.plans/job-panels.md), and a ' +
+    'modal already absorbs every click while open regardless of whether the banner overlaps it.',
   () => {
-    it('never overlaps any live offer card slot, at any known canvas size', () => {
-      for (const [w, h] of CANVAS_SIZES) {
-        const banner = getTutorialBannerRect(w, h);
-        for (let slot = 0; slot < MAX_OFFERS; slot++) {
-          expect(rectsOverlap(banner, getOfferCardRect(slot))).toBe(false);
-        }
-      }
-    });
-
-    it('never overlaps the workload panel (right-hand column) at any known canvas size', () => {
-      for (const [w, h] of CANVAS_SIZES) {
-        const banner = getTutorialBannerRect(w, h);
-        const panel = getWorkloadPanelRect(w, HUD_PANEL_MAX_ROWS * 2 + 1);
-        expect(rectsOverlap(banner, panel)).toBe(false);
-      }
-    });
-
     it('never overlaps the build panel at any known canvas size', () => {
       for (const [w, h] of CANVAS_SIZES) {
         const banner = getTutorialBannerRect(w, h);
@@ -252,11 +275,12 @@ describe('game viewport', () => {
     expect(viewport.height).toBeGreaterThanOrEqual(0);
   });
 
-  it('leaves room for both side columns at a normal canvas width', () => {
+  it('fills the full canvas width below the top bar (no docked side columns to reserve)', () => {
     const [w, h] = [1280, 800];
     const viewport = getGameViewportRect(w, h);
-    expect(viewport.width).toBeGreaterThan(0);
-    expect(viewport.x).toBeGreaterThan(0); // left column (offers) reserved
-    expect(viewport.x + viewport.width).toBeLessThan(w); // right column (workload panel) reserved
+    expect(viewport.x).toBe(0);
+    expect(viewport.width).toBe(w);
+    expect(viewport.y).toBeGreaterThan(0); // top HUD bar still reserved
+    expect(viewport.height).toBeLessThan(h);
   });
 });

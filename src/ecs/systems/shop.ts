@@ -2,7 +2,15 @@
 // no travel state to track, just in-range or not) and buy(), which applies D6's three
 // purchasable kinds. See .plans/facility-shop-inventory.md Step 5.
 import { type World, type EntityId } from '../world';
-import { positions, gridToWorld, shopOpens, wallets, powerCapacities, coolingCapacities, roomTiers } from '../components';
+import {
+  positions,
+  gridToWorld,
+  shopOpens,
+  wallets,
+  powerCapacities,
+  coolingCapacities,
+  roomTiers,
+} from '../components';
 import {
   PURCHASABLES,
   ROOM_TIERS,
@@ -13,6 +21,7 @@ import {
 import { SHOP_DOOR } from '../world-map';
 import { addToInventory } from '../inventory';
 import { type System } from './system';
+import { closeJobPanels } from './job-panels';
 
 const SHOP_REACH_PX = 80; // ~2 grid cells — close enough to the shop door to browse
 
@@ -109,6 +118,9 @@ export function createShopSystem(world: World, controlled: EntityId): System {
       }
 
       if (inRange && !isOpen && !dismissedWhileInRange) {
+        // Only one modal at a time (see job-panels.ts) — proximity to the shop always wins over
+        // an open offers/jobs panel.
+        closeJobPanels(world, controlled);
         world.addComponent(shopOpens, controlled, { open: true });
       } else if (!inRange && isOpen) {
         world.removeComponent(shopOpens, controlled);
