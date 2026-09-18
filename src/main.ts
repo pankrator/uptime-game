@@ -27,6 +27,9 @@ import { getRoomRect } from './ecs/room';
 import { gridToWorld, playerTags, facilityTags } from './ecs/components';
 import { showLanding, hideLanding, type SaveSlotSummary } from './landing';
 import { createAudio } from './audio';
+import { createEventBus } from './ecs/event-bus';
+import { type GameEvents } from './ecs/game-events';
+import { wireAudioEvents } from './ecs/audio-events';
 import { createFpsCounter } from './fps';
 import { createSaveManager, SAVE_SLOT_IDS, DEV_SLOT, type SaveManager } from './save/manager';
 import { createLocalStorageSaveStorage } from './save/local-storage';
@@ -105,6 +108,8 @@ async function runGame(
   const world = createWorld();
   const camera = createCamera(input);
   const audio = createAudio();
+  const events = createEventBus<GameEvents>();
+  wireAudioEvents(events, audio);
   const fps = createFpsCounter();
 
   let facility: EntityId | undefined;
@@ -198,18 +203,18 @@ async function runGame(
   const updateSystems = [
     createInputSystem(world, input, renderer, player, facility, camera, audio),
     createJobPanelsSystem(world, input, renderer, player),
-    createMaintenanceSystem(world, player, facility, audio),
+    createMaintenanceSystem(world, player, facility, events),
     createPathFollowSystem(world),
     createMovementSystem(world),
     createRackPanelSystem(world, input, renderer, player, camera),
     createShopSystem(world, player),
-    createResourceSystem(world, facility, audio),
+    createResourceSystem(world, facility, events),
     createCapacitySystem(world, facility),
-    createThermalSystem(world, facility, audio),
-    createWearSystem(world, facility, audio),
+    createThermalSystem(world, facility, events),
+    createWearSystem(world, facility, events),
     createWorkloadSpawnSystem(world, facility),
     createOfferExpirySystem(world),
-    createWorkloadRunSystem(world, facility, audio),
+    createWorkloadRunSystem(world, facility, events),
     // Expiry-only (floating text/toasts spawned by workload-run.ts above and resource.ts) — no
     // ordering dependency, since expiry is timestamp-based, not tick-based; placed here so it
     // reads naturally as "after the systems that spawn this frame's effects".

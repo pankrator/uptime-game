@@ -3,7 +3,7 @@ import { createWorkloadRunSystem } from './workload-run';
 import { placeWorkload } from '../dispatch';
 import { placedOns, reputations, temperatures, wallets, workloads } from '../components';
 import { REPUTATION_ON_COMPLETION, REPUTATION_ON_MISSED_DEADLINE } from '../game-data';
-import { createTestFacility, spawnOnlineServer, spawnRack, makeWorkload, stubAudio, runTicks } from '../test-helpers';
+import { createTestFacility, spawnOnlineServer, spawnRack, makeWorkload, stubEventBus, runTicks } from '../test-helpers';
 
 describe('workload-run system', () => {
   it('pays out payPerSecond while placed on an online server', () => {
@@ -14,7 +14,7 @@ describe('workload-run system', () => {
     placeWorkload(world, workloadId, serverId);
     const startingMoney = world.getComponent(wallets, facility)!.money;
 
-    runTicks(createWorkloadRunSystem(world, facility, stubAudio()), 1, 5);
+    runTicks(createWorkloadRunSystem(world, facility, stubEventBus()), 1, 5);
 
     expect(world.getComponent(wallets, facility)!.money).toBeCloseTo(startingMoney + 2 * 5);
   });
@@ -25,7 +25,7 @@ describe('workload-run system', () => {
     const workloadId2 = makeWorkload(world, { payPerSecond: 2, deadlineRemainingSeconds: 100 });
     const startingMoney = world.getComponent(wallets, facility)!.money;
 
-    runTicks(createWorkloadRunSystem(world, facility, stubAudio()), 1, 5);
+    runTicks(createWorkloadRunSystem(world, facility, stubEventBus()), 1, 5);
 
     expect(world.getComponent(wallets, facility)!.money).toBe(startingMoney);
     expect(world.getComponent(workloads, workloadId2)!.deadlineRemainingSeconds).toBe(95);
@@ -44,7 +44,7 @@ describe('workload-run system', () => {
     placeWorkload(world, workloadId, serverId);
     const startingMoney = world.getComponent(wallets, facility)!.money;
 
-    runTicks(createWorkloadRunSystem(world, facility, stubAudio()), 1, 1);
+    runTicks(createWorkloadRunSystem(world, facility, stubEventBus()), 1, 1);
 
     expect(world.getComponent(wallets, facility)!.money).toBeCloseTo(startingMoney + 2 * 0.5);
     expect(world.getComponent(workloads, workloadId)!.workRemainingSeconds).toBeCloseTo(100 - 1 * 0.5);
@@ -57,12 +57,16 @@ describe('workload-run system', () => {
     const workloadId = makeWorkload(world, { workRemainingSeconds: 0.5, deadlineRemainingSeconds: 100 });
     placeWorkload(world, workloadId, serverId);
     const startingRep = world.getComponent(reputations, facility)!.value;
+    const events = stubEventBus();
+    const completed: number[] = [];
+    events.on('contract:completed', (payload) => completed.push(payload.workloadId));
 
-    runTicks(createWorkloadRunSystem(world, facility, stubAudio()), 1, 1);
+    runTicks(createWorkloadRunSystem(world, facility, events), 1, 1);
 
     expect(world.getComponent(reputations, facility)!.value).toBe(startingRep + REPUTATION_ON_COMPLETION);
     expect(world.getComponent(workloads, workloadId)).toBeUndefined();
     expect(world.getComponent(placedOns, workloadId)).toBeUndefined();
+    expect(completed).toEqual([workloadId]);
   });
 
   it('a recurring workload resets and stays placed instead of being destroyed on a non-final cycle', () => {
@@ -78,7 +82,7 @@ describe('workload-run system', () => {
     });
     placeWorkload(world, workloadId, serverId);
 
-    runTicks(createWorkloadRunSystem(world, facility, stubAudio()), 1, 1);
+    runTicks(createWorkloadRunSystem(world, facility, stubEventBus()), 1, 1);
 
     const workload = world.getComponent(workloads, workloadId);
     expect(workload).toBeDefined();
@@ -92,12 +96,16 @@ describe('workload-run system', () => {
     const workloadId = makeWorkload(world, { deadlineRemainingSeconds: 0.5, penaltyOnMiss: 40 });
     const startingRep = world.getComponent(reputations, facility)!.value;
     const startingMoney = world.getComponent(wallets, facility)!.money;
+    const events = stubEventBus();
+    const missed: number[] = [];
+    events.on('contract:missed', (payload) => missed.push(payload.workloadId));
 
-    runTicks(createWorkloadRunSystem(world, facility, stubAudio()), 1, 1);
+    runTicks(createWorkloadRunSystem(world, facility, events), 1, 1);
 
     expect(world.getComponent(reputations, facility)!.value).toBe(startingRep + REPUTATION_ON_MISSED_DEADLINE);
     expect(world.getComponent(wallets, facility)!.money).toBeCloseTo(startingMoney - 40);
     expect(world.getComponent(workloads, workloadId)).toBeUndefined();
+    expect(missed).toEqual([workloadId]);
   });
 
   it('completion is checked before the deadline miss — finishing the same tick the deadline expires is a success', () => {
@@ -108,7 +116,7 @@ describe('workload-run system', () => {
     placeWorkload(world, workloadId, serverId);
     const startingRep = world.getComponent(reputations, facility)!.value;
 
-    runTicks(createWorkloadRunSystem(world, facility, stubAudio()), 1, 1);
+    runTicks(createWorkloadRunSystem(world, facility, stubEventBus()), 1, 1);
 
     expect(world.getComponent(reputations, facility)!.value).toBe(startingRep + REPUTATION_ON_COMPLETION);
   });

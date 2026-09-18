@@ -11,7 +11,7 @@ import { createWorkloadRunSystem } from './workload-run';
 import { acceptOffer, checkPlacement, placeWorkload } from '../dispatch';
 import { offers, reputations, serverCapacities } from '../components';
 import { MAX_OFFERS, TRAIT_KEYS } from '../game-data';
-import { createTestFacility, spawnOnlineServer, spawnRack, stubAudio } from '../test-helpers';
+import { createTestFacility, spawnOnlineServer, spawnRack, stubEventBus } from '../test-helpers';
 import type { World, EntityId } from '../world';
 
 // A stand-in for a player who accepts every offer and places it on the first server it fits.
@@ -41,12 +41,12 @@ describe('sustained facility simulation', () => {
       spawnOnlineServer(world, rackId, 'memory'),
     ];
 
-    const audio = stubAudio();
-    const resource = createResourceSystem(world, facility, audio);
+    const events = stubEventBus();
+    const resource = createResourceSystem(world, facility, events);
     const capacity = createCapacitySystem(world, facility);
     const spawn = createWorkloadSpawnSystem(world, facility);
     const expiry = createOfferExpirySystem(world);
-    const run = createWorkloadRunSystem(world, facility, audio);
+    const run = createWorkloadRunSystem(world, facility, events);
 
     const dt = 1 / 30;
     const totalSeconds = 300;

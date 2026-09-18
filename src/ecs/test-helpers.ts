@@ -7,6 +7,8 @@ import { powereds, serverCapacities, workloads, type Workload } from './componen
 import { MACHINE_TIERS, type MachineTierId } from './game-data';
 import { type Audio } from '../audio';
 import { type Renderer } from '../rendering';
+import { createEventBus, type EventBus } from './event-bus';
+import { type GameEvents } from './game-events';
 import { type System } from './systems/system';
 
 export function createTestFacility(): { world: World; facility: EntityId } {
@@ -62,6 +64,16 @@ export function stubAudio(): Audio {
     startMusic() {},
     stopMusic() {},
   };
+}
+
+// A fresh, unwired GameEvents bus — systems under test take `events: EventBus<GameEvents>` and
+// emit on a state transition instead of calling audio.play() directly (see game-events.ts);
+// tests either ignore it (nothing subscribed, emit() is a no-op) or subscribe their own
+// assertion handler to check the right event fired with the right payload. Unlike stubAudio(),
+// this needs no stubbing — createEventBus() is already dependency-free — but the name matches
+// the existing stubX() convention for this file's other test doubles.
+export function stubEventBus(): EventBus<GameEvents> {
+  return createEventBus<GameEvents>();
 }
 
 export function runTicks(system: System, deltaSeconds: number, ticks: number): void {

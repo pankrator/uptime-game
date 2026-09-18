@@ -32,7 +32,8 @@ import { clearFailure } from './wear';
 import { spawnMachine } from '../../entities';
 import { addToInventory, takeFromInventory } from '../inventory';
 import { moveControlledTo } from '../movement-commands';
-import { type Audio } from '../../audio';
+import { type EventBus } from '../event-bus';
+import { type GameEvents } from '../game-events';
 import { type System } from './system';
 
 // Same reach radius/approach as rack-panel.ts's DISPATCH_REACH_PX — the established "close
@@ -171,7 +172,7 @@ export function createMaintenanceSystem(
   world: World,
   controlled: EntityId,
   facility: EntityId,
-  audio: Audio,
+  events: EventBus<GameEvents>,
 ): System {
   return {
     update(deltaSeconds: number) {
@@ -218,8 +219,8 @@ export function createMaintenanceSystem(
           slotIndex = freeSlot;
         }
 
-        spawnMachine(world, task.rackId, job.tierId, slotIndex);
-        audio.play('machineInstalled');
+        const machineId = spawnMachine(world, task.rackId, job.tierId, slotIndex);
+        events.emit('machine:installed', { machineId, rackId: task.rackId });
         world.removeComponent(maintenanceTasks, controlled);
         return;
       }
@@ -232,7 +233,7 @@ export function createMaintenanceSystem(
         if (condition) condition.wear = applyRepair(condition.wear);
         clearFailure(world, job.machineId);
 
-        audio.play('machineRepaired');
+        events.emit('machine:repaired', { machineId: job.machineId });
         world.removeComponent(maintenanceTasks, controlled);
         return;
       }
@@ -245,7 +246,7 @@ export function createMaintenanceSystem(
         if (wallet) wallet.money += Math.round(tier.cost * DECOMMISSION_REFUND_FRACTION);
         world.destroyEntity(job.machineId);
       }
-      audio.play('machineDecommissioned');
+      events.emit('machine:decommissioned', { machineId: job.machineId });
       world.removeComponent(maintenanceTasks, controlled);
     },
   };

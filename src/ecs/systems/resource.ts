@@ -28,7 +28,8 @@ import {
 } from '../game-data';
 import { unplaceWorkload, checkPlacement, placeWorkload } from '../dispatch';
 import { spawnToast } from './effects';
-import { type Audio } from '../../audio';
+import { type EventBus } from '../event-bus';
+import { type GameEvents } from '../game-events';
 import { type System } from './system';
 
 export interface MachineDraw {
@@ -135,7 +136,7 @@ function restoreRecentlyUnplaced(world: World, serverId: EntityId): void {
   }
 }
 
-export function createResourceSystem(world: World, facility: EntityId, audio: Audio): System {
+export function createResourceSystem(world: World, facility: EntityId, events: EventBus<GameEvents>): System {
   return {
     update(deltaSeconds: number) {
       const powerCapacity = world.getComponent(powerCapacities, facility);
@@ -199,7 +200,7 @@ export function createResourceSystem(world: World, facility: EntityId, audio: Au
           powered.online = false;
           powered.offlineCooldown = BROWNOUT_COOLDOWN_SECONDS;
           unplaceAllOn(world, id);
-          audio.play('brownout');
+          events.emit('machine:browned-out', { machineId: id });
         }
 
         if (!powered.online) continue;

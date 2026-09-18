@@ -66,22 +66,33 @@ screen's start callback — the same user-gesture call site every other sound re
 
 ## Call sites
 
-- `input.ts` — `rackPlaced` after a successful empty-cell placement; `uiClick` on offer
-  accept/decline and shop buy-button hits; the mute button itself (drawn by `hud.ts`,
-  hit-tested here at the top of the click chain, before even offer buttons, so it's never
-  swallowed by a modal or build mode) toggles `setMuted`.
-- `install-progress.ts` — `machineInstalled` once a machine actually spawns (not on the
-  refund branches).
-- `workload-run.ts` — `contractCompleted` / `contractMissed` on those two resolutions.
-- `resource.ts` — `brownout` on each machine's online→offline transition (may fire more than
-  once per tick if several machines brown out together — acceptable for a sub-300ms sound).
+Two kinds. Local, one-consumer UI feedback still calls `audio.play()` directly — no other
+system could plausibly care that a specific button was clicked, so routing it through the event
+bus below would add ceremony with no decoupling benefit:
+
+- `input.ts` — `rackPlaced` after a successful empty-cell placement; the mute button itself
+  (drawn by `hud.ts`, hit-tested here at the top of the click chain, before even offer buttons,
+  so it's never swallowed by a modal or build mode) toggles `setMuted`.
+- `rack-panel.ts` / `shop.ts` / `job-panels.ts` — `uiClick` on their own buttons
+  (repair/decommission/abandon, buy, offer accept/decline/close, jobs close).
 - `hud.ts` — draws the mute button (`getMuteButtonRect`, `ui/layout.ts`) reflecting
-  `audio.isMuted()`. Presentation only; the click is handled in `input.ts`.
+  `audio.isMuted()`. Presentation only; the click is handled in the modules above.
+
+The other kind — a tick-order system's own state transition, where audio is genuinely just one
+interested party — goes through `ecs/event-bus.ts`'s `GameEvents` instead (`.plans/event-bus.md`):
+`maintenance.ts` emits `machine:installed`/`repaired`/`decommissioned`, `wear.ts` emits
+`machine:failed`, `resource.ts` emits `machine:browned-out`, `thermal.ts` emits
+`machine:thermal-tripped` (both play the same `brownout` sound today, despite being different
+causes — may fire more than once per tick if several machines go offline together, same as the
+direct `audio.play()` calls this replaced, acceptable for a sub-300ms sound), and
+`workload-run.ts` emits `contract:completed`/`contract:missed`. None of these five systems
+imports `Audio` at all anymore — `ecs/audio-events.ts`'s `wireAudioEvents(events, audio)`,
+called once in `main.ts`, is the one place mapping each event to a sound.
 
 ## Notes
 
-- One `Audio` instance is created once in `main.ts` and passed into every system factory
-  that needs it — same pattern as `renderer`/`camera`/`input`.
+- One `Audio` instance is created once in `main.ts` and passed into every system/module that
+  still needs it directly — same pattern as `renderer`/`camera`/`input`.
 - Mute state persists to `localStorage` (a per-viewer convenience, not game state) and covers
   music and SFX together — no separate music volume control.
 - No per-machine, state-driven ambience (e.g. fan hum tied to power draw) yet — the music bed

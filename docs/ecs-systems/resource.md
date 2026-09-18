@@ -1,6 +1,6 @@
 # resource
 
-`src/ecs/systems/resource.ts` — `createResourceSystem(world, facility, audio)`
+`src/ecs/systems/resource.ts` — `createResourceSystem(world, facility, events)`
 
 ## Purpose
 
@@ -31,8 +31,9 @@ flips that flag.
    has every workload placed on it unplaced (`unplaceAllOn`) — they return to the tray
    still holding their deadline, a visible/recoverable setback rather than silent
    progress loss, AND tagged `RecentlyUnplaced` (the server they came from, plus a
-   `BROWNOUT_RESTORE_GRACE_SECONDS` expiry). Plays `brownout` per machine that goes
-   offline this tick (see [audio](./audio.md)).
+   `BROWNOUT_RESTORE_GRACE_SECONDS` expiry). Emits `machine:browned-out` (`ecs/game-events.ts`)
+   per machine that goes offline this tick — `ecs/audio-events.ts` is what plays a sound for
+   it, see [audio](./audio.md) and `.plans/event-bus.md`.
 5. Any machine transitioning offline→online checks for a matching, unexpired
    `RecentlyUnplaced` tag and re-places that workload on the same server if it still fits
    (`restoreRecentlyUnplaced`) — see .plans/playtest-findings.md F4.
