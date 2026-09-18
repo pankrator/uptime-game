@@ -22,12 +22,11 @@ import {
   utilizations,
   powerCapacities,
   coolingCapacities,
-  openRackPanels,
+  activeModals,
   rackScrolls,
   dragStates,
   rejectedDrops,
   wallets,
-  shopOpens,
   inventories,
   cycleLabel,
   temperatures,
@@ -56,6 +55,8 @@ import {
   type MachineTierId,
 } from '../game-data';
 import { repairCost } from '../wear';
+import { UI, bar } from '../../ui/draw';
+import { activeModal } from '../modal';
 import { type Renderer } from '../../rendering';
 import { type Camera } from '../../camera';
 import { type InputState } from '../../input';
@@ -63,7 +64,7 @@ import { getRoomRect, getNextRoomTier } from '../room';
 import { type GridBounds } from '../pathfinding';
 import { SHOP_RECT, CORRIDOR_RECT, SHOP_DOOR } from '../world-map';
 import { countOf } from '../inventory';
-import { shopTab, shopCategories, shopCatalogForTab } from './shop';
+import { getShopTab, shopCategories, shopCatalogForTab } from './shop';
 import {
   getBuildPanelEntryRect,
   getRackPanelRect,
@@ -878,11 +879,11 @@ function formatDemands(demands: Traits): string {
   return TRAIT_KEYS.map((key) => `${demands[key]}${TRAIT_UNITS[key]}`).join('/');
 }
 
-const RACK_PANEL_TEXT = '#e6e8eb';
-const RACK_PANEL_DIM = '#9aa0a6';
-const RACK_PANEL_GREEN = '#3ddc84';
-const RACK_PANEL_AMBER = '#f7b731';
-const RACK_PANEL_RED = '#e5484d';
+const RACK_PANEL_TEXT = UI.text;
+const RACK_PANEL_DIM = UI.dim;
+const RACK_PANEL_GREEN = UI.ok;
+const RACK_PANEL_AMBER = UI.warn;
+const RACK_PANEL_RED = UI.bad;
 
 // Read-only as of step 7 — every server row and tray card draws but does not yet accept drops
 // or drags; that lands in step 8. Viewing-mode panels draw identically to dispatching-mode
@@ -890,8 +891,9 @@ const RACK_PANEL_RED = '#e5484d';
 // dispatching mode"), so this function takes no mode-dependent branch for its own drawing —
 // only the header text differs, to tell the player which mode they're in.
 function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): void {
-  const panel = world.getComponent(openRackPanels, controlled);
-  if (!panel) return;
+  const modal = world.getComponent(activeModals, controlled);
+  if (!modal || modal.kind !== 'rack') return;
+  const panel = modal;
   // Dispatching-mode panels stay hidden while the player is still walking there — only
   // right-click's viewing mode is a true "peek from anywhere". Left-clicking a rack starts the
   // walk (see input.ts) but the panel itself doesn't appear until rack-panel.ts flips
@@ -1047,10 +1049,7 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
       ctx.fillStyle = flashing ? RACK_PANEL_RED : RACK_PANEL_DIM;
       ctx.fillText(`${TRAIT_LABELS[key]} ${used}/${total}`, barRect.x, barRect.y - 6);
 
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
-      ctx.fillRect(barRect.x, barRect.y, barRect.width, barRect.height);
-      ctx.fillStyle = exhausted ? RACK_PANEL_RED : RACK_PANEL_GREEN;
-      ctx.fillRect(barRect.x, barRect.y, barRect.width * Math.min(1, fraction), barRect.height);
+      bar(ctx, barRect, fraction, exhausted ? RACK_PANEL_RED : RACK_PANEL_GREEN);
 
       if (flashing) {
         ctx.strokeStyle = `rgba(229, 72, 77, ${0.5 + flashPulse * 0.5})`;
@@ -1071,10 +1070,7 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
       ctx.fillStyle = failed ? RACK_PANEL_RED : RACK_PANEL_DIM;
       ctx.fillText(`WEAR ${Math.round(condition.wear * 100)}%`, wearRect.x, wearRect.y - 6);
 
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
-      ctx.fillRect(wearRect.x, wearRect.y, wearRect.width, wearRect.height);
-      ctx.fillStyle = wearColor;
-      ctx.fillRect(wearRect.x, wearRect.y, wearRect.width * Math.min(1, condition.wear), wearRect.height);
+      bar(ctx, wearRect, condition.wear, wearColor);
     }
 
     // Repair/decommission buttons (Step 6). Repair only shown once there's something worth
@@ -1152,10 +1148,12 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
       const barY = chip.y + chip.height * 0.68;
       const barWidth = chip.width - 6 - 24;
       const barHeight = 4;
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
-      ctx.fillRect(barX, barY, barWidth, barHeight);
-      ctx.fillStyle = doomed ? RACK_PANEL_RED : RACK_PANEL_GREEN;
-      ctx.fillRect(barX, barY, barWidth * Math.min(1, Math.max(0, workFraction)), barHeight);
+      bar(
+        ctx,
+        { x: barX, y: barY, width: barWidth, height: barHeight },
+        workFraction,
+        doomed ? RACK_PANEL_RED : RACK_PANEL_GREEN,
+      );
 
       ctx.font = '8px sans-serif';
       ctx.textAlign = 'right';
@@ -1279,18 +1277,19 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
   }
 }
 
-const SHOP_TEXT = '#e6e8eb';
-const SHOP_DIM = '#9aa0a6';
-const SHOP_GREEN = '#3ddc84';
+const SHOP_TEXT = UI.text;
+const SHOP_DIM = UI.dim;
+const SHOP_GREEN = UI.ok;
 
 function drawShopPanel(world: World, renderer: Renderer, controlled: EntityId, facility: EntityId): void {
-  if (!world.getComponent(shopOpens, controlled)) return;
+  if (world.getComponent(activeModals, controlled)?.kind !== 'shop') return;
 
   const ctx = renderer.context;
   const { width: canvasWidth, height: canvasHeight } = renderer;
 
+  const currentTab = getShopTab(world, controlled);
   const categories = shopCategories();
-  const rows = shopCatalogForTab(shopTab.current);
+  const rows = shopCatalogForTab(currentTab);
   const rect = getShopPanelRect(canvasWidth, canvasHeight, rows.length);
   const wallet = world.getComponent(wallets, facility);
   const money = wallet ? Math.floor(wallet.money) : 0;
@@ -1319,7 +1318,7 @@ function drawShopPanel(world: World, renderer: Renderer, controlled: EntityId, f
 
   categories.forEach((category, tabIndex) => {
     const tabRect = getShopTabRect(tabIndex, categories.length, canvasWidth, canvasHeight, rows.length);
-    const isActive = category === shopTab.current;
+    const isActive = category === currentTab;
     ctx.fillStyle = isActive ? '#2f6fb0' : '#2a2e33';
     ctx.fillRect(tabRect.x, tabRect.y, tabRect.width, tabRect.height);
     ctx.strokeStyle = isActive ? '#4dabf7' : '#3a3f47';
@@ -1459,14 +1458,10 @@ export function createRenderSystem(
           // the first, so the `?? online-idle` fallback only ever applies momentarily.
           const capacityState = world.getComponent(serverCapacities, machineId);
           if (capacityState) {
-            const anyTraitExhausted =
-              capacityState.free.cpu <= 0 ||
-              capacityState.free.ramGb <= 0 ||
-              capacityState.free.storageGb <= 0;
-            const anyTraitUsed =
-              capacityState.free.cpu < capacityState.total.cpu ||
-              capacityState.free.ramGb < capacityState.total.ramGb ||
-              capacityState.free.storageGb < capacityState.total.storageGb;
+            const anyTraitExhausted = TRAIT_KEYS.some((key) => capacityState.free[key] <= 0);
+            const anyTraitUsed = TRAIT_KEYS.some(
+              (key) => capacityState.free[key] < capacityState.total[key],
+            );
             slots[installedIn.slotIndex] = anyTraitExhausted
               ? 'full'
               : anyTraitUsed
@@ -1537,18 +1532,21 @@ export function createRenderSystem(
       drawPendingBorder(world, renderer);
 
       // The rack panel and shop panel are both full-screen modals that replace the build panel
-      // rather than drawing over/under it. Same priority order as input.ts's click chain: rack
-      // panel first, then shop. A dispatching-mode rack panel draws nothing until the player
-      // arrives (see drawRackPanel's early return) — while still walking there, the build panel
-      // stays visible instead of leaving the corner blank.
-      const rackPanel = world.getComponent(openRackPanels, controlled);
-      const rackPanelVisible = rackPanel !== undefined && (rackPanel.mode !== 'dispatching' || rackPanel.arrived);
-      if (rackPanelVisible) {
-        drawRackPanel(world, renderer, controlled);
-      } else if (world.getComponent(shopOpens, controlled)) {
-        drawShopPanel(world, renderer, controlled, facility);
-      } else {
-        drawBuildPanel(world, renderer, controlled, facility, input.getPointerPosition());
+      // rather than drawing over/under it. activeModal() (../modal.ts) is the same priority
+      // order input.ts's click chain reads, so the two can no longer silently disagree about
+      // which panel is showing. A dispatching-mode rack panel draws nothing until the player
+      // arrives (activeModal only reports 'rack' once visible; see drawRackPanel's own early
+      // return too) — while still walking there, the build panel stays visible instead of
+      // leaving the corner blank.
+      switch (activeModal(world, controlled)) {
+        case 'rack':
+          drawRackPanel(world, renderer, controlled);
+          break;
+        case 'shop':
+          drawShopPanel(world, renderer, controlled, facility);
+          break;
+        default:
+          drawBuildPanel(world, renderer, controlled, facility, input.getPointerPosition());
       }
     },
   };

@@ -3,14 +3,16 @@ import {
   positions,
   rackSlots,
   machines,
-  openRackPanels,
   workloads,
   placedOns,
   tutorialProgresses,
   GRID_CELL_SIZE,
   type TutorialStepId,
 } from '../components';
+import { activeModal } from '../modal';
 import { type System } from './system';
+import { type EventBus } from '../event-bus';
+import { type GameEvents } from '../game-events';
 
 export interface TutorialStepDef {
   id: TutorialStepId;
@@ -97,10 +99,11 @@ export function startTutorial(
   });
 }
 
-// Called from input.ts's buy-button click handler only when shop.ts's buy() reports the
-// purchase actually went through — a click that gets rejected (can't afford it) must not
-// silently advance the 'visit-shop' step.
-export function recordShopPurchase(world: World, facility: EntityId): void {
+// Subscribed to the 'shop:purchased' event (createTutorialSystem, below) rather than called
+// directly — shop.ts emits it only when buy() reports the purchase actually went through, so a
+// click that gets rejected (can't afford it) never fires it and never silently advances the
+// 'visit-shop' step. See .plans/event-bus.md.
+function recordShopPurchase(world: World, facility: EntityId): void {
   const progress = world.getComponent(tutorialProgresses, facility);
   if (!progress) return;
   progress.shopPurchased = true;
@@ -149,10 +152,8 @@ function isCurrentStepComplete(
       return world.query(rackSlots).length >= 1;
     case 'install-machine':
       return world.query(machines).length >= 1;
-    case 'open-rack-panel': {
-      const panel = world.getComponent(openRackPanels, controlled);
-      return !!panel && (panel.mode === 'viewing' || panel.arrived);
-    }
+    case 'open-rack-panel':
+      return activeModal(world, controlled) === 'rack';
     case 'visit-shop':
       return progress.shopPurchased;
     case 'accept-offer':
@@ -168,7 +169,14 @@ export function createTutorialSystem(
   world: World,
   controlled: EntityId,
   facility: EntityId,
+  events: EventBus<GameEvents>,
 ): System {
+  // Setup-time subscription — same "wire it up once, outside update()" treatment as
+  // registerModalCloser/wireAudioEvents — not re-subscribed every tick.
+  events.on('shop:purchased', ({ facility: purchaseFacility }) => {
+    recordShopPurchase(world, purchaseFacility);
+  });
+
   return {
     update() {
       const progress = world.getComponent(tutorialProgresses, facility);

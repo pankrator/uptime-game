@@ -27,14 +27,15 @@ import {
   throttleFactorFor,
 } from '../thermal';
 import { unplaceAllOn } from './resource';
-import { type Audio } from '../../audio';
+import { type EventBus } from '../event-bus';
+import { type GameEvents } from '../game-events';
 import { type System } from './system';
 
 // Runs AFTER resource.ts and capacity.ts (needs this tick's RackLoad.heatKw, and a machine
 // already offline from a brownout must not also be generating heat) and BEFORE workload-run.ts
 // (which applies Temperature.throttleFactor to pay/progress). See the ordering comment in
 // main.ts.
-export function createThermalSystem(world: World, facility: EntityId, audio: Audio): System {
+export function createThermalSystem(world: World, facility: EntityId, events: EventBus<GameEvents>): System {
   return {
     update(deltaSeconds: number) {
       const elapsedSeconds = world.getComponent(demandClocks, facility)?.elapsedSeconds ?? 0;
@@ -88,7 +89,7 @@ export function createThermalSystem(world: World, facility: EntityId, audio: Aud
             powered.online = false;
             powered.offlineCooldown = BROWNOUT_COOLDOWN_SECONDS;
             unplaceAllOn(world, machineId);
-            audio.play('brownout');
+            events.emit('machine:thermal-tripped', { machineId, rackId });
           }
         } else if (tripped && temperature.celsius <= TRIP_RECOVER_C) {
           // Hysteresis (D3/Step 3): clear a few degrees below THROTTLE_C, not right at TRIP_C —

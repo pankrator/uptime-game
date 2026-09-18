@@ -19,7 +19,8 @@ import {
   clampReputation,
 } from '../game-data';
 import { spawnFloatingText, spawnToast } from './effects';
-import { type Audio } from '../../audio';
+import { type EventBus } from '../event-bus';
+import { type GameEvents } from '../game-events';
 import { type System } from './system';
 
 // D2: a single finish deadline, not separate start/finish deadlines. Per workload, every tick:
@@ -28,7 +29,7 @@ import { type System } from './system';
 //   3. Completion checked BEFORE deadline, so a job finishing the same tick its deadline
 //      expires counts as a success.
 //   4. Deadline miss: reputation penalty, unplace, destroy.
-export function createWorkloadRunSystem(world: World, facility: EntityId, audio: Audio): System {
+export function createWorkloadRunSystem(world: World, facility: EntityId, events: EventBus<GameEvents>): System {
   return {
     update(deltaSeconds: number) {
       const wallet = world.getComponent(wallets, facility);
@@ -67,7 +68,7 @@ export function createWorkloadRunSystem(world: World, facility: EntityId, audio:
           // D1: one workload occupies exactly one server, so its own demands.cpu IS what it
           // was served with — no fold across machines needed.
           clock.peakComputeServed = Math.max(clock.peakComputeServed, workload.demands.cpu);
-          audio.play('contractCompleted');
+          events.emit('contract:completed', { workloadId });
 
           // .plans/playtest-findings.md F7: completion previously had no visual feedback beyond
           // the sound. `placement && server?.online` above is what got us here, so the rack this
@@ -110,7 +111,7 @@ export function createWorkloadRunSystem(world: World, facility: EntityId, audio:
           wallet.money -= workload.penaltyOnMiss;
           world.removeComponent(placedOns, workloadId);
           world.destroyEntity(workloadId);
-          audio.play('contractMissed');
+          events.emit('contract:missed', { workloadId });
           // .plans/playtest-findings.md F7: same "no visual feedback beyond sound" gap on the
           // miss side — a red banner naming the actual cost, not just a beep.
           const label = WORKLOAD_ARCHETYPES[workload.archetypeId].label;

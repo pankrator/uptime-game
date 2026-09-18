@@ -1,6 +1,6 @@
 # thermal
 
-`src/ecs/systems/thermal.ts` — `createThermalSystem(world, facility, audio)`
+`src/ecs/systems/thermal.ts` — `createThermalSystem(world, facility, events)`
 Pure math lives in `src/ecs/thermal.ts` (no ECS dependency, independently testable).
 
 ## Purpose
@@ -16,7 +16,9 @@ overheat. See `.plans/thermal-and-cooling.md` D1–D7.
 - Writes: `Temperature.celsius` / `Temperature.throttleFactor`; adds/removes the
   `ThermalTrip` marker; on trip, sets `Powered.online = false` +
   `offlineCooldown = BROWNOUT_COOLDOWN_SECONDS` and calls `unplaceAllOn` (reused from
-  `resource.ts`, not reimplemented)
+  `resource.ts`, not reimplemented), and emits `machine:thermal-tripped`
+  (`ecs/game-events.ts`) per machine forced offline — see [audio](./audio.md) and
+  `.plans/event-bus.md`.
 
 ## Temperature is local
 

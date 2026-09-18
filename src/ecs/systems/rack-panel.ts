@@ -1,7 +1,7 @@
 // Rack panel lifecycle: open/close (both D4 open paths), arrival detection, committing any
-// PendingDrop queued while walking, and (step 8) drag-and-drop.
+// PendingDrop queued while walking, click hit-testing (F7), and (step 8) drag-and-drop.
 //
-// Click/gesture ownership: input.ts owns ALL left-button pointer gestures — clicks (wasClicked,
+// Gesture ownership: input.ts owns ALL left-button pointer gestures — clicks (wasClicked,
 // consumed-once) AND drags (wasPressed/wasReleased) — as a single priority chain, for the same
 // reason in both cases: only one system may react to a given mousedown/mouseup pair, so a
 // second independent handler here would race input.ts for the same gesture. A drag's mouseup
@@ -9,9 +9,10 @@
 // must also be the one place that decides "this release ended a drag, don't treat it as a
 // click" — splitting that decision across two systems would need cross-system signaling for a
 // single boolean. Rack clicks and drags are therefore both handled in input.ts's chain by
-// calling this module's exported pure functions. This module's own System owns only: right-click
-// (a genuinely separate, non-conflicting event — the "view a rack" affordance), Escape, and the
-// per-frame arrival/pending-drop-commit logic.
+// calling this module's exported functions (handleRackPanelClick for clicks once the panel is
+// the active modal; tryStartDrag/updateDrag/resolveDrop for drags). This module's own System
+// owns only: right-click (a genuinely separate, non-conflicting event — the "view a rack"
+// affordance), Escape, and the per-frame arrival/pending-drop-commit logic.
 import { type World, type EntityId } from '../world';
 import {
   positions,
@@ -21,19 +22,24 @@ import {
   rackSlots,
   machines,
   installedIns,
-  openRackPanels,
+  activeModals,
+  type ActiveModal,
   rackScrolls,
   pendingDrops,
   dragStates,
   rejectedDrops,
   decommissionConfirms,
+  conditions,
+  faileds,
   placedOns,
   workloads,
   GRID_CELL_SIZE,
 } from '../components';
 import { type InputState } from '../../input';
 import { type Camera } from '../../camera';
-import { placeWorkload, checkPlacement, unplaceWorkload } from '../dispatch';
+import { placeWorkload, checkPlacement, unplaceWorkload, abandonWorkload } from '../dispatch';
+import { REPAIRABLE_WEAR_THRESHOLD } from '../game-data';
+import { startRepair, startDecommission } from './maintenance';
 import {
   getServerRowRect,
   getTrayCardRect,
@@ -42,12 +48,29 @@ import {
   getPlacedChipRect,
   getRackPanelContentRect,
   getRackPanelContentHeight,
+  getRackPanelCloseButtonRect,
+  getServerRepairButtonRect,
+  getServerDecommissionButtonRect,
   pointerInRect,
 } from '../../ui/layout';
 import { maxScrollOffset } from '../../ui/scroll';
 import { type Renderer } from '../../rendering';
+import { type Audio } from '../../audio';
 import { type System } from './system';
-import { closeJobPanels } from './job-panels';
+import { registerModalCloser, openModal } from '../modal';
+
+const DECOMMISSION_CONFIRM_WINDOW_MS = 3000;
+
+// This module's own slice of ActiveModal — narrowed once here so every function below can read
+// `.rackId`/`.mode`/`.arrived` without repeating the discriminant check. Returns the SAME object
+// the component store holds (no clone), so mutating a field through this (see
+// createRackPanelSystem's arrival check) mutates the real component.
+type RackModal = Extract<ActiveModal, { kind: 'rack' }>;
+
+function rackModal(world: World, controlled: EntityId): RackModal | undefined {
+  const modal = world.getComponent(activeModals, controlled);
+  return modal?.kind === 'rack' ? modal : undefined;
+}
 
 // Same reach radius/approach as maintenance.ts's MAINTENANCE_REACH_PX — the established
 // "close enough to interact with this rack" pattern.
@@ -84,8 +107,12 @@ export function trayWorkloadIds(world: World): EntityId[] {
     .sort((a, b) => a - b);
 }
 
+// Safe to call whenever the active modal is actually 'rack' (every call site below either just
+// confirmed that, or is the registered 'rack' closer — invoked by modal.ts's openModal only when
+// the CURRENT active modal's kind is 'rack'). Unconditionally clearing activeModals here would
+// be wrong if some OTHER modal were active; nothing calls this except in that guaranteed state.
 export function closeRackPanel(world: World, controlled: EntityId): void {
-  world.removeComponent(openRackPanels, controlled);
+  world.removeComponent(activeModals, controlled);
   world.removeComponent(rackScrolls, controlled);
   world.removeComponent(dragStates, controlled);
   world.removeComponent(rejectedDrops, controlled);
@@ -94,6 +121,8 @@ export function closeRackPanel(world: World, controlled: EntityId): void {
     world.removeComponent(pendingDrops, workloadId);
   }
 }
+
+registerModalCloser('rack', closeRackPanel);
 
 // Highest legal scroll offset for the given content/viewport heights — 0 once content fits
 // without scrolling. Shared by the wheel handler (clamping the new offset) and render.ts
@@ -139,7 +168,7 @@ export function openOrPromoteRackPanel(
   controlled: EntityId,
   rackId: EntityId,
 ): boolean {
-  const current = world.getComponent(openRackPanels, controlled);
+  const current = rackModal(world, controlled);
 
   if (current?.rackId === rackId) {
     if (current.mode === 'viewing') {
@@ -150,12 +179,94 @@ export function openOrPromoteRackPanel(
     return false; // already dispatching (or already arrived) at this rack — nothing to do
   }
 
-  // Only one modal at a time (see job-panels.ts) — a rack click always wins over an open
-  // offers/jobs panel.
-  closeJobPanels(world, controlled);
-  world.addComponent(openRackPanels, controlled, { rackId, mode: 'dispatching', arrived: false });
+  // Only one modal at a time (see ../modal.ts) — a rack click always wins over any other open
+  // panel. openModal only runs a PREVIOUS modal's closer when it's a different kind, so opening
+  // rack while a different rack's panel is already open doesn't tear it down first — same as
+  // this always did (the old closeOtherModals(..., 'rack') skipped its own kind).
+  openModal(world, controlled, { kind: 'rack', rackId, mode: 'dispatching', arrived: false });
   world.addComponent(rackScrolls, controlled, { offsetPx: 0 });
   return true;
+}
+
+// F7: panel hit-testing, moved here from input.ts — this module owns the rack panel's layout
+// (it already draws against the same rects in render.ts), so the click targets live next to it
+// instead of input.ts importing nine layout getters to know their geometry. Called from
+// input.ts's click-priority chain only once activeModal() (../modal.ts) is already 'rack' — the
+// panel is a full-screen modal, so every click while it's visible is absorbed here, not just
+// clicks landing inside its own rect, except the close button and the repair/decommission
+// buttons.
+export function handleRackPanelClick(
+  world: World,
+  renderer: Renderer,
+  controlled: EntityId,
+  facility: EntityId,
+  pointer: { x: number; y: number },
+  audio: Audio,
+): void {
+  const panel = rackModal(world, controlled)!;
+  const serverIds = serversOn(world, panel.rackId);
+  const serverCount = serverIds.length;
+  const trayCount = trayWorkloadIds(world).length;
+  const closeRect = getRackPanelCloseButtonRect(renderer.width, renderer.height, serverCount, trayCount);
+
+  if (pointerInRect(pointer, closeRect)) {
+    closeRackPanel(world, controlled);
+    return;
+  }
+
+  // Repair/decommission (.plans/hardware-failure.md Step 6) — reachable from a viewing panel
+  // too (no travel required to click; the resulting task does its own walk), same as clicking a
+  // rack from the build panel while remote.
+  for (let index = 0; index < serverIds.length; index++) {
+    const serverId = serverIds[index];
+
+    const condition = world.getComponent(conditions, serverId);
+    const repairable =
+      condition && (condition.wear > REPAIRABLE_WEAR_THRESHOLD || world.getComponent(faileds, serverId));
+    if (repairable) {
+      const repairRect = getServerRepairButtonRect(index, renderer.width, renderer.height, serverCount, trayCount);
+      if (pointerInRect(pointer, repairRect)) {
+        audio.play('uiClick');
+        startRepair(world, controlled, facility, serverId);
+        return;
+      }
+    }
+
+    const decommissionRect = getServerDecommissionButtonRect(
+      index,
+      renderer.width,
+      renderer.height,
+      serverCount,
+      trayCount,
+    );
+    if (pointerInRect(pointer, decommissionRect)) {
+      const confirm = world.getComponent(decommissionConfirms, controlled);
+      if (confirm && confirm.serverId === serverId && performance.now() < confirm.expiresAtMs) {
+        audio.play('uiClick');
+        world.removeComponent(decommissionConfirms, controlled);
+        startDecommission(world, controlled, facility, serverId);
+      } else {
+        world.addComponent(decommissionConfirms, controlled, {
+          serverId,
+          expiresAtMs: performance.now() + DECOMMISSION_CONFIRM_WINDOW_MS,
+        });
+      }
+      return;
+    }
+  }
+
+  // Abandon-contract button on each tray card (.plans/playtest-findings.md F3) — immediate, no
+  // confirm: it's already strictly better than letting the same contract rot into a full miss,
+  // so there's nothing a second click needs to protect against.
+  const trayIds = trayWorkloadIds(world);
+  for (let index = 0; index < trayIds.length; index++) {
+    const dropRect = getTrayCardDropButtonRect(index, renderer.width, renderer.height, serverCount, trayCount);
+    if (pointerInRect(pointer, dropRect)) {
+      audio.play('uiClick');
+      abandonWorkload(world, facility, trayIds[index]);
+      return;
+    }
+  }
 }
 
 // --- Drag and drop (step 8) ---------------------------------------------------------------
@@ -182,7 +293,7 @@ export function tryStartDrag(
   controlled: EntityId,
   pointer: { x: number; y: number },
 ): boolean {
-  const panel = world.getComponent(openRackPanels, controlled);
+  const panel = rackModal(world, controlled);
   // Dispatching-mode panels are invisible until arrived (render.ts's early return) — refuse to
   // start a drag against geometry that isn't actually on screen.
   if (!panel || panel.mode !== 'dispatching' || !panel.arrived) return false;
@@ -230,8 +341,9 @@ export function tryStartDrag(
       serverIds.length,
       trayIds.length,
     );
-    // The abandon-contract button (F3, input.ts) overlays this card's corner — a press there
-    // must fall through as a plain click, not start a drag, or its click handler never sees it.
+    // The abandon-contract button (.plans/playtest-findings.md F3, handleRackPanelClick above)
+    // overlays this card's corner — a press there must fall through as a plain click, not start
+    // a drag, or its click handler never sees it.
     const dropButton = getTrayCardDropButtonRect(
       trayIndex,
       canvasWidth,
@@ -313,7 +425,7 @@ export function resolveDrop(
   if (!drag) return;
   world.removeComponent(dragStates, controlled);
 
-  const panel = world.getComponent(openRackPanels, controlled);
+  const panel = rackModal(world, controlled);
   if (!panel) return; // panel closed mid-drag — nothing to resolve against
 
   // Dropped outside the visible content viewport (including scrolled-off content) — same as
@@ -378,7 +490,7 @@ export function createRackPanelSystem(
   camera: Camera,
 ): System {
   input.onKeyDown('Escape', () => {
-    if (world.getComponent(openRackPanels, controlled)) {
+    if (rackModal(world, controlled)) {
       closeRackPanel(world, controlled);
     }
   });
@@ -391,7 +503,7 @@ export function createRackPanelSystem(
 
   return {
     update() {
-      const panel = world.getComponent(openRackPanels, controlled);
+      const panel = rackModal(world, controlled);
 
       // Expire the rejected-drop flash once its window elapses.
       const rejection = world.getComponent(rejectedDrops, controlled);
@@ -501,17 +613,16 @@ export function createRackPanelSystem(
       const rackId = findRackAt(world, gridX, gridY);
       if (rackId === null) return;
 
-      const existing = world.getComponent(openRackPanels, controlled);
+      const existing = rackModal(world, controlled);
       // Right-clicking a rack that's already open dispatching keeps it dispatching — viewing
       // is strictly weaker, so this is a no-op rather than a demotion.
       if (!existing || existing.mode !== 'dispatching' || existing.rackId !== rackId) {
-        // Only one modal at a time (see job-panels.ts) — right-click, like left-click above,
-        // always wins over an open offers/jobs panel. This branch bypasses input.ts's own
+        // Only one modal at a time (see ../modal.ts) — right-click, like left-click above,
+        // always wins over any other open panel. This branch bypasses input.ts's own
         // click-priority chain entirely (it's driven by wasRightClicked(), a separate gesture),
         // so it needs its own guard rather than relying on that chain having already absorbed
         // the click.
-        closeJobPanels(world, controlled);
-        world.addComponent(openRackPanels, controlled, { rackId, mode: 'viewing', arrived: false });
+        openModal(world, controlled, { kind: 'rack', rackId, mode: 'viewing', arrived: false });
         world.addComponent(rackScrolls, controlled, { offsetPx: 0 });
       }
     },

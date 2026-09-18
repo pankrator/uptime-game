@@ -28,7 +28,8 @@ import {
 } from '../game-data';
 import { unplaceWorkload, checkPlacement, placeWorkload } from '../dispatch';
 import { spawnToast } from './effects';
-import { type Audio } from '../../audio';
+import { type EventBus } from '../event-bus';
+import { type GameEvents } from '../game-events';
 import { type System } from './system';
 
 export interface MachineDraw {
@@ -135,7 +136,7 @@ function restoreRecentlyUnplaced(world: World, serverId: EntityId): void {
   }
 }
 
-export function createResourceSystem(world: World, facility: EntityId, audio: Audio): System {
+export function createResourceSystem(world: World, facility: EntityId, events: EventBus<GameEvents>): System {
   return {
     update(deltaSeconds: number) {
       const powerCapacity = world.getComponent(powerCapacities, facility);
@@ -186,8 +187,6 @@ export function createResourceSystem(world: World, facility: EntityId, audio: Au
 
       let powerDrawKw = 0;
       let coolingDrawKw = 0;
-      let computeTotal = 0;
-      let computeFree = 0;
 
       for (const id of machineIds) {
         const powered = world.getComponent(powereds, id)!;
@@ -201,7 +200,7 @@ export function createResourceSystem(world: World, facility: EntityId, audio: Au
           powered.online = false;
           powered.offlineCooldown = BROWNOUT_COOLDOWN_SECONDS;
           unplaceAllOn(world, id);
-          audio.play('brownout');
+          events.emit('machine:browned-out', { machineId: id });
         }
 
         if (!powered.online) continue;
@@ -209,21 +208,10 @@ export function createResourceSystem(world: World, facility: EntityId, audio: Au
         const draw = drawFor(world, id);
         powerDrawKw += draw.powerKw;
         coolingDrawKw += draw.coolingKw;
-
-        const machine = world.getComponent(machines, id)!;
-        const tier = MACHINE_TIERS[machine.tierId];
-        computeTotal += tier.traits.cpu;
-        const used = workloadsOn(world, id).reduce(
-          (sum, workloadId) => sum + (world.getComponent(workloads, workloadId)?.demands.cpu ?? 0),
-          0,
-        );
-        computeFree += Math.max(0, tier.traits.cpu - used);
       }
 
       utilization.powerDrawKw = powerDrawKw + cracPowerKw;
       utilization.coolingDrawKw = coolingDrawKw;
-      utilization.computeTotal = computeTotal;
-      utilization.computeFree = computeFree;
 
       // .plans/power-billing.md D1/D2: billed on draw (offline machines already `continue`d
       // above and contribute 0), power + cooling at one rate. Includes CRAC power draw

@@ -13,10 +13,10 @@ exists and to find the right place in the update order for new logic.
   `destroyEntity` sweeps every store it has ever seen, so removing an entity always
   cleans up its components — callers never need to remove components one by one first.
   Component stores are module-level singletons shared by every `World` instance (only the id
-  counter and `entities` set are per-instance) — see the comment on `createWorld` for what that
-  means for anything that creates more than one `World` in the same process.
-  `resetAllComponentStores()` (also in `world.ts`) is the escape hatch, wired into every test
-  globally via `src/test/setup.ts`.
+  counter and `entities` set are per-instance); `createWorld()` calls
+  `resetAllComponentStores()` (also in `world.ts`) on every call, so a new `World` always starts
+  from empty stores regardless of what a previous one left behind — this also means at most one
+  `World` is ever live at a time, see the comment on `createWorld` for the trade-off.
 - **System interface** (`src/ecs/systems/system.ts`) — one method: `update(deltaSeconds: number): void`.
   Every system factory (`createXSystem(...)`) returns an object matching this interface.
 - **Components** (`src/ecs/components.ts`) — all component type definitions and their
@@ -26,6 +26,15 @@ exists and to find the right place in the update order for new logic.
   `checkPlacement`, `placeWorkload`, `unplaceWorkload`, `acceptOffer`, `declineOffer`.
   Systems and input both call into this rather than duplicating the placement invariant
   (`Workload.state` / `PlacedOn` / `ServerCapacity.free` must stay consistent).
+- **Event bus** (`src/ecs/event-bus.ts`, `src/ecs/game-events.ts`) — generic, synchronous, typed
+  pub/sub (`event-bus.ts`) plus this game's concrete event map (`game-events.ts`'s
+  `GameEvents`), for the specific case of a tick-order system's state transition that a
+  genuinely independent listener reacts to (today: `src/ecs/audio-events.ts`'s
+  `wireAudioEvents`, the sole place mapping an event to a sound). One `EventBus<GameEvents>`
+  instance is created once in `main.ts` and threaded into every system factory that emits, same
+  pattern as `audio`/`camera`/`input`. See `.plans/event-bus.md` for the design rationale and,
+  importantly, what's deliberately still a direct call instead — this is not a blanket
+  replacement for calling another module's exported function.
 - **Save/load** (`src/save/`) — not a system (nothing here runs every tick); `main.ts` calls
   into it directly. `registry.ts` is the extension point: every new persistent component gets
   one line there (`SAVE_COMPONENTS` or `TRANSIENT_COMPONENTS`, enforced by

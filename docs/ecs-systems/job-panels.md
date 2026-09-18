@@ -12,32 +12,39 @@ centered modals the player opens on demand — see `.plans/job-panels.md`.
 
 ## Mutual exclusion — switching, not blocking
 
-Only one of {offers panel, jobs panel, rack panel, shop panel} is ever open at a time, and
-pressing a hotkey for a *different* one always switches straight to it rather than being
+Only one of {offers panel, jobs panel, rack panel, shop panel} can ever be recorded as open at a
+time — `ActiveModal` (`components.ts`) is a single tagged-union component, not four independent
+ones, so this isn't a convention every opener has to remember to uphold, it's a type error to
+represent two at once. `ecs/modal.ts` owns this: `activeModal(world, player)` reads it (with the
+rack panel's own visibility gate — dispatching-but-not-arrived doesn't count), and
+`openModal(world, player, modal)` is the only way to open one, replacing whatever was open. And
+pressing a hotkey for a *different* panel always switches straight to it rather than being
 ignored:
 
 - The `O`/`J` toggle keys still no-op while a maintenance task is active (`maintenanceTaskActive`)
   — same guard shape as the build-mode number keys, since that represents an already-committed
   action (walking to install/repair/decommission something paid for up front) a hotkey shouldn't
   silently interrupt.
-- Otherwise, `toggleOffersPanel`/`toggleJobsPanel` call `closeOtherModals` before opening: it
-  closes the rack panel (`rack-panel.ts`'s `closeRackPanel`, unconditionally — any mode, arrived
-  or not, so a dispatching-but-not-yet-arrived panel can't pop up later stacked on top of
-  whichever panel the player switched to) and the shop (removing `ShopOpen` and calling
-  `shop.ts`'s `dismissShop()` so proximity doesn't reopen it the very next frame).
-- Opening one of these two panels also closes the other (`closeJobPanels`, called at the start of
-  `toggleOffersPanel`/`toggleJobsPanel`) — pressing `O` while the jobs panel is open switches to
-  offers, and vice versa.
+- Otherwise, `toggleOffersPanel`/`toggleJobsPanel` call `closeJobPanels` unconditionally first —
+  it only clears `ActiveModal` when it's actually the offers/jobs kind already (so it's safe to
+  call even when a rack or shop panel is the one open) — then `openModal({kind: 'offers' | 'jobs'})`
+  if the panel wasn't already open. `openModal` runs whatever WAS open's registered closer first
+  (`rack-panel.ts`'s `closeRackPanel` — any mode, arrived or not, so a dispatching-but-not-yet-
+  -arrived panel can't pop up later stacked on top of whichever panel the player switched to — or
+  `shop.ts`'s `closeShop`, which also calls `dismissShop()` so proximity doesn't reopen the shop
+  the very next frame), so this one call replaces what used to be a separate `closeOtherModals`
+  step.
+- The early `closeJobPanels` call also covers "opening one of these two panels closes the other" —
+  pressing `O` while the jobs panel is open switches to offers, and vice versa.
 - `rack-panel.ts` (both open paths — left-click dispatch and right-click view) and `shop.ts`
-  (proximity open) each call `closeJobPanels` before opening, so a rack click or walking into
-  shop range also wins over an already-open offers/jobs panel — the reverse direction from
-  `closeOtherModals` above. Between them, every one of these four "modals" now yields to
-  whichever the player asks for next, by click, proximity, or hotkey.
-- This makes `job-panels.ts` and `rack-panel.ts`/`shop.ts` mutually import each other
-  (`closeOtherModals` imports `closeRackPanel`/`dismissShop`; `rack-panel.ts`/`shop.ts` import
-  `closeJobPanels`). Safe here because every use on both sides is inside a function body, called
-  well after both modules have finished loading — never at module top level, which is the only
-  shape of circular ESM import that actually breaks.
+  (proximity open) each call `ecs/modal.ts`'s `openModal` too, so a rack click or walking into
+  shop range also wins over an already-open offers/jobs panel (via the SAME closer this module
+  registers — `registerModalCloser('offers', closeJobPanels)` and `registerModalCloser('jobs',
+  closeJobPanels)`). Between them, every one of these four "modals" now yields to whichever the
+  player asks for next, by click, proximity, or hotkey.
+- Each panel module registers its own closer with `ecs/modal.ts` (`registerModalCloser`) instead
+  of importing the other panels' close functions directly, so `job-panels.ts` and
+  `rack-panel.ts`/`shop.ts` never import each other at all — no import cycle to reason about.
 
 ## Offers panel
 

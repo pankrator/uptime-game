@@ -8,10 +8,11 @@ import { type World, type EntityId } from '../world';
 import { machines, installedIns, powereds, conditions, faileds, temperatures, demandClocks } from '../components';
 import { heatWearMultiplier, wearGain, failureChancePerSecond, rollFailure } from '../wear';
 import { unplaceAllOn } from './resource';
-import { type Audio } from '../../audio';
+import { type EventBus } from '../event-bus';
+import { type GameEvents } from '../game-events';
 import { type System } from './system';
 
-export function createWearSystem(world: World, facility: EntityId, audio: Audio): System {
+export function createWearSystem(world: World, facility: EntityId, events: EventBus<GameEvents>): System {
   return {
     update(deltaSeconds: number) {
       const elapsedSeconds = world.getComponent(demandClocks, facility)?.elapsedSeconds ?? 0;
@@ -37,7 +38,7 @@ export function createWearSystem(world: World, facility: EntityId, audio: Audio)
           powered.online = false;
           powered.offlineCooldown = 0; // D4: stays dead until repaired — no cooldown-based self-recovery
           unplaceAllOn(world, machineId);
-          audio.play('machineFailed');
+          events.emit('machine:failed', { machineId });
         }
       }
     },

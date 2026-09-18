@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { createResourceSystem, selectMachinesToBrownOut } from './resource';
 import { placeWorkload } from '../dispatch';
 import { placedOns, powereds, thermalTrips, faileds, wallets, powerCapacities } from '../components';
-import { BROWNOUT_COOLDOWN_SECONDS, MACHINE_TIERS } from '../game-data';
-import { createTestFacility, spawnOnlineServer, spawnRack, makeWorkload, stubAudio, runTicks } from '../test-helpers';
+import { BROWNOUT_COOLDOWN_SECONDS, IDLE_POWER_FRACTION, MACHINE_TIERS } from '../game-data';
+import { createTestFacility, spawnOnlineServer, spawnRack, makeWorkload, stubEventBus, runTicks } from '../test-helpers';
 
 describe('selectMachinesToBrownOut (pure ordering)', () => {
   it('offlines nothing when draw is already within budget', () => {
@@ -35,20 +35,29 @@ describe('selectMachinesToBrownOut (pure ordering)', () => {
 describe('resource system', () => {
   it('takes the newest online machine offline when draw exceeds capacity, and unplaces its workloads', () => {
     const { world, facility } = createTestFacility();
-    // Room for exactly one dense server's power draw (1.6kW), not two (3.2kW).
-    world.getComponent(powerCapacities, facility)!.kw = MACHINE_TIERS.dense.powerKw * 1.5;
+    // One dense server has a workload placed (full 1.6kW draw), the other is idle
+    // (IDLE_POWER_FRACTION of that, 0.56kW) — see resource.ts's drawFor. Size capacity for
+    // room for exactly the busy server's draw, not both: it fits alone but not with the idle
+    // server's draw added on top, so exactly one machine must go offline.
+    const busyDrawKw = MACHINE_TIERS.dense.powerKw;
+    const idleDrawKw = MACHINE_TIERS.dense.powerKw * IDLE_POWER_FRACTION;
+    world.getComponent(powerCapacities, facility)!.kw = busyDrawKw + idleDrawKw / 2;
     const rackId = spawnRack(world, 0, 0);
     const serverA = spawnOnlineServer(world, rackId, 'dense');
     const serverB = spawnOnlineServer(world, rackId, 'dense');
     const workloadId = makeWorkload(world);
     placeWorkload(world, workloadId, serverB);
+    const events = stubEventBus();
+    const brownedOut: number[] = [];
+    events.on('machine:browned-out', (payload) => brownedOut.push(payload.machineId));
 
-    runTicks(createResourceSystem(world, facility, stubAudio()), 1 / 30, 1);
+    runTicks(createResourceSystem(world, facility, events), 1 / 30, 1);
 
     const newest = serverB > serverA ? serverB : serverA;
     expect(world.getComponent(powereds, newest)!.online).toBe(false);
     expect(world.getComponent(powereds, newest)!.offlineCooldown).toBe(BROWNOUT_COOLDOWN_SECONDS);
     expect(world.getComponent(placedOns, workloadId)).toBeUndefined();
+    expect(brownedOut).toEqual([newest]);
   });
 
   it('never brings a thermally-tripped rack back online, even with capacity to spare (D7 veto)', () => {
@@ -59,7 +68,7 @@ describe('resource system', () => {
     world.getComponent(powereds, serverId)!.offlineCooldown = 0;
     world.addComponent(thermalTrips, rackId, { trippedAt: 0 });
 
-    runTicks(createResourceSystem(world, facility, stubAudio()), 1 / 30, 5);
+    runTicks(createResourceSystem(world, facility, stubEventBus()), 1 / 30, 5);
 
     expect(world.getComponent(powereds, serverId)!.online).toBe(false);
   });
@@ -72,7 +81,7 @@ describe('resource system', () => {
     world.getComponent(powereds, serverId)!.offlineCooldown = 0;
     world.addComponent(faileds, serverId, { failedAt: 0 });
 
-    runTicks(createResourceSystem(world, facility, stubAudio()), 1 / 30, 5);
+    runTicks(createResourceSystem(world, facility, stubEventBus()), 1 / 30, 5);
 
     expect(world.getComponent(powereds, serverId)!.online).toBe(false);
   });
@@ -83,7 +92,7 @@ describe('resource system', () => {
     spawnOnlineServer(world, rackId, 'budget');
     const startingMoney = world.getComponent(wallets, facility)!.money;
 
-    runTicks(createResourceSystem(world, facility, stubAudio()), 1, 1);
+    runTicks(createResourceSystem(world, facility, stubEventBus()), 1, 1);
 
     expect(world.getComponent(wallets, facility)!.money).toBeLessThan(startingMoney);
   });

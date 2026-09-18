@@ -354,107 +354,6 @@ function getTrayHeight(trayCount: number, panelWidth: number): number {
   return RACK_TRAY_HEADER_HEIGHT + rows * RACK_TRAY_CARD_HEIGHT + (rows - 1) * RACK_TRAY_CARD_GAP;
 }
 
-export function getRackPanelRect(
-  canvasWidth: number,
-  canvasHeight: number,
-  serverCount: number,
-  trayCount: number,
-): Rect {
-  const serversHeight =
-    serverCount > 0
-      ? serverCount * RACK_SERVER_ROW_HEIGHT + (serverCount - 1) * RACK_SERVER_ROW_GAP
-      : 0;
-  const width = Math.min(RACK_PANEL_WIDTH, canvasWidth - RACK_PANEL_PADDING * 2);
-  const trayHeight = getTrayHeight(trayCount, width);
-  // Centered below the HUD bar, not the raw canvas — see getCenteredRect's comment above; kept
-  // as a separate inline calc rather than routed through getCenteredRect since this panel's
-  // width/height (unlike the offers/jobs modals) depend on server/tray counts, not just a fixed
-  // target size.
-  const top = HUD_BAR_HEIGHT + RACK_PANEL_PADDING;
-  const availableHeight = Math.max(0, canvasHeight - top - RACK_PANEL_PADDING);
-  const height = Math.min(
-    RACK_PANEL_HEADER_HEIGHT + RACK_PANEL_PADDING * 3 + serversHeight + trayHeight,
-    availableHeight,
-  );
-
-  return {
-    x: (canvasWidth - width) / 2,
-    y: top + (availableHeight - height) / 2,
-    width,
-    height,
-  };
-}
-
-// The full, unclamped height of everything the panel would need to draw (every server row plus
-// the tray) — as opposed to getRackPanelRect's height, which is clamped to fit the canvas. The
-// difference between this and getRackPanelContentRect's height is how far the panel can scroll;
-// see rack-panel.ts's scroll handling.
-export function getRackPanelContentHeight(
-  canvasWidth: number,
-  serverCount: number,
-  trayCount: number,
-): number {
-  const serversHeight =
-    serverCount > 0
-      ? serverCount * RACK_SERVER_ROW_HEIGHT + (serverCount - 1) * RACK_SERVER_ROW_GAP
-      : 0;
-  const width = Math.min(RACK_PANEL_WIDTH, canvasWidth - RACK_PANEL_PADDING * 2);
-  return serversHeight + RACK_PANEL_PADDING + getTrayHeight(trayCount, width);
-}
-
-// The scrollable sub-region inside the panel: everything below the header, inset by the same
-// padding as the rest of the panel. render.ts clips to this rect and translates its drawing by
-// -scrollOffsetPx; rack-panel.ts's hit-testing subtracts the same offset from the pointer before
-// comparing against row/tray/chip rects (which are laid out in unscrolled content space — see
-// getServerRowRect et al.). Content taller than this rect is what makes the panel scroll at all.
-export function getRackPanelContentRect(
-  canvasWidth: number,
-  canvasHeight: number,
-  serverCount: number,
-  trayCount: number,
-): Rect {
-  const panel = getRackPanelRect(canvasWidth, canvasHeight, serverCount, trayCount);
-  const top = panel.y + RACK_PANEL_PADDING + RACK_PANEL_HEADER_HEIGHT + RACK_PANEL_PADDING;
-  return {
-    x: panel.x + RACK_PANEL_PADDING,
-    y: top,
-    width: panel.width - RACK_PANEL_PADDING * 2,
-    height: panel.y + panel.height - RACK_PANEL_PADDING - top,
-  };
-}
-
-export function getRackPanelCloseButtonRect(
-  canvasWidth: number,
-  canvasHeight: number,
-  serverCount: number,
-  trayCount: number,
-): Rect {
-  const panel = getRackPanelRect(canvasWidth, canvasHeight, serverCount, trayCount);
-  return {
-    x: panel.x + panel.width - RACK_PANEL_PADDING - RACK_CLOSE_BUTTON_SIZE,
-    y: panel.y + (RACK_PANEL_HEADER_HEIGHT - RACK_CLOSE_BUTTON_SIZE) / 2 + RACK_PANEL_PADDING / 2,
-    width: RACK_CLOSE_BUTTON_SIZE,
-    height: RACK_CLOSE_BUTTON_SIZE,
-  };
-}
-
-export function getServerRowRect(
-  index: number,
-  canvasWidth: number,
-  canvasHeight: number,
-  serverCount: number,
-  trayCount: number,
-): Rect {
-  const panel = getRackPanelRect(canvasWidth, canvasHeight, serverCount, trayCount);
-  const top = panel.y + RACK_PANEL_PADDING + RACK_PANEL_HEADER_HEIGHT + RACK_PANEL_PADDING;
-  return {
-    x: panel.x + RACK_PANEL_PADDING,
-    y: top + index * (RACK_SERVER_ROW_HEIGHT + RACK_SERVER_ROW_GAP),
-    width: panel.width - RACK_PANEL_PADDING * 2,
-    height: RACK_SERVER_ROW_HEIGHT,
-  };
-}
-
 // Row-internal vertical rhythm, top to bottom: RACK_ROW_LABEL_OFFSET_Y to the server-name
 // label, then RACK_ROW_BARS_TOP_OFFSET_Y before the first trait bar's own label, then one
 // RACK_TRAIT_ROW_HEIGHT per trait (label line + gap + bar). Kept as named constants (not
@@ -476,38 +375,6 @@ export function getServerRowDrawY(row: Rect): number {
   return row.y + RACK_ROW_DRAW_OFFSET_Y;
 }
 
-// One bar per TRAIT_KEYS entry, stacked vertically (not side by side — three short horizontal
-// bars in a row read worse than three full-width bars stacked, and stacking leaves room for
-// each bar's own label without crowding). See RACK_SERVER_ROW_HEIGHT's comment for the budget
-// this geometry is sized against.
-export function getServerTraitBarRect(
-  serverIndex: number,
-  traitIndex: number,
-  canvasWidth: number,
-  canvasHeight: number,
-  serverCount: number,
-  trayCount: number,
-): Rect {
-  const row = getServerRowRect(serverIndex, canvasWidth, canvasHeight, serverCount, trayCount);
-  const barsTop = row.y + RACK_ROW_BARS_TOP_OFFSET_Y;
-  // Chips sit at the row's top-right (see getPlacedChipRect); trait bars stop short of that
-  // column so a long trait label/bar never runs under a chip. Shares RACK_CHIP_WIDTH with
-  // getPlacedChipRect so the two never drift apart.
-  const chipColumnWidth = RACK_CHIP_WIDTH;
-  // Each trait gets a RACK_TRAIT_ROW_HEIGHT-tall block; the bar sits at the block's bottom so
-  // its own label (drawn above it by render.ts) has the full block's top to sit in without
-  // colliding with the previous trait's bar.
-  return {
-    x: row.x,
-    y:
-      barsTop +
-      traitIndex * RACK_TRAIT_ROW_HEIGHT +
-      (RACK_TRAIT_ROW_HEIGHT - RACK_TRAIT_BAR_HEIGHT),
-    width: row.width - chipColumnWidth,
-    height: RACK_TRAIT_BAR_HEIGHT,
-  };
-}
-
 // Repair/decommission buttons — a row beneath the trait+wear bars. See
 // .plans/hardware-failure.md Step 6. Repair sits left, decommission right, both bottom-aligned
 // in the row (RACK_SERVER_ROW_HEIGHT's comment is sized against this).
@@ -519,6 +386,263 @@ function getServerActionsRowY(row: Rect): number {
   return row.y + RACK_ROW_BARS_TOP_OFFSET_Y + 4 * RACK_TRAIT_ROW_HEIGHT + 6;
 }
 
+// "Abandon this contract" button (F3) — a small square overlaid in the tray card's top-right
+// corner rather than a 5th text line, which would mean re-growing RACK_TRAY_CARD_HEIGHT again;
+// the card's 4 existing lines (label+cycle, demands, deadline, penalty) already fill its height.
+export const RACK_TRAY_DROP_BUTTON_SIZE = 16;
+export const RACK_TRAY_DROP_BUTTON_MARGIN = 4;
+
+// F8 (.plans/design-review.md): one computed layout object instead of 12 independent functions
+// that each re-derived the panel rect from scratch (drawing a single server row used to
+// evaluate getRackPanelRect seven-plus times, all with identical arguments and results). This
+// is the single source every rect below is derived from; the exported get*Rect functions further
+// down are now thin wrappers over it, kept only so every existing call site (and layout.test.ts)
+// keeps working unchanged.
+export interface RackPanelLayout {
+  panel: Rect;
+  content: Rect;
+  contentHeight: number;
+  close: Rect;
+  trayTopY: number;
+  trayDrop: Rect;
+  serverRow(index: number): Rect;
+  traitBar(serverIndex: number, traitIndex: number): Rect;
+  repairButton(serverIndex: number): Rect;
+  decommissionButton(serverIndex: number): Rect;
+  placedChip(serverIndex: number, chipIndex: number): Rect;
+  trayCard(index: number): Rect;
+  trayCardDropButton(index: number): Rect;
+}
+
+export function rackPanelLayout(
+  canvasWidth: number,
+  canvasHeight: number,
+  serverCount: number,
+  trayCount: number,
+): RackPanelLayout {
+  const serversHeight =
+    serverCount > 0
+      ? serverCount * RACK_SERVER_ROW_HEIGHT + (serverCount - 1) * RACK_SERVER_ROW_GAP
+      : 0;
+  const width = Math.min(RACK_PANEL_WIDTH, canvasWidth - RACK_PANEL_PADDING * 2);
+  const trayHeight = getTrayHeight(trayCount, width);
+  // Centered below the HUD bar, not the raw canvas — see getCenteredRect's comment above and
+  // getShopPanelRect's matching fix; same reasoning, kept inline for the same reason (this
+  // panel's width/height, unlike the offers/jobs modals, depend on server/tray counts, not just
+  // a fixed target size).
+  const top = HUD_BAR_HEIGHT + RACK_PANEL_PADDING;
+  const availableHeight = Math.max(0, canvasHeight - top - RACK_PANEL_PADDING);
+  const height = Math.min(
+    RACK_PANEL_HEADER_HEIGHT + RACK_PANEL_PADDING * 3 + serversHeight + trayHeight,
+    availableHeight,
+  );
+  const panel: Rect = {
+    x: (canvasWidth - width) / 2,
+    y: top + (availableHeight - height) / 2,
+    width,
+    height,
+  };
+
+  const contentHeight = serversHeight + RACK_PANEL_PADDING + trayHeight;
+
+  const contentTop = panel.y + RACK_PANEL_PADDING + RACK_PANEL_HEADER_HEIGHT + RACK_PANEL_PADDING;
+  const content: Rect = {
+    x: panel.x + RACK_PANEL_PADDING,
+    y: contentTop,
+    width: panel.width - RACK_PANEL_PADDING * 2,
+    height: panel.y + panel.height - RACK_PANEL_PADDING - contentTop,
+  };
+
+  const close: Rect = {
+    x: panel.x + panel.width - RACK_PANEL_PADDING - RACK_CLOSE_BUTTON_SIZE,
+    y: panel.y + (RACK_PANEL_HEADER_HEIGHT - RACK_CLOSE_BUTTON_SIZE) / 2 + RACK_PANEL_PADDING / 2,
+    width: RACK_CLOSE_BUTTON_SIZE,
+    height: RACK_CLOSE_BUTTON_SIZE,
+  };
+
+  const trayTopY =
+    panel.y +
+    RACK_PANEL_PADDING +
+    RACK_PANEL_HEADER_HEIGHT +
+    RACK_PANEL_PADDING +
+    serversHeight +
+    RACK_PANEL_PADDING;
+
+  const trayDrop: Rect = {
+    x: panel.x + RACK_PANEL_PADDING,
+    y: trayTopY,
+    width: panel.width - RACK_PANEL_PADDING * 2,
+    height: panel.y + panel.height - RACK_PANEL_PADDING - trayTopY,
+  };
+
+  const columns = getTrayColumns(panel.width);
+
+  function serverRow(index: number): Rect {
+    return {
+      x: content.x,
+      y: contentTop + index * (RACK_SERVER_ROW_HEIGHT + RACK_SERVER_ROW_GAP),
+      width: content.width,
+      height: RACK_SERVER_ROW_HEIGHT,
+    };
+  }
+
+  return {
+    panel,
+    content,
+    contentHeight,
+    close,
+    trayTopY,
+    trayDrop,
+    serverRow,
+
+    // One bar per TRAIT_KEYS entry, stacked vertically (not side by side — three short
+    // horizontal bars in a row read worse than three full-width bars stacked, and stacking
+    // leaves room for each bar's own label without crowding). See RACK_SERVER_ROW_HEIGHT's
+    // comment for the budget this geometry is sized against.
+    traitBar(serverIndex: number, traitIndex: number): Rect {
+      const row = serverRow(serverIndex);
+      const barsTop = row.y + RACK_ROW_BARS_TOP_OFFSET_Y;
+      // Chips sit at the row's top-right (see placedChip); trait bars stop short of that column
+      // so a long trait label/bar never runs under a chip. Shares RACK_CHIP_WIDTH with
+      // placedChip so the two never drift apart.
+      const chipColumnWidth = RACK_CHIP_WIDTH;
+      // Each trait gets a RACK_TRAIT_ROW_HEIGHT-tall block; the bar sits at the block's bottom
+      // so its own label (drawn above it by render.ts) has the full block's top to sit in
+      // without colliding with the previous trait's bar.
+      return {
+        x: row.x,
+        y: barsTop + traitIndex * RACK_TRAIT_ROW_HEIGHT + (RACK_TRAIT_ROW_HEIGHT - RACK_TRAIT_BAR_HEIGHT),
+        width: row.width - chipColumnWidth,
+        height: RACK_TRAIT_BAR_HEIGHT,
+      };
+    },
+
+    repairButton(serverIndex: number): Rect {
+      const row = serverRow(serverIndex);
+      return {
+        x: row.x + row.width - RACK_ACTION_BUTTON_WIDTH * 2 - RACK_ACTION_BUTTON_GAP,
+        y: getServerActionsRowY(row),
+        width: RACK_ACTION_BUTTON_WIDTH,
+        height: RACK_ACTION_BUTTON_HEIGHT,
+      };
+    },
+
+    decommissionButton(serverIndex: number): Rect {
+      const row = serverRow(serverIndex);
+      return {
+        x: row.x + row.width - RACK_ACTION_BUTTON_WIDTH,
+        y: getServerActionsRowY(row),
+        width: RACK_ACTION_BUTTON_WIDTH,
+        height: RACK_ACTION_BUTTON_HEIGHT,
+      };
+    },
+
+    // Small chips along the top-right of a server row, one per workload placed on it.
+    placedChip(serverIndex: number, chipIndex: number): Rect {
+      const row = serverRow(serverIndex);
+      const chipWidth = RACK_CHIP_WIDTH;
+      return {
+        x: row.x + row.width - chipWidth,
+        y: row.y + 2 + chipIndex * (RACK_CHIP_HEIGHT + RACK_CHIP_GAP),
+        width: chipWidth,
+        height: RACK_CHIP_HEIGHT,
+      };
+    },
+
+    // Tray strip along the panel's bottom edge — accepted-but-unplaced workloads (D3).
+    trayCard(index: number): Rect {
+      const column = index % columns;
+      const row = Math.floor(index / columns);
+      return {
+        x: panel.x + RACK_PANEL_PADDING + column * (RACK_TRAY_CARD_WIDTH + RACK_TRAY_CARD_GAP),
+        y: trayTopY + RACK_TRAY_HEADER_HEIGHT + row * (RACK_TRAY_CARD_HEIGHT + RACK_TRAY_CARD_GAP),
+        width: RACK_TRAY_CARD_WIDTH,
+        height: RACK_TRAY_CARD_HEIGHT,
+      };
+    },
+
+    trayCardDropButton(index: number): Rect {
+      const card = this.trayCard(index);
+      return {
+        x: card.x + card.width - RACK_TRAY_DROP_BUTTON_SIZE - RACK_TRAY_DROP_BUTTON_MARGIN,
+        y: card.y + RACK_TRAY_DROP_BUTTON_MARGIN,
+        width: RACK_TRAY_DROP_BUTTON_SIZE,
+        height: RACK_TRAY_DROP_BUTTON_SIZE,
+      };
+    },
+  };
+}
+
+export function getRackPanelRect(
+  canvasWidth: number,
+  canvasHeight: number,
+  serverCount: number,
+  trayCount: number,
+): Rect {
+  return rackPanelLayout(canvasWidth, canvasHeight, serverCount, trayCount).panel;
+}
+
+// The full, unclamped height of everything the panel would need to draw (every server row plus
+// the tray) — as opposed to getRackPanelRect's height, which is clamped to fit the canvas. The
+// difference between this and getRackPanelContentRect's height is how far the panel can scroll;
+// see rack-panel.ts's scroll handling.
+export function getRackPanelContentHeight(
+  canvasWidth: number,
+  serverCount: number,
+  trayCount: number,
+): number {
+  // contentHeight never depends on canvasHeight (only the clamped panel/content rects do) —
+  // any placeholder value here produces the same result.
+  return rackPanelLayout(canvasWidth, 0, serverCount, trayCount).contentHeight;
+}
+
+// The scrollable sub-region inside the panel: everything below the header, inset by the same
+// padding as the rest of the panel. render.ts clips to this rect and translates its drawing by
+// -scrollOffsetPx; rack-panel.ts's hit-testing subtracts the same offset from the pointer before
+// comparing against row/tray/chip rects (which are laid out in unscrolled content space — see
+// getServerRowRect et al.). Content taller than this rect is what makes the panel scroll at all.
+export function getRackPanelContentRect(
+  canvasWidth: number,
+  canvasHeight: number,
+  serverCount: number,
+  trayCount: number,
+): Rect {
+  return rackPanelLayout(canvasWidth, canvasHeight, serverCount, trayCount).content;
+}
+
+export function getRackPanelCloseButtonRect(
+  canvasWidth: number,
+  canvasHeight: number,
+  serverCount: number,
+  trayCount: number,
+): Rect {
+  return rackPanelLayout(canvasWidth, canvasHeight, serverCount, trayCount).close;
+}
+
+export function getServerRowRect(
+  index: number,
+  canvasWidth: number,
+  canvasHeight: number,
+  serverCount: number,
+  trayCount: number,
+): Rect {
+  return rackPanelLayout(canvasWidth, canvasHeight, serverCount, trayCount).serverRow(index);
+}
+
+export function getServerTraitBarRect(
+  serverIndex: number,
+  traitIndex: number,
+  canvasWidth: number,
+  canvasHeight: number,
+  serverCount: number,
+  trayCount: number,
+): Rect {
+  return rackPanelLayout(canvasWidth, canvasHeight, serverCount, trayCount).traitBar(
+    serverIndex,
+    traitIndex,
+  );
+}
+
 export function getServerRepairButtonRect(
   serverIndex: number,
   canvasWidth: number,
@@ -526,13 +650,7 @@ export function getServerRepairButtonRect(
   serverCount: number,
   trayCount: number,
 ): Rect {
-  const row = getServerRowRect(serverIndex, canvasWidth, canvasHeight, serverCount, trayCount);
-  return {
-    x: row.x + row.width - RACK_ACTION_BUTTON_WIDTH * 2 - RACK_ACTION_BUTTON_GAP,
-    y: getServerActionsRowY(row),
-    width: RACK_ACTION_BUTTON_WIDTH,
-    height: RACK_ACTION_BUTTON_HEIGHT,
-  };
+  return rackPanelLayout(canvasWidth, canvasHeight, serverCount, trayCount).repairButton(serverIndex);
 }
 
 export function getServerDecommissionButtonRect(
@@ -542,13 +660,9 @@ export function getServerDecommissionButtonRect(
   serverCount: number,
   trayCount: number,
 ): Rect {
-  const row = getServerRowRect(serverIndex, canvasWidth, canvasHeight, serverCount, trayCount);
-  return {
-    x: row.x + row.width - RACK_ACTION_BUTTON_WIDTH,
-    y: getServerActionsRowY(row),
-    width: RACK_ACTION_BUTTON_WIDTH,
-    height: RACK_ACTION_BUTTON_HEIGHT,
-  };
+  return rackPanelLayout(canvasWidth, canvasHeight, serverCount, trayCount).decommissionButton(
+    serverIndex,
+  );
 }
 
 // Small chips along the top-right of a server row, one per workload placed on it.
@@ -560,14 +674,10 @@ export function getPlacedChipRect(
   serverCount: number,
   trayCount: number,
 ): Rect {
-  const row = getServerRowRect(serverIndex, canvasWidth, canvasHeight, serverCount, trayCount);
-  const chipWidth = RACK_CHIP_WIDTH;
-  return {
-    x: row.x + row.width - chipWidth,
-    y: row.y + 2 + chipIndex * (RACK_CHIP_HEIGHT + RACK_CHIP_GAP),
-    width: chipWidth,
-    height: RACK_CHIP_HEIGHT,
-  };
+  return rackPanelLayout(canvasWidth, canvasHeight, serverCount, trayCount).placedChip(
+    serverIndex,
+    chipIndex,
+  );
 }
 
 // Tray strip along the panel's bottom edge — accepted-but-unplaced workloads (D3).
@@ -578,26 +688,8 @@ export function getTrayCardRect(
   serverCount: number,
   trayCount: number,
 ): Rect {
-  const panel = getRackPanelRect(canvasWidth, canvasHeight, serverCount, trayCount);
-  const columns = getTrayColumns(panel.width);
-  const column = index % columns;
-  const row = Math.floor(index / columns);
-  return {
-    x: panel.x + RACK_PANEL_PADDING + column * (RACK_TRAY_CARD_WIDTH + RACK_TRAY_CARD_GAP),
-    y:
-      getTrayTopY(canvasWidth, canvasHeight, serverCount, trayCount) +
-      RACK_TRAY_HEADER_HEIGHT +
-      row * (RACK_TRAY_CARD_HEIGHT + RACK_TRAY_CARD_GAP),
-    width: RACK_TRAY_CARD_WIDTH,
-    height: RACK_TRAY_CARD_HEIGHT,
-  };
+  return rackPanelLayout(canvasWidth, canvasHeight, serverCount, trayCount).trayCard(index);
 }
-
-// "Abandon this contract" button (F3) — a small square overlaid in the tray card's top-right
-// corner rather than a 5th text line, which would mean re-growing RACK_TRAY_CARD_HEIGHT again;
-// the card's 4 existing lines (label+cycle, demands, deadline, penalty) already fill its height.
-export const RACK_TRAY_DROP_BUTTON_SIZE = 16;
-export const RACK_TRAY_DROP_BUTTON_MARGIN = 4;
 
 export function getTrayCardDropButtonRect(
   index: number,
@@ -606,13 +698,7 @@ export function getTrayCardDropButtonRect(
   serverCount: number,
   trayCount: number,
 ): Rect {
-  const card = getTrayCardRect(index, canvasWidth, canvasHeight, serverCount, trayCount);
-  return {
-    x: card.x + card.width - RACK_TRAY_DROP_BUTTON_SIZE - RACK_TRAY_DROP_BUTTON_MARGIN,
-    y: card.y + RACK_TRAY_DROP_BUTTON_MARGIN,
-    width: RACK_TRAY_DROP_BUTTON_SIZE,
-    height: RACK_TRAY_DROP_BUTTON_SIZE,
-  };
+  return rackPanelLayout(canvasWidth, canvasHeight, serverCount, trayCount).trayCardDropButton(index);
 }
 
 // Y coordinate of the tray section's header text baseline — shared by getTrayCardRect and by
@@ -623,19 +709,7 @@ export function getTrayTopY(
   serverCount: number,
   trayCount: number,
 ): number {
-  const panel = getRackPanelRect(canvasWidth, canvasHeight, serverCount, trayCount);
-  const serversHeight =
-    serverCount > 0
-      ? serverCount * RACK_SERVER_ROW_HEIGHT + (serverCount - 1) * RACK_SERVER_ROW_GAP
-      : 0;
-  return (
-    panel.y +
-    RACK_PANEL_PADDING +
-    RACK_PANEL_HEADER_HEIGHT +
-    RACK_PANEL_PADDING +
-    serversHeight +
-    RACK_PANEL_PADDING
-  );
+  return rackPanelLayout(canvasWidth, canvasHeight, serverCount, trayCount).trayTopY;
 }
 
 // The tray strip's full-width hit area (header + cards), used to detect "dropped on the tray"
@@ -646,14 +720,7 @@ export function getTrayDropRect(
   serverCount: number,
   trayCount: number,
 ): Rect {
-  const panel = getRackPanelRect(canvasWidth, canvasHeight, serverCount, trayCount);
-  const top = getTrayTopY(canvasWidth, canvasHeight, serverCount, trayCount);
-  return {
-    x: panel.x + RACK_PANEL_PADDING,
-    y: top,
-    width: panel.width - RACK_PANEL_PADDING * 2,
-    height: panel.y + panel.height - RACK_PANEL_PADDING - top,
-  };
+  return rackPanelLayout(canvasWidth, canvasHeight, serverCount, trayCount).trayDrop;
 }
 
 // Shop panel — opened by proximity to the shop door (shop.ts), closed by walking away. Follows

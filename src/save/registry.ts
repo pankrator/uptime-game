@@ -32,12 +32,10 @@ import {
   recentlyUnplaceds,
   workloads,
   offers,
-  openRackPanels,
+  activeModals,
   rackScrolls,
-  shopOpens,
-  offersPanelOpens,
+  shopTabs,
   offersPanelScrolls,
-  jobsPanelOpens,
   jobsPanelScrolls,
   pendingDrops,
   dragStates,
@@ -140,14 +138,16 @@ export const TRANSIENT_COMPONENTS: ComponentStore<unknown>[] = [
   rackLoads,
   serverCapacities,
   utilizations,
-  openRackPanels,
+  // Which modal (rack panel/shop/offers/jobs) is open, if any — a session-local UI toggle, same
+  // as every other component in this list.
+  activeModals,
   rackScrolls,
-  shopOpens,
-  // Offers/jobs panel open state and scroll — session-local UI toggles (.plans/job-panels.md),
-  // same category as OpenRackPanel/RackScroll/ShopOpen above.
-  offersPanelOpens,
+  // F15 (.plans/design-review.md): was module-level state in shop.ts before this; same
+  // "session-local UI toggle" category as activeModals, so transient for the same reason.
+  shopTabs,
+  // Offers/jobs panel scroll — session-local UI state (.plans/job-panels.md), same category as
+  // activeModals/RackScroll above.
   offersPanelScrolls,
-  jobsPanelOpens,
   jobsPanelScrolls,
   pendingDrops,
   dragStates,

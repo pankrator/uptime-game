@@ -8,13 +8,10 @@
 // rack-panel.ts uses (interaction here, drawing in hud.ts).
 import { type World, type EntityId } from '../world';
 import {
-  offersPanelOpens,
+  activeModals,
   offersPanelScrolls,
-  jobsPanelOpens,
   jobsPanelScrolls,
   maintenanceTasks,
-  openRackPanels,
-  shopOpens,
   offers,
   workloads,
   acceptConfirms,
@@ -26,8 +23,7 @@ import {
 } from '../components';
 import { acceptOffer, declineOffer } from '../dispatch';
 import { fits } from '../traits';
-import { closeRackPanel } from './rack-panel';
-import { dismissShop } from './shop';
+import { registerModalCloser, openModal } from '../modal';
 import {
   getOffersModalContentRect,
   getOffersModalFullContentHeight,
@@ -63,20 +59,33 @@ export function anyServerFits(world: World, demands: Offer['demands']): boolean 
   });
 }
 
+// Called unconditionally at the top of both toggle functions below, regardless of which modal
+// (if any) is actually active — so it only touches activeModals when it's actually one of ITS
+// OWN two kinds ('offers' or 'jobs'); otherwise it would wipe out a rack/shop panel's state
+// without running that panel's own closer. The offers/jobs-specific component removals below are
+// always safe to call unconditionally (removing an absent component is a no-op).
 export function closeJobPanels(world: World, controlled: EntityId): void {
-  world.removeComponent(offersPanelOpens, controlled);
+  const modal = world.getComponent(activeModals, controlled);
+  if (modal && (modal.kind === 'offers' || modal.kind === 'jobs')) {
+    world.removeComponent(activeModals, controlled);
+  }
   world.removeComponent(offersPanelScrolls, controlled);
-  world.removeComponent(jobsPanelOpens, controlled);
   world.removeComponent(jobsPanelScrolls, controlled);
   world.removeComponent(acceptConfirms, controlled);
 }
 
+// Registered as the closer for both 'offers' and 'jobs' — the two panels are already mutually
+// exclusive with each other (toggleOffersPanel/toggleJobsPanel below), so one function closing
+// both is exactly as correct as two that would always agree.
+registerModalCloser('offers', closeJobPanels);
+registerModalCloser('jobs', closeJobPanels);
+
 export function isOffersModalOpen(world: World, controlled: EntityId): boolean {
-  return world.getComponent(offersPanelOpens, controlled) !== undefined;
+  return world.getComponent(activeModals, controlled)?.kind === 'offers';
 }
 
 export function isJobsModalOpen(world: World, controlled: EntityId): boolean {
-  return world.getComponent(jobsPanelOpens, controlled) !== undefined;
+  return world.getComponent(activeModals, controlled)?.kind === 'jobs';
 }
 
 // A maintenance task represents an already-committed action (walking to install/repair/
@@ -87,31 +96,14 @@ function maintenanceTaskActive(world: World, controlled: EntityId): boolean {
   return world.getComponent(maintenanceTasks, controlled) !== undefined;
 }
 
-// Closes whichever OTHER modal (rack panel, shop) is currently open, so pressing O/J always
-// switches straight to the requested panel instead of doing nothing — the reverse direction of
-// rack-panel.ts's/shop.ts's own closeJobPanels calls, which make a rack click or shop proximity
-// win over an already-open offers/jobs panel. Closes the rack panel unconditionally (any mode,
-// arrived or not) rather than only once visible: leaving a dispatching-but-not-yet-arrived panel
-// dangling would have it pop up on arrival stacked on top of whichever panel the player just
-// switched to. Closing the shop also calls dismissShop() so proximity doesn't reopen it the
-// very next frame — the same guard Escape already uses on the shop's own close path.
-function closeOtherModals(world: World, controlled: EntityId): void {
-  if (world.getComponent(openRackPanels, controlled)) {
-    closeRackPanel(world, controlled);
-  }
-  if (world.getComponent(shopOpens, controlled)) {
-    world.removeComponent(shopOpens, controlled);
-    dismissShop();
-  }
-}
-
 function toggleOffersPanel(world: World, controlled: EntityId): void {
   if (maintenanceTaskActive(world, controlled)) return;
   const wasOpen = isOffersModalOpen(world, controlled);
   closeJobPanels(world, controlled);
   if (wasOpen) return;
-  closeOtherModals(world, controlled);
-  world.addComponent(offersPanelOpens, controlled, { open: true });
+  // Pressing O always switches straight to the offers panel instead of doing nothing, closing
+  // whichever other modal (rack panel, shop) was open — see ../modal.ts.
+  openModal(world, controlled, { kind: 'offers' });
   world.addComponent(offersPanelScrolls, controlled, { offsetPx: 0 });
 }
 
@@ -120,8 +112,7 @@ function toggleJobsPanel(world: World, controlled: EntityId): void {
   const wasOpen = isJobsModalOpen(world, controlled);
   closeJobPanels(world, controlled);
   if (wasOpen) return;
-  closeOtherModals(world, controlled);
-  world.addComponent(jobsPanelOpens, controlled, { open: true });
+  openModal(world, controlled, { kind: 'jobs' });
   world.addComponent(jobsPanelScrolls, controlled, { offsetPx: 0 });
 }
 

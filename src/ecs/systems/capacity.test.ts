@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createCapacitySystem } from './capacity';
 import { placeWorkload } from '../dispatch';
 import { powereds, rackLoads, serverCapacities, utilizations } from '../components';
-import { MACHINE_TIERS } from '../game-data';
+import { MACHINE_TIERS, IDLE_POWER_FRACTION } from '../game-data';
 import { createTestFacility, spawnOnlineServer, spawnRack, makeWorkload, runTicks } from '../test-helpers';
 
 describe('capacity system', () => {
@@ -25,14 +25,23 @@ describe('capacity system', () => {
     const { world, facility } = createTestFacility();
     const rackId = spawnRack(world, 0, 0);
     spawnOnlineServer(world, rackId, 'basic');
-    spawnOnlineServer(world, rackId, 'dense');
+    const busyServerId = spawnOnlineServer(world, rackId, 'dense');
+    const workloadId = makeWorkload(world, { demands: { cpu: 1, ramGb: 1, storageGb: 1 } });
+    placeWorkload(world, workloadId, busyServerId);
 
     runTicks(createCapacitySystem(world, facility), 1 / 30, 1);
 
+    // idleServerId has nothing placed on it, so it draws IDLE_POWER_FRACTION of its tier's
+    // power/cooling (see resource.ts's drawFor); busyServerId has a workload placed, so it
+    // draws its full tier power/cooling.
     const load = world.getComponent(rackLoads, rackId)!;
     expect(load.serverCount).toBe(2);
-    expect(load.powerKw).toBeCloseTo(MACHINE_TIERS.basic.powerKw + MACHINE_TIERS.dense.powerKw);
-    expect(load.heatKw).toBeCloseTo(MACHINE_TIERS.basic.coolingKw + MACHINE_TIERS.dense.coolingKw);
+    expect(load.powerKw).toBeCloseTo(
+      MACHINE_TIERS.basic.powerKw * IDLE_POWER_FRACTION + MACHINE_TIERS.dense.powerKw,
+    );
+    expect(load.heatKw).toBeCloseTo(
+      MACHINE_TIERS.basic.coolingKw * IDLE_POWER_FRACTION + MACHINE_TIERS.dense.coolingKw,
+    );
   });
 
   it('an offline server reports its own total/free but contributes nothing to facility totals or rack load', () => {

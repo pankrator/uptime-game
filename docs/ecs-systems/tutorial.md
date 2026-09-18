@@ -1,7 +1,7 @@
 # tutorial
 
-`src/ecs/systems/tutorial.ts` — `createTutorialSystem(world, controlled, facility)`, plus
-exported `TUTORIAL_STEPS`, `startTutorial`, `advanceTutorial`, `skipTutorial`,
+`src/ecs/systems/tutorial.ts` — `createTutorialSystem(world, controlled, facility, events)`,
+plus exported `TUTORIAL_STEPS`, `startTutorial`, `advanceTutorial`, `skipTutorial`,
 `isTutorialActionStep`, `getTutorialStepDef`
 
 ## Purpose
@@ -26,12 +26,15 @@ already own — no new mutation paths, no gating of unrelated systems:
   `startTutorial`) exceeds `MOVE_COMPLETE_DISTANCE_PX`
 - `build-rack` — `world.query(rackSlots).length >= 1`
 - `install-machine` — `world.query(machines).length >= 1`
-- `open-rack-panel` — `OpenRackPanel` present and (`mode === 'viewing'` or `arrived`)
-- `visit-shop` — `TutorialProgress.shopPurchased`, set by the exported `recordShopPurchase`,
-  called from `input.ts`'s buy-button handler only when [shop](./shop.md)'s `buy()` reports the
-  purchase actually went through (not on a rejected, can't-afford click) — the one step whose
-  completion isn't a bare `world.query(...)` read, since "a purchase happened" has no component
-  of its own to query
+- `open-rack-panel` — `ecs/modal.ts`'s `activeModal(world, controlled) === 'rack'` (its own
+  viewing/arrived visibility gate already applies)
+- `visit-shop` — `TutorialProgress.shopPurchased`, set by this module's private
+  `recordShopPurchase`, invoked by `createTutorialSystem`'s own subscription to the
+  `'shop:purchased'` event (`ecs/event-bus.ts`/`ecs/game-events.ts`) — [shop](./shop.md)'s
+  `handleShopClick` emits it only when `buy()` reports the purchase actually went through (not
+  on a rejected, can't-afford click), decoupling this module from `shop.ts` entirely (see
+  `.plans/event-bus.md`) — the one step whose completion isn't a bare `world.query(...)` read,
+  since "a purchase happened" has no component of its own to query
 - `accept-offer` — `world.query(workloads).length >= 1`
 - `place-workload` — `world.query(placedOns).length >= 1`
 
@@ -62,6 +65,9 @@ starter stock is used.
 - Runs last in `updateSystems` (see the [update order](./README.md#update-order)): it only
   reads state to decide whether to advance, so it needs every other system's mutations for the
   frame to have already landed.
+- Subscribes to `'shop:purchased'` once at construction time (`createTutorialSystem`, not
+  inside `update()`) — same "wire it up once" treatment as `ecs/modal.ts`'s
+  `registerModalCloser` and `ecs/audio-events.ts`'s `wireAudioEvents`.
 - Does not gate or pause `workload-spawn`/`resource`/etc. — the demand clock and offer cadence
   run normally throughout, so the `accept-offer` step waits on the real spawn timer rather than
   a scripted one.

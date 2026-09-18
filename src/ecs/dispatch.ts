@@ -14,6 +14,7 @@ import {
 } from './components';
 import {
   type TraitKey,
+  TRAIT_KEYS,
   REPUTATION_ON_DECLINE,
   ABANDON_REPUTATION_COST,
   ABANDON_PENALTY_FRACTION,
@@ -32,7 +33,7 @@ export function checkPlacement(
   const capacity = world.getComponent(serverCapacities, serverId);
   const powered = world.getComponent(powereds, serverId);
   if (!workload || !capacity) return null;
-  if (!powered?.online) return ['cpu', 'ramGb', 'storageGb']; // offline: nothing fits
+  if (!powered?.online) return [...TRAIT_KEYS]; // offline: nothing fits
 
   if (fits(workload.demands, capacity.free)) return null;
   return shortfall(workload.demands, capacity.free);

@@ -5,7 +5,7 @@
 import { TRAIT_KEYS, type Traits, type TraitKey } from './game-data';
 
 export function zeroTraits(): Traits {
-  return { cpu: 0, ramGb: 0, storageGb: 0 };
+  return TRAIT_KEYS.reduce((result, key) => ({ ...result, [key]: 0 }), {} as Traits);
 }
 
 export function addTraits(a: Traits, b: Traits): Traits {

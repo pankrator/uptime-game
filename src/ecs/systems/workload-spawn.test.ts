@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { createWorkloadSpawnSystem, createOfferExpirySystem } from './workload-spawn';
+import { createWorkloadSpawnSystem, createOfferExpirySystem, pickArchetype } from './workload-spawn';
 import { demandClocks, offers } from '../components';
 import { MAX_OFFERS } from '../game-data';
+import { spawnOffer } from '../../entities';
 import { createTestFacility, runTicks } from '../test-helpers';
 
 describe('workload spawn system', () => {
@@ -48,6 +49,37 @@ describe('workload spawn system', () => {
       expect(slot).toBeGreaterThanOrEqual(0);
       expect(slot).toBeLessThan(MAX_OFFERS);
     }
+  });
+});
+
+// F14 (.plans/design-review.md): pickArchetype's roll is now an injectable parameter, so these
+// cases can pin an exact outcome instead of statistically sampling Math.random().
+describe('pickArchetype', () => {
+  it('always picks the only eligible archetype, whatever the roll', () => {
+    // reputation 10: only web (minReputation 0) is unlocked.
+    expect(pickArchetype(10, 0)).toBe('web');
+    expect(pickArchetype(10, 0.999)).toBe('web');
+  });
+
+  it('weights toward the higher-index eligible archetype as the roll approaches 1', () => {
+    // reputation 25: web (minReputation 0) and batch (minReputation 20) are both eligible,
+    // weighted 1:2 in favor of batch.
+    expect(pickArchetype(25, 0)).toBe('web');
+    expect(pickArchetype(25, 0.99)).toBe('batch');
+  });
+});
+
+describe('spawnOffer repeat count', () => {
+  it('rolls the low end of the archetype repeat range at random=0', () => {
+    const { world } = createTestFacility();
+    const offerId = spawnOffer(world, 'web', 1, 0); // web's repeatRange is [0, 3]
+    expect(world.getComponent(offers, offerId)!.repeatCount).toBe(0);
+  });
+
+  it('rolls the high end of the archetype repeat range as random approaches 1', () => {
+    const { world } = createTestFacility();
+    const offerId = spawnOffer(world, 'web', 1, 0.999);
+    expect(world.getComponent(offers, offerId)!.repeatCount).toBe(3);
   });
 });
 

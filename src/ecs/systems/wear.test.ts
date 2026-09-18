@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createWearSystem, clearFailure } from './wear';
 import { placeWorkload } from '../dispatch';
 import { conditions, faileds, placedOns, powereds } from '../components';
-import { createTestFacility, spawnOnlineServer, spawnRack, makeWorkload, stubAudio, runTicks } from '../test-helpers';
+import { createTestFacility, spawnOnlineServer, spawnRack, makeWorkload, stubEventBus, runTicks } from '../test-helpers';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -14,7 +14,7 @@ describe('wear system', () => {
     const rackId = spawnRack(world, 0, 0);
     const serverId = spawnOnlineServer(world, rackId, 'basic');
 
-    runTicks(createWearSystem(world, facility, stubAudio()), 1, 60);
+    runTicks(createWearSystem(world, facility, stubEventBus()), 1, 60);
 
     expect(world.getComponent(conditions, serverId)!.wear).toBeGreaterThan(0);
   });
@@ -25,7 +25,7 @@ describe('wear system', () => {
     const serverId = spawnOnlineServer(world, rackId, 'basic');
     world.getComponent(powereds, serverId)!.online = false;
 
-    runTicks(createWearSystem(world, facility, stubAudio()), 1, 60);
+    runTicks(createWearSystem(world, facility, stubEventBus()), 1, 60);
 
     expect(world.getComponent(conditions, serverId)!.wear).toBe(0);
   });
@@ -40,12 +40,16 @@ describe('wear system', () => {
 
     // Deterministic: a random draw of 0 is below any positive per-frame failure chance.
     vi.spyOn(Math, 'random').mockReturnValue(0);
+    const events = stubEventBus();
+    const failed: number[] = [];
+    events.on('machine:failed', (payload) => failed.push(payload.machineId));
 
-    runTicks(createWearSystem(world, facility, stubAudio()), 1, 1);
+    runTicks(createWearSystem(world, facility, events), 1, 1);
 
     expect(world.getComponent(faileds, serverId)).toBeDefined();
     expect(world.getComponent(powereds, serverId)!.online).toBe(false);
     expect(world.getComponent(placedOns, workloadId)).toBeUndefined();
+    expect(failed).toEqual([serverId]);
   });
 
   it('a failed machine stops accruing wear (nothing left to wear on a dead box)', () => {
@@ -55,7 +59,7 @@ describe('wear system', () => {
     world.addComponent(faileds, serverId, { failedAt: 0 });
     const wearBefore = world.getComponent(conditions, serverId)!.wear;
 
-    runTicks(createWearSystem(world, facility, stubAudio()), 1, 60);
+    runTicks(createWearSystem(world, facility, stubEventBus()), 1, 60);
 
     expect(world.getComponent(conditions, serverId)!.wear).toBe(wearBefore);
   });
