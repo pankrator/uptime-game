@@ -26,6 +26,13 @@ export interface InputState {
   // already normalized to camera-scale units, so camera.ts has exactly one thing to read
   // regardless of which input produced it (see .plans/mobile-touch-support.md D2).
   getZoomDelta(): number;
+  // F17 (.plans/design-review.md): removes every listener registered below (window and canvas
+  // alike) and cancels any pending long-press timer. Harmless while runGame runs once per page
+  // load (nothing calls this today, and onKeyDown's own per-handler unsubscribe already covers
+  // adding/removing individual key bindings); exists so a future "quit to menu" feature has a
+  // matching teardown to pair with a fresh createInput() on restart, instead of a second full
+  // set of listeners stacking on top of the first (see createRenderer's own dispose()).
+  dispose(): void;
 }
 
 // Scale-units-per-pixel of pinch-distance change — chosen so a typical full-hand pinch across a
@@ -81,7 +88,7 @@ export function createInput(canvas: HTMLCanvasElement, target: Window = window):
   // tap/drag/pinch handling below is the only thing interpreting touches.
   canvas.style.touchAction = 'none';
 
-  target.addEventListener('keydown', (event) => {
+  function handleKeyDown(event: KeyboardEvent): void {
     // F5 is bound in-game to quicksave (see main.ts) — without this, the browser's own
     // refresh would fire on the same keypress and tear the page down before the save (and its
     // confirmation toast) ever completes.
@@ -90,8 +97,12 @@ export function createInput(canvas: HTMLCanvasElement, target: Window = window):
     for (const handler of keyDownHandlers.get(event.key) ?? []) {
       handler();
     }
-  });
-  target.addEventListener('keyup', (event) => keysDown.delete(event.key));
+  }
+  function handleKeyUp(event: KeyboardEvent): void {
+    keysDown.delete(event.key);
+  }
+  target.addEventListener('keydown', handleKeyDown);
+  target.addEventListener('keyup', handleKeyUp);
 
   function canvasPoint(event: PointerEvent): { x: number; y: number } {
     const rect = canvas.getBoundingClientRect();
@@ -106,16 +117,17 @@ export function createInput(canvas: HTMLCanvasElement, target: Window = window):
 
   // Suppress the browser's context menu so right-click is free to mean "view this rack"
   // in-game instead of opening a native menu.
-  canvas.addEventListener('contextmenu', (event) => {
+  function handleContextMenu(event: MouseEvent): void {
     event.preventDefault();
     rightClicked = true;
-  });
+  }
+  canvas.addEventListener('contextmenu', handleContextMenu);
 
   // Pointer Events unify mouse, touch, and pen into one stream with the same clientX/clientY
   // semantics `canvasPoint` already expects — one code path drives input.ts's whole
   // click-priority chain and rack-panel.ts's drag lifecycle regardless of what's pointing (see
   // .plans/mobile-touch-support.md D1).
-  canvas.addEventListener('pointerdown', (event) => {
+  function handlePointerDown(event: PointerEvent): void {
     event.preventDefault();
     activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
 
@@ -147,9 +159,10 @@ export function createInput(canvas: HTMLCanvasElement, target: Window = window):
         }
       }, LONG_PRESS_MS);
     }
-  });
+  }
+  canvas.addEventListener('pointerdown', handlePointerDown);
 
-  canvas.addEventListener('pointermove', (event) => {
+  function handlePointerMove(event: PointerEvent): void {
     if (activePointers.has(event.pointerId)) {
       activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     }
@@ -181,12 +194,13 @@ export function createInput(canvas: HTMLCanvasElement, target: Window = window):
     } else {
       lastPinchDistance = null;
     }
-  });
+  }
+  canvas.addEventListener('pointermove', handlePointerMove);
 
   // Released on the window, not the canvas: a drag that ends after the pointer has left the
   // canvas (dragged off-canvas, or the browser delivers pointerup elsewhere) must still be seen
   // as released, or a drag could get stuck "held" with no way to end it.
-  target.addEventListener('pointerup', (event) => {
+  function handlePointerUp(event: PointerEvent): void {
     activePointers.delete(event.pointerId);
     if (activePointers.size < 2) lastPinchDistance = null;
 
@@ -208,12 +222,13 @@ export function createInput(canvas: HTMLCanvasElement, target: Window = window):
     }
     pressOrigin = null;
     longPressFired = false;
-  });
+  }
+  target.addEventListener('pointerup', handlePointerUp);
 
   // An OS-interrupted touch (an incoming call, the browser reassigning the gesture to
   // scroll/navigation) must clear state the same way pointerup does, or a drag could be left
   // stuck "held" forever with no release to end it. Never counts as a tap.
-  target.addEventListener('pointercancel', (event) => {
+  function handlePointerCancel(event: PointerEvent): void {
     activePointers.delete(event.pointerId);
     lastPinchDistance = null;
 
@@ -226,24 +241,22 @@ export function createInput(canvas: HTMLCanvasElement, target: Window = window):
       pointerDown = false;
       released = true;
     }
-  });
+  }
+  target.addEventListener('pointercancel', handlePointerCancel);
 
   // passive: false so preventDefault can stop the page itself from scrolling/zooming while the
   // pointer is over the canvas (the rack panel is the only thing that should respond to plain
   // wheel; ctrl+wheel is trackpad pinch-to-zoom instead, kept separate from the scroll delta so
   // the two gestures never fight over the same accumulator).
-  canvas.addEventListener(
-    'wheel',
-    (event) => {
-      event.preventDefault();
-      if (event.ctrlKey) {
-        zoomDelta += -event.deltaY * WHEEL_ZOOM_SENSITIVITY;
-      } else {
-        wheelDeltaY += event.deltaY;
-      }
-    },
-    { passive: false },
-  );
+  function handleWheel(event: WheelEvent): void {
+    event.preventDefault();
+    if (event.ctrlKey) {
+      zoomDelta += -event.deltaY * WHEEL_ZOOM_SENSITIVITY;
+    } else {
+      wheelDeltaY += event.deltaY;
+    }
+  }
+  canvas.addEventListener('wheel', handleWheel, { passive: false });
 
   return {
     isKeyDown(key: string) {
@@ -293,6 +306,17 @@ export function createInput(canvas: HTMLCanvasElement, target: Window = window):
       const delta = zoomDelta;
       zoomDelta = 0;
       return delta;
+    },
+    dispose() {
+      cancelLongPress();
+      target.removeEventListener('keydown', handleKeyDown);
+      target.removeEventListener('keyup', handleKeyUp);
+      canvas.removeEventListener('contextmenu', handleContextMenu);
+      canvas.removeEventListener('pointerdown', handlePointerDown);
+      canvas.removeEventListener('pointermove', handlePointerMove);
+      target.removeEventListener('pointerup', handlePointerUp);
+      target.removeEventListener('pointercancel', handlePointerCancel);
+      canvas.removeEventListener('wheel', handleWheel);
     },
   };
 }

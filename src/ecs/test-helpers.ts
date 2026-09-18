@@ -79,5 +79,6 @@ export function stubRenderer(width: number, height: number): Renderer {
     width,
     height,
     clear() {},
+    dispose() {},
   };
 }

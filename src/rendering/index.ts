@@ -7,6 +7,12 @@ export interface Renderer {
   readonly width: number;
   readonly height: number;
   clear(): void;
+  // F17 (.plans/design-review.md): removes the window listeners registered below. Harmless
+  // while runGame runs once per page load (nothing calls this today); exists so a future "quit
+  // to menu" feature — createGameLoop already has the matching stop() — has a matching one here
+  // to pair with a fresh createRenderer() on restart, instead of a second 'resize' listener
+  // stacking on top of the first.
+  dispose(): void;
 }
 
 // Caps how far the backing buffer scales up on very high-DPR devices — a 2D canvas this
@@ -48,6 +54,10 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
     },
     clear() {
       context.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+    },
+    dispose() {
+      window.removeEventListener('resize', resize);
+      window.removeEventListener('orientationchange', resize);
     },
   };
 }
