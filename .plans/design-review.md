@@ -334,6 +334,21 @@ downstream — F7's handlers and F8's layout objects both want to live next to t
 serve, and a 390-line function is where the "check the docs before extending a system" habit
 breaks down. Sequence it after F6-F8 or not at all; doing it *first* just moves code around.
 
+**Decision (post-F6/F7/F8/F11): not doing it now.** F6-F8 are in; F10 is legitimately next in
+sequence, not blocked. Not doing it anyway, for a reason specific to this item and not a general
+excuse to skip Tier 2 work: `render.ts` (1555 lines) and `hud.ts` (869 lines) are exactly the two
+modules `.plans/design-review.md` F16 already flags as having zero test coverage, and CLAUDE.md
+rules out the one thing that would substitute for that coverage here — opening the running game
+and confirming every panel still draws in the right place after cutting seven files out of two.
+Every other step in this plan that touched draw code (F5, F11) either had `layout.test.ts`
+underneath it or was a pure constant/helper substitution checkable by inspection; moving 390
+lines of `drawRackPanel` and the rest of `render.ts`/`hud.ts` into seven new files is neither —
+it is exactly the kind of change a stray copy-paste or a dropped argument could break silently,
+with nothing in the suite positioned to catch it. Worth doing once F16's remaining gap (input.ts,
+render.ts, hud.ts, job-panels.ts, tutorial.ts) has real coverage, or once someone can drive the
+game to confirm it visually; not worth doing blind. `git log` is the record of every other item
+in this plan that WAS done — this note is the record for the one that wasn't, and why.
+
 ### F11. No shared drawing vocabulary for the canvas
 
 Three symptoms of one gap:
@@ -497,20 +512,20 @@ Listing the rejections, per the plan conventions — these are more useful later
 
 Each step leaves the game playable and the suite green.
 
-| Step | Finding | Size | Behavior change |
-| --- | --- | --- | --- |
-| 1 | F1 — fix the two stale tests | XS | none |
-| 2 | F2 — `"strict": true` | XS | none |
-| 3 | F3 — delete the dead compute fields | XS | none |
-| 4 | F13 — derive the trait list from `TRAIT_KEYS` | XS | none |
-| 5 | F5 — HUD overflow guard via `tryDraw` | S | fixes a narrow-window overlap |
-| 6 | F11 — `ui/draw.ts`, one panel at a time | S–M | none (verify visually) |
-| 7 | F6 — `ecs/modal.ts`, breaking both import cycles | M | none |
-| 8 | F7 + F4 — move maintenance and panel clicks out of `input.ts` | M | none |
-| 9 | F8 — `rackPanelLayout` object | M | none |
-| 10 | F16 — tests for the now-testable panel/click logic | M | none |
-| 11 | F10 — split the draw modules | L | none |
-| 12 | F9, F12, F14, F15, F17 — decide individually | S each | none |
+| Step | Finding | Size | Behavior change | Outcome |
+| --- | --- | --- | --- | --- |
+| 1 | F1 — fix the two stale tests | XS | none | done |
+| 2 | F2 — `"strict": true` | XS | none | done |
+| 3 | F3 — delete the dead compute fields | XS | none | done |
+| 4 | F13 — derive the trait list from `TRAIT_KEYS` | XS | none | done |
+| 5 | F5 — HUD overflow guard via `tryDraw` | S | fixes a narrow-window overlap | done |
+| 6 | F11 — `ui/draw.ts`, one panel at a time | S–M | none (verify visually) | done, scoped (see F11's own note) |
+| 7 | F6 — `ecs/modal.ts`, breaking both import cycles | M | none | done |
+| 8 | F7 + F4 — move maintenance and panel clicks out of `input.ts` | M | none | done |
+| 9 | F8 — `rackPanelLayout` object | M | none | done |
+| 10 | F16 — tests for the now-testable panel/click logic | M | none | done, partial (see F16's own note) |
+| 11 | F10 — split the draw modules | L | none | not done — see F10's "Decision" note |
+| 12 | F9, F12, F14, F15, F17 — decide individually | S each | none | F9 decided against splitting; F12, F14, F15, F17 done |
 
 Steps 1-5 are mechanical and can go in one pass. Step 6 is independent of everything after it.
 Steps 7-9 are the substantive ones and should land separately, each with the suite green in
