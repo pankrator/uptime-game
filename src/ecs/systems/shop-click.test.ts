@@ -2,7 +2,7 @@
 // (read-only, width/height) and a point, so it can be exercised headlessly.
 import { describe, it, expect } from 'vitest';
 import { handleShopClick, getShopTab, shopCategories } from './shop';
-import { shopOpens, wallets, inventories } from '../components';
+import { activeModals, wallets, inventories } from '../components';
 import { PURCHASABLES } from '../game-data';
 import { getShopCloseButtonRect, getShopTabRect, getShopBuyButtonRect } from '../../ui/layout';
 import { createTestFacility, stubAudio, stubRenderer } from '../test-helpers';
@@ -18,7 +18,7 @@ describe('handleShopClick', () => {
   it('closes the shop when the close button is clicked', () => {
     const { world, facility } = createTestFacility();
     const player = world.createEntity();
-    world.addComponent(shopOpens, player, { open: true });
+    world.addComponent(activeModals, player, { kind: 'shop' });
 
     const rowCount = PURCHASABLES.filter((p) => p.category === getShopTab(world, player)).length;
     const closeRect = getShopCloseButtonRect(CANVAS_WIDTH, CANVAS_HEIGHT, rowCount);
@@ -31,13 +31,13 @@ describe('handleShopClick', () => {
       stubAudio(),
     );
 
-    expect(world.getComponent(shopOpens, player)).toBeUndefined();
+    expect(world.getComponent(activeModals, player)).toBeUndefined();
   });
 
   it('switches tabs when a category tab is clicked, per player (F15)', () => {
     const { world, facility } = createTestFacility();
     const player = world.createEntity();
-    world.addComponent(shopOpens, player, { open: true });
+    world.addComponent(activeModals, player, { kind: 'shop' });
 
     const categories = shopCategories();
     expect(categories.length).toBeGreaterThan(1);
@@ -61,7 +61,7 @@ describe('handleShopClick', () => {
   it('buys a stock item and adds it to inventory when affordable', () => {
     const { world, facility } = createTestFacility();
     const player = world.createEntity();
-    world.addComponent(shopOpens, player, { open: true });
+    world.addComponent(activeModals, player, { kind: 'shop' });
 
     const rows = PURCHASABLES.filter((p) => p.category === getShopTab(world, player));
     const rowIndex = rows.findIndex((p) => p.kind === 'stock');
@@ -87,7 +87,7 @@ describe('handleShopClick', () => {
   it('does not buy when the wallet cannot afford it', () => {
     const { world, facility } = createTestFacility();
     const player = world.createEntity();
-    world.addComponent(shopOpens, player, { open: true });
+    world.addComponent(activeModals, player, { kind: 'shop' });
 
     const rows = PURCHASABLES.filter((p) => p.category === getShopTab(world, player));
     const rowIndex = rows.findIndex((p) => p.kind === 'stock');

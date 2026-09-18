@@ -283,65 +283,56 @@ export interface RecentlyUnplaced {
   expiresAtMs: number;
 }
 
-// Which rack's panel is open. Attached to the player. A panel can be opened purely to view
-// (mode: 'viewing', no travel) or opened to dispatch (mode: 'dispatching', which kicks off a
-// walk to the rack). Only 'dispatching' ever accepts drags — see D4.
-export interface OpenRackPanel {
-  rackId: EntityId;
-  mode: 'viewing' | 'dispatching';
-  arrived: boolean; // dispatching only; false while walking, drops held until true
-}
+// Which modal is open, if any — a tagged union, so AT MOST ONE modal can ever be recorded as
+// open at all; it's a type error to represent "rack panel AND shop both open." Opening one is a
+// single addComponent that REPLACES whatever was there (see ../modal.ts's openModal), so mutual
+// exclusion is structural, not a convention every opener has to remember to uphold.
+//
+// This replaces four independent components (OpenRackPanel, ShopOpen, OffersPanelOpen,
+// JobsPanelOpen) that used to each be optionally present on the player at once, with "only one
+// at a time" enforced by every opener also closing the other three by hand (modal.ts's old
+// closeOtherModals) — see .plans/design-review.md F6's own note on that shape, and the follow-up
+// that replaced it with this one.
+//
+// The rack variant carries its own extra state (which rack, viewing vs. dispatching, arrived)
+// since that's genuinely rack-specific; the other three kinds carry none. A panel can be opened
+// purely to view (mode: 'viewing', no travel) or opened to dispatch (mode: 'dispatching', which
+// kicks off a walk to the rack). Only 'dispatching' ever accepts drags — see D4.
+export type ActiveModal =
+  | { kind: 'rack'; rackId: EntityId; mode: 'viewing' | 'dispatching'; arrived: boolean }
+  | { kind: 'shop' }
+  | { kind: 'offers' }
+  | { kind: 'jobs' };
 
 // How far the open rack panel's content (server rows + tray) has scrolled, in pixels. Attached
-// to the player alongside OpenRackPanel; reset to 0 whenever a panel opens (see
-// openOrPromoteRackPanel/createRackPanelSystem in rack-panel.ts) so a new rack always opens
+// to the player alongside the 'rack' variant of ActiveModal; reset to 0 whenever a panel opens
+// (see openOrPromoteRackPanel/createRackPanelSystem in rack-panel.ts) so a new rack always opens
 // scrolled to the top. Clamped every frame to [0, maxScroll] since the content height (and thus
 // how far it CAN scroll) changes as servers/workloads are added or removed.
 export interface RackScroll {
   offsetPx: number;
 }
 
-// Marker on the player — the shop panel is open. Mirrors OpenRackPanel but the shop has no
-// mode/rackId: proximity alone opens and closes it (shop.ts), no travel state to track. See
-// .plans/facility-shop-inventory.md Step 5.
-export interface ShopOpen {
-  open: true;
-}
-
 // F15 (.plans/design-review.md): which shop category tab is selected, per player — used to live
 // as module-level mutable state in shop.ts, outside the ECS, in a codebase whose stated
 // architecture is "state lives in components." Persists across shop opens/closes (unlike
-// ShopOpen), same as it did as module state; only reset by a fresh World (see world.ts's
-// createWorld/resetAllComponentStores).
+// ActiveModal's 'shop' variant, which disappears when the shop closes), same as it did as module
+// state; only reset by a fresh World (see world.ts's createWorld/resetAllComponentStores).
 export interface ShopTab {
   current: string;
 }
 
 // A drop the player made while still walking to a dispatching-mode rack — committed on
-// arrival, in order. See OpenRackPanel.arrived and rack-panel.ts.
+// arrival, in order. See ActiveModal's 'rack' variant (`arrived`) and rack-panel.ts.
 export interface PendingDrop {
   workloadId: EntityId;
   serverId: EntityId;
 }
 
-// Marker on the player — the offers panel (jobs available to accept) is open. Toggled by the
-// `O` key (job-panels.ts) rather than opened automatically — mirrors ShopOpen's shape (a plain
-// toggle, no travel/arrival state) but is player-initiated instead of proximity-driven. Only one
-// of this, JobsPanelOpen, OpenRackPanel, or ShopOpen is ever open at a time — see job-panels.ts.
-export interface OffersPanelOpen {
-  open: true;
-}
-
 // How far the offers panel's list has scrolled, in pixels. Attached to the player alongside
-// OffersPanelOpen; reset to 0 whenever the panel opens.
+// ActiveModal's 'offers' variant; reset to 0 whenever the panel opens.
 export interface OffersPanelScroll {
   offsetPx: number;
-}
-
-// Marker on the player — the jobs panel (every accepted job — unplaced + running — with full
-// stats) is open. Same toggle shape as OffersPanelOpen, bound to the `J` key.
-export interface JobsPanelOpen {
-  open: true;
 }
 
 export interface JobsPanelScroll {
@@ -534,13 +525,10 @@ export const placedOns = createComponentStore<PlacedOn>();
 export const recentlyUnplaceds = createComponentStore<RecentlyUnplaced>();
 export const workloads = createComponentStore<Workload>();
 export const offers = createComponentStore<Offer>();
-export const openRackPanels = createComponentStore<OpenRackPanel>();
+export const activeModals = createComponentStore<ActiveModal>();
 export const rackScrolls = createComponentStore<RackScroll>();
-export const shopOpens = createComponentStore<ShopOpen>();
 export const shopTabs = createComponentStore<ShopTab>();
-export const offersPanelOpens = createComponentStore<OffersPanelOpen>();
 export const offersPanelScrolls = createComponentStore<OffersPanelScroll>();
-export const jobsPanelOpens = createComponentStore<JobsPanelOpen>();
 export const jobsPanelScrolls = createComponentStore<JobsPanelScroll>();
 export const pendingDrops = createComponentStore<PendingDrop>();
 export const dragStates = createComponentStore<DragState>();

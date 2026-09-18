@@ -14,7 +14,7 @@ full-screen modal once visible.
 - **Left-click a rack** (no build mode active) → `openOrPromoteRackPanel`: opens in
   `'dispatching'` mode and starts a walk there (handled via `input.ts` calling
   `moveControlledTo`). The panel stays **hidden** until the player arrives
-  (`OpenRackPanel.arrived`) — `render.ts` early-returns until then.
+  (`ActiveModal`'s `'rack'` variant's `arrived` field) — `render.ts` early-returns until then.
 - **Right-click a rack** (handled in this system's own `update`) → opens in `'viewing'`
   mode, never starts a walk. Viewing renders identically to an arrived dispatching panel
   but accepts no drags.
@@ -59,15 +59,19 @@ gesture.
   re-export of `ui/scroll.ts`'s shared `maxScrollOffset` — see [job-panels](./job-panels.md),
   which reuses the same formula for its own offers/jobs modals), since content height changes
   underneath the panel (a workload finishing removes a tray card).
-- `closeRackPanel` clears `OpenRackPanel`, `RackScroll`, `DragState`, `RejectedDrop`, and
+- `closeRackPanel` clears `ActiveModal`, `RackScroll`, `DragState`, `RejectedDrop`, and
   any leftover `PendingDrop`s.
-- Both open paths (left-click dispatch via `openOrPromoteRackPanel`, right-click view in this
-  module's own `System`) call [job-panels](./job-panels.md)'s `closeJobPanels` first — only one
-  modal (rack, shop, offers, jobs) is ever open at a time; the rack panel always wins over an
-  already-open offers/jobs panel. The reverse also holds: pressing `O`/`J` while the rack panel
-  is open closes it (via this module's own `closeRackPanel`, called from job-panels.ts's
-  `closeOtherModals`) and switches straight to the requested panel, in any mode and whether or
-  not the player has arrived yet.
+- Only one modal (rack, shop, offers, jobs) can ever be recorded as open at once — `ActiveModal`
+  (`components.ts`) is a single tagged-union component, not four independent ones, so mutual
+  exclusion is structural rather than every opener remembering to close the other three (see
+  `ecs/modal.ts`). Both open paths (left-click dispatch via
+  `openOrPromoteRackPanel`, right-click view in this module's own `System`) call `../modal.ts`'s
+  `openModal`, which replaces whatever was open — including an already-open offers/jobs panel —
+  and runs its registered closer first (unless it's a rack panel being re-opened/promoted in
+  place, e.g. switching to a different rack, which must not tear itself down). The reverse also
+  holds: pressing `O`/`J` while the rack panel is open runs this module's own `closeRackPanel`
+  (registered as the `'rack'` closer) before switching to the requested panel, in any mode and
+  whether or not the player has arrived yet.
 
 ## Notes
 

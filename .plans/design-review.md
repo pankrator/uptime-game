@@ -194,6 +194,21 @@ duplicated priority chain in `render.ts` is already a second definition of the s
 that visible-vs-clickable disagreements are exactly the class of bug
 `.plans/playtest-findings.md` F6/B1 already cost a session each.
 
+**Follow-up (post-F6): the four "is X open" components became one.** The version landed for F6
+kept `OpenRackPanel`/`ShopOpen`/`OffersPanelOpen`/`JobsPanelOpen` as four separate components and
+had `activeModal`/`closeOtherModals` check each by hand — the import cycles were gone, but
+`activeModal` was still "a check against every panel type," and mutual exclusion was still a
+convention (every opener closing the other three) rather than something the data shape enforced.
+A direct user request afterward asked for that specific pattern to be fixed. `components.ts`'s
+`ActiveModal` is now the single tagged-union component this section originally sketched
+(`openModal`/`closeModal` above), so `activeModal` is one `getComponent` read and at most one
+modal can ever be recorded as open at all — the four-component version is no longer possible to
+build wrong. `closeOtherModals(world, player, keep)` became `openModal(world, player, modal)`:
+it runs the PREVIOUS modal's registered closer only when switching to a different kind, which is
+what `keep` used to encode. `canPanCamera` (`camera.ts`) had the same four-checks-by-hand pattern
+duplicated outside `modal.ts` entirely (predating F6, so F6 never touched it) — collapsed to one
+`activeModal(...) !== null` check in the same pass.
+
 ### F7. `input.ts` is doing four jobs, two of which are not input
 
 641 lines. The gesture-arbitration part is genuinely well-argued (the drag/click comment at

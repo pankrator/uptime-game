@@ -13,9 +13,8 @@ import {
   buildModes,
   BUILDABLES,
   maintenanceTasks,
-  openRackPanels,
+  activeModals,
   dragStates,
-  shopOpens,
   tutorialProgresses,
   type BuildableDef,
 } from '../components';
@@ -88,7 +87,7 @@ export function createInputSystem(
   audio: Audio,
 ): System {
   input.onKeyDown('Escape', () => {
-    if (world.getComponent(shopOpens, controlled)) {
+    if (activeModal(world, controlled) === 'shop') {
       closeShop(world, controlled);
       return;
     }
@@ -201,9 +200,9 @@ export function createInputSystem(
 
       // 0.7. Offers / Jobs panels — centered modals like the rack/shop panels below, toggled by
       // the 'o'/'j' keys (job-panels.ts) instead of docked HUD chrome. Mutually exclusive with
-      // each other and with the rack/shop panels (../modal.ts's closeOtherModals — pressing O/J
-      // while a rack/shop panel is open SWITCHES to the requested panel rather than being
-      // blocked), so checking them here — ahead of everything below — is safe: at most one of
+      // each other and with the rack/shop panels (../modal.ts's openModal — pressing O/J while a
+      // rack/shop panel is open SWITCHES to the requested panel rather than being blocked), so
+      // checking them here — ahead of everything below — is safe: at most one of
       // these five branches (offers, jobs, maintenance, rack, shop) is ever live at once. The
       // accept-confirm gate (.plans/playtest-findings.md F3 — accepting a contract nothing can
       // currently serve needs a second click, same shape as DecommissionConfirm) lives inside
@@ -232,7 +231,7 @@ export function createInputSystem(
       // (redirecting the walk, same as clicking anywhere else always does) rather than being
       // absorbed by a panel that isn't even on screen yet. activeModal() applies exactly this
       // same visibility gate (see ../modal.ts).
-      const openPanel = world.getComponent(openRackPanels, controlled);
+      const openPanel = world.getComponent(activeModals, controlled);
       if (modal === 'rack') {
         handleRackPanelClick(world, renderer, controlled, facility, pointer, audio);
         return;
@@ -315,10 +314,10 @@ export function createInputSystem(
       // 5. Plain floor click: just move. Cancels any not-yet-arrived dispatching panel — the
       // player just redirected away from that rack, and leaving it pending would let the panel
       // pop open unexpectedly if they later happened to walk near that rack for some other
-      // reason (openPanel here is guaranteed not-yet-arrived: the arrived/viewing case already
-      // returned above at the panelVisible check).
-      if (openPanel) {
-        world.removeComponent(openRackPanels, controlled);
+      // reason (openPanel here is guaranteed rack-kind and not-yet-arrived: every other kind,
+      // and the arrived/viewing rack case, already returned above).
+      if (openPanel?.kind === 'rack') {
+        world.removeComponent(activeModals, controlled);
       }
       moveControlledTo(world, controlled, facility, worldPointer);
     },

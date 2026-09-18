@@ -22,7 +22,8 @@ import {
   rackSlots,
   machines,
   installedIns,
-  openRackPanels,
+  activeModals,
+  type ActiveModal,
   rackScrolls,
   pendingDrops,
   dragStates,
@@ -56,9 +57,20 @@ import { maxScrollOffset } from '../../ui/scroll';
 import { type Renderer } from '../../rendering';
 import { type Audio } from '../../audio';
 import { type System } from './system';
-import { registerModalCloser, closeOtherModals } from '../modal';
+import { registerModalCloser, openModal } from '../modal';
 
 const DECOMMISSION_CONFIRM_WINDOW_MS = 3000;
+
+// This module's own slice of ActiveModal — narrowed once here so every function below can read
+// `.rackId`/`.mode`/`.arrived` without repeating the discriminant check. Returns the SAME object
+// the component store holds (no clone), so mutating a field through this (see
+// createRackPanelSystem's arrival check) mutates the real component.
+type RackModal = Extract<ActiveModal, { kind: 'rack' }>;
+
+function rackModal(world: World, controlled: EntityId): RackModal | undefined {
+  const modal = world.getComponent(activeModals, controlled);
+  return modal?.kind === 'rack' ? modal : undefined;
+}
 
 // Same reach radius/approach as maintenance.ts's MAINTENANCE_REACH_PX — the established
 // "close enough to interact with this rack" pattern.
@@ -95,8 +107,12 @@ export function trayWorkloadIds(world: World): EntityId[] {
     .sort((a, b) => a - b);
 }
 
+// Safe to call whenever the active modal is actually 'rack' (every call site below either just
+// confirmed that, or is the registered 'rack' closer — invoked by modal.ts's openModal only when
+// the CURRENT active modal's kind is 'rack'). Unconditionally clearing activeModals here would
+// be wrong if some OTHER modal were active; nothing calls this except in that guaranteed state.
 export function closeRackPanel(world: World, controlled: EntityId): void {
-  world.removeComponent(openRackPanels, controlled);
+  world.removeComponent(activeModals, controlled);
   world.removeComponent(rackScrolls, controlled);
   world.removeComponent(dragStates, controlled);
   world.removeComponent(rejectedDrops, controlled);
@@ -152,7 +168,7 @@ export function openOrPromoteRackPanel(
   controlled: EntityId,
   rackId: EntityId,
 ): boolean {
-  const current = world.getComponent(openRackPanels, controlled);
+  const current = rackModal(world, controlled);
 
   if (current?.rackId === rackId) {
     if (current.mode === 'viewing') {
@@ -164,9 +180,10 @@ export function openOrPromoteRackPanel(
   }
 
   // Only one modal at a time (see ../modal.ts) — a rack click always wins over any other open
-  // panel.
-  closeOtherModals(world, controlled, 'rack');
-  world.addComponent(openRackPanels, controlled, { rackId, mode: 'dispatching', arrived: false });
+  // panel. openModal only runs a PREVIOUS modal's closer when it's a different kind, so opening
+  // rack while a different rack's panel is already open doesn't tear it down first — same as
+  // this always did (the old closeOtherModals(..., 'rack') skipped its own kind).
+  openModal(world, controlled, { kind: 'rack', rackId, mode: 'dispatching', arrived: false });
   world.addComponent(rackScrolls, controlled, { offsetPx: 0 });
   return true;
 }
@@ -186,7 +203,7 @@ export function handleRackPanelClick(
   pointer: { x: number; y: number },
   audio: Audio,
 ): void {
-  const panel = world.getComponent(openRackPanels, controlled)!;
+  const panel = rackModal(world, controlled)!;
   const serverIds = serversOn(world, panel.rackId);
   const serverCount = serverIds.length;
   const trayCount = trayWorkloadIds(world).length;
@@ -276,7 +293,7 @@ export function tryStartDrag(
   controlled: EntityId,
   pointer: { x: number; y: number },
 ): boolean {
-  const panel = world.getComponent(openRackPanels, controlled);
+  const panel = rackModal(world, controlled);
   // Dispatching-mode panels are invisible until arrived (render.ts's early return) — refuse to
   // start a drag against geometry that isn't actually on screen.
   if (!panel || panel.mode !== 'dispatching' || !panel.arrived) return false;
@@ -408,7 +425,7 @@ export function resolveDrop(
   if (!drag) return;
   world.removeComponent(dragStates, controlled);
 
-  const panel = world.getComponent(openRackPanels, controlled);
+  const panel = rackModal(world, controlled);
   if (!panel) return; // panel closed mid-drag — nothing to resolve against
 
   // Dropped outside the visible content viewport (including scrolled-off content) — same as
@@ -473,7 +490,7 @@ export function createRackPanelSystem(
   camera: Camera,
 ): System {
   input.onKeyDown('Escape', () => {
-    if (world.getComponent(openRackPanels, controlled)) {
+    if (rackModal(world, controlled)) {
       closeRackPanel(world, controlled);
     }
   });
@@ -486,7 +503,7 @@ export function createRackPanelSystem(
 
   return {
     update() {
-      const panel = world.getComponent(openRackPanels, controlled);
+      const panel = rackModal(world, controlled);
 
       // Expire the rejected-drop flash once its window elapses.
       const rejection = world.getComponent(rejectedDrops, controlled);
@@ -596,7 +613,7 @@ export function createRackPanelSystem(
       const rackId = findRackAt(world, gridX, gridY);
       if (rackId === null) return;
 
-      const existing = world.getComponent(openRackPanels, controlled);
+      const existing = rackModal(world, controlled);
       // Right-clicking a rack that's already open dispatching keeps it dispatching — viewing
       // is strictly weaker, so this is a no-op rather than a demotion.
       if (!existing || existing.mode !== 'dispatching' || existing.rackId !== rackId) {
@@ -605,8 +622,7 @@ export function createRackPanelSystem(
         // click-priority chain entirely (it's driven by wasRightClicked(), a separate gesture),
         // so it needs its own guard rather than relying on that chain having already absorbed
         // the click.
-        closeOtherModals(world, controlled, 'rack');
-        world.addComponent(openRackPanels, controlled, { rackId, mode: 'viewing', arrived: false });
+        openModal(world, controlled, { kind: 'rack', rackId, mode: 'viewing', arrived: false });
         world.addComponent(rackScrolls, controlled, { offsetPx: 0 });
       }
     },

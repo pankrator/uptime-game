@@ -7,7 +7,7 @@ import { type World, type EntityId } from '../world';
 import {
   positions,
   gridToWorld,
-  shopOpens,
+  activeModals,
   shopTabs,
   wallets,
   powerCapacities,
@@ -33,7 +33,7 @@ import {
 import { type Renderer } from '../../rendering';
 import { type Audio } from '../../audio';
 import { type System } from './system';
-import { registerModalCloser, closeOtherModals } from '../modal';
+import { registerModalCloser, openModal } from '../modal';
 
 const SHOP_REACH_PX = 80; // ~2 grid cells — close enough to the shop door to browse
 
@@ -51,9 +51,11 @@ export function dismissShop(): void {
 
 // Registered as the 'shop' modal closer — see ../modal.ts. Also used directly by input.ts's
 // close-button handler and Escape, which need the same "don't let proximity reopen it next
-// frame" behavior.
+// frame" behavior. Safe to call whenever the active modal is actually 'shop' (every call site
+// either just confirmed that, or is the registered closer, invoked by openModal only when the
+// CURRENT active modal's kind is 'shop').
 export function closeShop(world: World, controlled: EntityId): void {
-  world.removeComponent(shopOpens, controlled);
+  world.removeComponent(activeModals, controlled);
   dismissShop();
 }
 
@@ -192,7 +194,7 @@ export function createShopSystem(world: World, controlled: EntityId): System {
       const doorCenter = gridToWorld(SHOP_DOOR.gridX, SHOP_DOOR.gridY);
       const distance = Math.hypot(doorCenter.x - position.x, doorCenter.y - position.y);
       const inRange = distance <= SHOP_REACH_PX;
-      const isOpen = world.getComponent(shopOpens, controlled) !== undefined;
+      const isOpen = world.getComponent(activeModals, controlled)?.kind === 'shop';
 
       if (!inRange) {
         dismissedWhileInRange = false;
@@ -201,10 +203,11 @@ export function createShopSystem(world: World, controlled: EntityId): System {
       if (inRange && !isOpen && !dismissedWhileInRange) {
         // Only one modal at a time (see ../modal.ts) — proximity to the shop always wins over
         // any other open panel.
-        closeOtherModals(world, controlled, 'shop');
-        world.addComponent(shopOpens, controlled, { open: true });
+        openModal(world, controlled, { kind: 'shop' });
       } else if (!inRange && isOpen) {
-        world.removeComponent(shopOpens, controlled);
+        // Leaving range directly, not via closeShop() — walking away and back should reopen the
+        // shop normally, which dismissShop()'s "don't reopen this frame" latch would prevent.
+        world.removeComponent(activeModals, controlled);
       }
     },
   };

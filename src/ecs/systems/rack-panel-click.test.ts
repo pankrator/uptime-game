@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import { handleRackPanelClick } from './rack-panel';
 import {
-  openRackPanels,
+  activeModals,
   maintenanceTasks,
   decommissionConfirms,
   conditions,
@@ -39,7 +39,7 @@ describe('handleRackPanelClick', () => {
     const { world, facility } = createTestFacility();
     const player = world.createEntity();
     const rackId = spawnRack(world, 0, 0);
-    world.addComponent(openRackPanels, player, { rackId, mode: 'viewing', arrived: false });
+    world.addComponent(activeModals, player, { kind: 'rack', rackId, mode: 'viewing', arrived: false });
 
     const closeRect = getRackPanelCloseButtonRect(CANVAS_WIDTH, CANVAS_HEIGHT, 0, 0);
     handleRackPanelClick(
@@ -51,7 +51,7 @@ describe('handleRackPanelClick', () => {
       stubAudio(),
     );
 
-    expect(world.getComponent(openRackPanels, player)).toBeUndefined();
+    expect(world.getComponent(activeModals, player)).toBeUndefined();
   });
 
   it('starts a repair task when the repair button is clicked on a worn server', () => {
@@ -60,7 +60,7 @@ describe('handleRackPanelClick', () => {
     const rackId = spawnRack(world, 0, 0);
     const serverId = spawnOnlineServer(world, rackId, 'basic');
     world.getComponent(conditions, serverId)!.wear = 0.5;
-    world.addComponent(openRackPanels, player, { rackId, mode: 'viewing', arrived: false });
+    world.addComponent(activeModals, player, { kind: 'rack', rackId, mode: 'viewing', arrived: false });
 
     const repairRect = getServerRepairButtonRect(0, CANVAS_WIDTH, CANVAS_HEIGHT, 1, 0);
     handleRackPanelClick(
@@ -81,7 +81,7 @@ describe('handleRackPanelClick', () => {
     const player = world.createEntity();
     const rackId = spawnRack(world, 0, 0);
     const serverId = spawnOnlineServer(world, rackId, 'basic');
-    world.addComponent(openRackPanels, player, { rackId, mode: 'viewing', arrived: false });
+    world.addComponent(activeModals, player, { kind: 'rack', rackId, mode: 'viewing', arrived: false });
 
     const decommissionRect = getServerDecommissionButtonRect(0, CANVAS_WIDTH, CANVAS_HEIGHT, 1, 0);
     const renderer = stubRenderer(CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -101,7 +101,7 @@ describe('handleRackPanelClick', () => {
     const player = world.createEntity();
     const rackId = spawnRack(world, 0, 0);
     const workloadId = makeWorkload(world, { state: 'accepted' });
-    world.addComponent(openRackPanels, player, { rackId, mode: 'viewing', arrived: false });
+    world.addComponent(activeModals, player, { kind: 'rack', rackId, mode: 'viewing', arrived: false });
 
     const dropRect = getTrayCardDropButtonRect(0, CANVAS_WIDTH, CANVAS_HEIGHT, 0, 1);
     handleRackPanelClick(

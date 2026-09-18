@@ -26,10 +26,11 @@ already own — no new mutation paths, no gating of unrelated systems:
   `startTutorial`) exceeds `MOVE_COMPLETE_DISTANCE_PX`
 - `build-rack` — `world.query(rackSlots).length >= 1`
 - `install-machine` — `world.query(machines).length >= 1`
-- `open-rack-panel` — `OpenRackPanel` present and (`mode === 'viewing'` or `arrived`)
+- `open-rack-panel` — `ecs/modal.ts`'s `activeModal(world, controlled) === 'rack'` (its own
+  viewing/arrived visibility gate already applies)
 - `visit-shop` — `TutorialProgress.shopPurchased`, set by the exported `recordShopPurchase`,
-  called from `input.ts`'s buy-button handler only when [shop](./shop.md)'s `buy()` reports the
-  purchase actually went through (not on a rejected, can't-afford click) — the one step whose
+  called from [shop](./shop.md)'s `handleShopClick` only when `buy()` reports the purchase
+  actually went through (not on a rejected, can't-afford click) — the one step whose
   completion isn't a bare `world.query(...)` read, since "a purchase happened" has no component
   of its own to query
 - `accept-offer` — `world.query(workloads).length >= 1`

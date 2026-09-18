@@ -22,12 +22,11 @@ import {
   utilizations,
   powerCapacities,
   coolingCapacities,
-  openRackPanels,
+  activeModals,
   rackScrolls,
   dragStates,
   rejectedDrops,
   wallets,
-  shopOpens,
   inventories,
   cycleLabel,
   temperatures,
@@ -892,8 +891,9 @@ const RACK_PANEL_RED = UI.bad;
 // dispatching mode"), so this function takes no mode-dependent branch for its own drawing —
 // only the header text differs, to tell the player which mode they're in.
 function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): void {
-  const panel = world.getComponent(openRackPanels, controlled);
-  if (!panel) return;
+  const modal = world.getComponent(activeModals, controlled);
+  if (!modal || modal.kind !== 'rack') return;
+  const panel = modal;
   // Dispatching-mode panels stay hidden while the player is still walking there — only
   // right-click's viewing mode is a true "peek from anywhere". Left-clicking a rack starts the
   // walk (see input.ts) but the panel itself doesn't appear until rack-panel.ts flips
@@ -1282,7 +1282,7 @@ const SHOP_DIM = UI.dim;
 const SHOP_GREEN = UI.ok;
 
 function drawShopPanel(world: World, renderer: Renderer, controlled: EntityId, facility: EntityId): void {
-  if (!world.getComponent(shopOpens, controlled)) return;
+  if (world.getComponent(activeModals, controlled)?.kind !== 'shop') return;
 
   const ctx = renderer.context;
   const { width: canvasWidth, height: canvasHeight } = renderer;

@@ -3,13 +3,13 @@ import {
   positions,
   rackSlots,
   machines,
-  openRackPanels,
   workloads,
   placedOns,
   tutorialProgresses,
   GRID_CELL_SIZE,
   type TutorialStepId,
 } from '../components';
+import { activeModal } from '../modal';
 import { type System } from './system';
 
 export interface TutorialStepDef {
@@ -149,10 +149,8 @@ function isCurrentStepComplete(
       return world.query(rackSlots).length >= 1;
     case 'install-machine':
       return world.query(machines).length >= 1;
-    case 'open-rack-panel': {
-      const panel = world.getComponent(openRackPanels, controlled);
-      return !!panel && (panel.mode === 'viewing' || panel.arrived);
-    }
+    case 'open-rack-panel':
+      return activeModal(world, controlled) === 'rack';
     case 'visit-shop':
       return progress.shopPurchased;
     case 'accept-offer':
