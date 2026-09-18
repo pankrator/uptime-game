@@ -9,10 +9,19 @@ export interface InputStateSnapshot {
   mouseX: number;
   mouseY: number;
   mouseButtonsDown: ReadonlySet<number>;
+  // How far the mouse moved since the last update() call — the basis for drag movement.
+  mouseDeltaX: number;
+  mouseDeltaY: number;
+  // Buttons down both at the previous update() call and now (as opposed to freshly pressed
+  // this frame) — i.e. still being held, the basis for "a drag is in progress".
+  mouseButtonsHeldSincePreviousFrame: ReadonlySet<number>;
 }
 
 export interface InputStateTracker {
   getState(): InputStateSnapshot;
+  // Advances the "previous frame" snapshot used for mouseDelta*/mouseButtonsHeldSincePreviousFrame.
+  // Call once per frame, after reading getState() for that frame.
+  update(): void;
   dispose(): void;
 }
 
@@ -24,6 +33,15 @@ export function createInputStateTracker(
   const mouseButtonsDown = new Set<number>();
   let mouseX = 0;
   let mouseY = 0;
+
+  // Captured by update() at the end of the previous frame, compared against the live state
+  // above to derive mouseDelta*/mouseButtonsHeldSincePreviousFrame for the frame in progress.
+  let previousMouseX = 0;
+  let previousMouseY = 0;
+  let previousMouseButtonsDown = new Set<number>();
+  let mouseDeltaX = 0;
+  let mouseDeltaY = 0;
+  let mouseButtonsHeldSincePreviousFrame = new Set<number>();
 
   function handleKeyDown(event: KeyboardEvent): void {
     keysDown.add(event.key);
@@ -58,7 +76,25 @@ export function createInputStateTracker(
 
   return {
     getState() {
-      return { keysDown, mouseX, mouseY, mouseButtonsDown };
+      return {
+        keysDown,
+        mouseX,
+        mouseY,
+        mouseButtonsDown,
+        mouseDeltaX,
+        mouseDeltaY,
+        mouseButtonsHeldSincePreviousFrame,
+      };
+    },
+    update() {
+      mouseDeltaX = mouseX - previousMouseX;
+      mouseDeltaY = mouseY - previousMouseY;
+      mouseButtonsHeldSincePreviousFrame = new Set(
+        [...mouseButtonsDown].filter((button) => previousMouseButtonsDown.has(button)),
+      );
+      previousMouseX = mouseX;
+      previousMouseY = mouseY;
+      previousMouseButtonsDown = new Set(mouseButtonsDown);
     },
     dispose() {
       target.removeEventListener('keydown', handleKeyDown);
