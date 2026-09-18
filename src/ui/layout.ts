@@ -85,6 +85,13 @@ export function getRecenterButtonRect(canvasWidth: number): Rect {
 // Shared centered-modal sizing for the offers/jobs panels below — both are a header + a
 // scrollable content region, centered and clamped to the canvas, same shape as the rack/shop
 // panels' own (independently laid out) modals above.
+//
+// Centered within the space BELOW the HUD bar, not the raw canvas — otherwise a panel tall
+// enough to approach canvasHeight centers partway into [0, HUD_BAR_HEIGHT] and its header/close
+// button end up drawn under the HUD bar (hud.ts renders last, on top of every panel). Clamping
+// height to the below-bar space, not just canvasHeight, means the panel's top can never land
+// above HUD_BAR_HEIGHT even at a short canvas height (e.g. from browser zoom shrinking the
+// CSS-pixel viewport) — see getGameViewportRect, which reserves the same region for gameplay.
 function getCenteredRect(
   canvasWidth: number,
   canvasHeight: number,
@@ -92,11 +99,13 @@ function getCenteredRect(
   height: number,
   padding: number,
 ): Rect {
+  const top = HUD_BAR_HEIGHT + padding;
+  const availableHeight = Math.max(0, canvasHeight - top - padding);
   const clampedWidth = Math.min(width, canvasWidth - padding * 2);
-  const clampedHeight = Math.min(height, canvasHeight - padding * 2);
+  const clampedHeight = Math.min(height, availableHeight);
   return {
     x: (canvasWidth - clampedWidth) / 2,
-    y: (canvasHeight - clampedHeight) / 2,
+    y: top + (availableHeight - clampedHeight) / 2,
     width: clampedWidth,
     height: clampedHeight,
   };
@@ -417,11 +426,22 @@ export function rackPanelLayout(
       : 0;
   const width = Math.min(RACK_PANEL_WIDTH, canvasWidth - RACK_PANEL_PADDING * 2);
   const trayHeight = getTrayHeight(trayCount, width);
+  // Centered below the HUD bar, not the raw canvas — see getCenteredRect's comment above and
+  // getShopPanelRect's matching fix; same reasoning, kept inline for the same reason (this
+  // panel's width/height, unlike the offers/jobs modals, depend on server/tray counts, not just
+  // a fixed target size).
+  const top = HUD_BAR_HEIGHT + RACK_PANEL_PADDING;
+  const availableHeight = Math.max(0, canvasHeight - top - RACK_PANEL_PADDING);
   const height = Math.min(
     RACK_PANEL_HEADER_HEIGHT + RACK_PANEL_PADDING * 3 + serversHeight + trayHeight,
-    canvasHeight - RACK_PANEL_PADDING * 2,
+    availableHeight,
   );
-  const panel: Rect = { x: (canvasWidth - width) / 2, y: (canvasHeight - height) / 2, width, height };
+  const panel: Rect = {
+    x: (canvasWidth - width) / 2,
+    y: top + (availableHeight - height) / 2,
+    width,
+    height,
+  };
 
   const contentHeight = serversHeight + RACK_PANEL_PADDING + trayHeight;
 
@@ -727,13 +747,17 @@ export function getShopPanelRect(
   const rowsHeight =
     rowCount > 0 ? rowCount * SHOP_ROW_HEIGHT + (rowCount - 1) * SHOP_ROW_GAP : SHOP_ROW_HEIGHT;
   const width = Math.min(SHOP_PANEL_WIDTH, canvasWidth - SHOP_PANEL_PADDING * 2);
+  // Centered below the HUD bar, not the raw canvas — see getCenteredRect's comment above and
+  // getRackPanelRect's matching fix; same reasoning, kept inline for the same reason.
+  const top = HUD_BAR_HEIGHT + SHOP_PANEL_PADDING;
+  const availableHeight = Math.max(0, canvasHeight - top - SHOP_PANEL_PADDING);
   const height = Math.min(
     SHOP_PANEL_HEADER_HEIGHT + SHOP_TAB_HEIGHT + SHOP_PANEL_PADDING * 3 + rowsHeight,
-    canvasHeight - SHOP_PANEL_PADDING * 2,
+    availableHeight,
   );
   return {
     x: (canvasWidth - width) / 2,
-    y: (canvasHeight - height) / 2,
+    y: top + (availableHeight - height) / 2,
     width,
     height,
   };

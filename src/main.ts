@@ -27,6 +27,7 @@ import { getRoomRect } from './ecs/room';
 import { gridToWorld, playerTags, facilityTags } from './ecs/components';
 import { showLanding, hideLanding, type SaveSlotSummary } from './landing';
 import { createAudio } from './audio';
+import { createFpsCounter } from './fps';
 import { createSaveManager, SAVE_SLOT_IDS, DEV_SLOT, type SaveManager } from './save/manager';
 import { createLocalStorageSaveStorage } from './save/local-storage';
 
@@ -104,6 +105,7 @@ async function runGame(
   const world = createWorld();
   const camera = createCamera(input);
   const audio = createAudio();
+  const fps = createFpsCounter();
 
   let facility: EntityId | undefined;
   let player: EntityId | undefined;
@@ -226,10 +228,10 @@ async function runGame(
   const renderSystems = [
     createCameraSystem(world, renderer, input, player, camera),
     createRenderSystem(world, renderer, player, facility, camera, input),
-    createHudSystem(world, renderer, player, facility, audio, camera),
+    createHudSystem(world, renderer, player, facility, audio, camera, fps),
   ];
 
-  const loop = createGameLoop({ renderer, input, state, updateSystems, renderSystems });
+  const loop = createGameLoop({ renderer, input, state, updateSystems, renderSystems, fps });
   state.scene = 'playing';
   loop.start();
   audio.startMusic();
