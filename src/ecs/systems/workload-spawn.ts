@@ -10,7 +10,10 @@ import {
 import { spawnOffer } from '../../entities';
 import { type System } from './system';
 
-function pickArchetype(reputation: number): WorkloadArchetypeId {
+// F14 (.plans/design-review.md): the weighting roll is a parameter, defaulted to Math.random(),
+// following wear.ts's rollFailure — exported so a test can drive a specific archetype pick
+// without stubbing a global.
+export function pickArchetype(reputation: number, random: number = Math.random()): WorkloadArchetypeId {
   const eligible = Object.values(WORKLOAD_ARCHETYPES).filter(
     (archetype) => archetype.minReputation <= reputation,
   );
@@ -18,7 +21,7 @@ function pickArchetype(reputation: number): WorkloadArchetypeId {
   // Weight toward the larger unlocked archetypes so unlocking one actually changes what
   // you see, rather than being a rare event.
   const totalWeight = eligible.reduce((sum, _, index) => sum + (1 + index), 0);
-  let roll = Math.random() * totalWeight;
+  let roll = random * totalWeight;
   for (let index = 0; index < eligible.length; index++) {
     roll -= 1 + index;
     if (roll <= 0) return eligible[index].id;

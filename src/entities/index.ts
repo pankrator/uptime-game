@@ -159,10 +159,14 @@ function lowestFreeOfferSlot(world: World): number {
 // Spawns an Offer awaiting accept/decline — NOT a live Workload. Accepting (dispatch.ts's
 // acceptOffer) is what turns an offer into a Workload entity; see .plans/workload-dispatch.md
 // step 5.
+// F14 (.plans/design-review.md): the repeat-count roll is a parameter, defaulted to
+// Math.random(), following wear.ts's rollFailure — lets a test drive a specific repeat count
+// without stubbing a global.
 export function spawnOffer(
   world: World,
   archetypeId: WorkloadArchetypeId,
   valueScale: number,
+  random: number = Math.random(),
 ): EntityId {
   const archetype = WORKLOAD_ARCHETYPES[archetypeId];
   // Two different scales past this point — see .plans/compute-scale-fix.md D2. PAY (and the
@@ -176,7 +180,7 @@ export function spawnOffer(
   // D2: roll how many extra cycles this offer commits to, then apply the recurring pay
   // discount (D2's "trading rate for certainty") only when it actually recurs.
   const [minRepeat, maxRepeat] = archetype.repeatRange;
-  const repeatCount = minRepeat + Math.floor(Math.random() * (maxRepeat - minRepeat + 1));
+  const repeatCount = minRepeat + Math.floor(random * (maxRepeat - minRepeat + 1));
   const payMultiplier = repeatCount > 0 ? RECURRING_PAY_MULTIPLIER : 1;
 
   const id = world.createEntity();
