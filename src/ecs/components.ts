@@ -453,9 +453,10 @@ export type TutorialStepId =
 export interface TutorialProgress {
   stepId: TutorialStepId;
   moveOrigin: { x: number; y: number };
-  // Set by tutorial.ts's recordShopPurchase, called from input.ts only when shop.ts's buy()
-  // reports a purchase actually went through (see shop.ts's buy return value) — a rejected
-  // click (can't afford it) must not advance the 'visit-shop' step.
+  // Set by tutorial.ts's own 'shop:purchased' event-bus subscription (createTutorialSystem) —
+  // shop.ts emits that event only when buy() reports a purchase actually went through, so a
+  // rejected click (can't afford it) never fires it and never advances the 'visit-shop' step.
+  // See .plans/event-bus.md.
   shopPurchased: boolean;
   skipped: boolean;
 }

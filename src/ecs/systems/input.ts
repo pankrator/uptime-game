@@ -32,6 +32,8 @@ import { spawnRack, spawnCoolingUnit } from '../../entities';
 import { type Renderer } from '../../rendering';
 import { type Camera } from '../../camera';
 import { type Audio } from '../../audio';
+import { type EventBus } from '../event-bus';
+import { type GameEvents } from '../game-events';
 import {
   getBuildPanelEntryRect,
   pointerInRect,
@@ -85,6 +87,7 @@ export function createInputSystem(
   facility: EntityId,
   camera: Camera,
   audio: Audio,
+  events: EventBus<GameEvents>,
 ): System {
   input.onKeyDown('Escape', () => {
     if (activeModal(world, controlled) === 'shop') {
@@ -242,7 +245,7 @@ export function createInputSystem(
       // purely by proximity (shop.ts), so there's no travel state to check here — just whether
       // it's currently open.
       if (modal === 'shop') {
-        handleShopClick(world, renderer, controlled, facility, pointer, audio);
+        handleShopClick(world, renderer, controlled, facility, pointer, audio, events);
         return;
       }
 

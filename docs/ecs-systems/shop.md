@@ -37,8 +37,10 @@ Applies a purchase per its `PURCHASABLES` kind (see `game-data.ts` D6):
   next tier)
 
 No-op if the wallet can't cover the cost (`canAfford`, floored comparison). Returns `true`
-iff a purchase was actually applied — `input.ts` uses this to tell a real buy from a
-rejected click (e.g. to advance the [tutorial](./tutorial.md)'s shop step).
+iff a purchase was actually applied — `handleShopClick` uses this to tell a real buy from a
+rejected click, emitting `'shop:purchased'` (`ecs/game-events.ts`) only on a real one. The
+[tutorial](./tutorial.md) system subscribes to that event to advance its shop step, with no
+direct call or import between the two modules — see `.plans/event-bus.md`.
 
 ## Shared UI state
 
@@ -52,3 +54,6 @@ rejected click (e.g. to advance the [tutorial](./tutorial.md)'s shop step).
   `handleShopClick` (F7), called from `input.ts`'s click-priority chain once
   `ecs/modal.ts`'s `activeModal` reports `'shop'` — see [input](./input.md). This file owns
   proximity lifecycle, the purchase side effect, and this click hit-testing.
+- `handleShopClick` takes an `EventBus<GameEvents>` (`ecs/event-bus.ts`/`ecs/game-events.ts`)
+  purely to emit `'shop:purchased'` on a successful buy — this module never imports
+  `tutorial.ts`.

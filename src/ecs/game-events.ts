@@ -7,6 +7,7 @@
 // more) — cheap to include, and it's what makes an event actually useful to a listener instead
 // of a content-free bell.
 import { type EntityId } from './world';
+import { type PurchasableId } from './game-data';
 
 export interface GameEvents {
   'machine:installed': { machineId: EntityId; rackId: EntityId };
@@ -20,4 +21,8 @@ export interface GameEvents {
   'machine:thermal-tripped': { machineId: EntityId; rackId: EntityId };
   'contract:completed': { workloadId: EntityId };
   'contract:missed': { workloadId: EntityId };
+  // A purchase actually went through (shop.ts's buy() returned true) — a rejected click (can't
+  // afford it) never fires this. tutorial.ts listens for this to advance the 'visit-shop' step
+  // without shop.ts needing to import tutorial.ts directly (see .plans/event-bus.md).
+  'shop:purchased': { facility: EntityId; purchasableId: PurchasableId };
 }

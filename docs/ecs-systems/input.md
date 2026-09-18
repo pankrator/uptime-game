@@ -1,6 +1,6 @@
 # input
 
-`src/ecs/systems/input.ts` — `createInputSystem(world, input, renderer, controlled, facility, camera, audio)`,
+`src/ecs/systems/input.ts` — `createInputSystem(world, input, renderer, controlled, facility, camera, audio, events)`,
 plus exported `moveControlledTo`
 
 ## Purpose

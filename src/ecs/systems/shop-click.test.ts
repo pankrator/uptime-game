@@ -3,9 +3,10 @@
 import { describe, it, expect } from 'vitest';
 import { handleShopClick, getShopTab, shopCategories } from './shop';
 import { activeModals, wallets, inventories } from '../components';
-import { PURCHASABLES } from '../game-data';
+import { PURCHASABLES, type PurchasableId } from '../game-data';
+import { type EntityId } from '../world';
 import { getShopCloseButtonRect, getShopTabRect, getShopBuyButtonRect } from '../../ui/layout';
-import { createTestFacility, stubAudio, stubRenderer } from '../test-helpers';
+import { createTestFacility, stubAudio, stubRenderer, stubEventBus } from '../test-helpers';
 
 const CANVAS_WIDTH = 1280;
 const CANVAS_HEIGHT = 800;
@@ -29,6 +30,7 @@ describe('handleShopClick', () => {
       facility,
       centerOf(closeRect),
       stubAudio(),
+      stubEventBus(),
     );
 
     expect(world.getComponent(activeModals, player)).toBeUndefined();
@@ -53,6 +55,7 @@ describe('handleShopClick', () => {
       facility,
       centerOf(tabRect),
       stubAudio(),
+      stubEventBus(),
     );
 
     expect(getShopTab(world, player)).toBe(categories[targetIndex]);
@@ -71,6 +74,11 @@ describe('handleShopClick', () => {
     const before = world.getComponent(inventories, facility)!.counts[purchasable.id] ?? 0;
 
     const buyRect = getShopBuyButtonRect(rowIndex, CANVAS_WIDTH, CANVAS_HEIGHT, rows.length);
+    const events = stubEventBus();
+    let purchasedPayload: { facility: EntityId; purchasableId: PurchasableId } | undefined;
+    events.on('shop:purchased', (payload) => {
+      purchasedPayload = payload;
+    });
     handleShopClick(
       world,
       stubRenderer(CANVAS_WIDTH, CANVAS_HEIGHT),
@@ -78,10 +86,12 @@ describe('handleShopClick', () => {
       facility,
       centerOf(buyRect),
       stubAudio(),
+      events,
     );
 
     expect(world.getComponent(inventories, facility)!.counts[purchasable.id]).toBe(before + 1);
     expect(wallet.money).toBe(100);
+    expect(purchasedPayload).toEqual({ facility, purchasableId: purchasable.id });
   });
 
   it('does not buy when the wallet cannot afford it', () => {
@@ -104,6 +114,7 @@ describe('handleShopClick', () => {
       facility,
       centerOf(buyRect),
       stubAudio(),
+      stubEventBus(),
     );
 
     expect(world.getComponent(inventories, facility)!.counts[purchasable.id] ?? 0).toBe(before);

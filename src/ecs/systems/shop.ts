@@ -23,7 +23,6 @@ import {
 } from '../game-data';
 import { SHOP_DOOR } from '../world-map';
 import { addToInventory } from '../inventory';
-import { recordShopPurchase } from './tutorial';
 import {
   getShopCloseButtonRect,
   getShopTabRect,
@@ -34,6 +33,8 @@ import { type Renderer } from '../../rendering';
 import { type Audio } from '../../audio';
 import { type System } from './system';
 import { registerModalCloser, openModal } from '../modal';
+import { type EventBus } from '../event-bus';
+import { type GameEvents } from '../game-events';
 
 const SHOP_REACH_PX = 80; // ~2 grid cells — close enough to the shop door to browse
 
@@ -154,6 +155,7 @@ export function handleShopClick(
   facility: EntityId,
   pointer: { x: number; y: number },
   audio: Audio,
+  events: EventBus<GameEvents>,
 ): void {
   const currentTab = getShopTab(world, controlled);
   const rowCount = shopCatalogForTab(currentTab).length;
@@ -178,7 +180,7 @@ export function handleShopClick(
     if (pointerInRect(pointer, buyRect)) {
       audio.play('uiClick');
       if (buy(world, facility, rows[rowIndex].id)) {
-        recordShopPurchase(world, facility);
+        events.emit('shop:purchased', { facility, purchasableId: rows[rowIndex].id });
       }
       return;
     }

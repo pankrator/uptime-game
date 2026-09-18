@@ -113,6 +113,30 @@ move" call sites meet that bar. This mirrors `.plans/design-review.md`'s own "De
 proposed" convention — recording the rejection is as useful as recording the change, so the
 next person doesn't re-litigate it from scratch.
 
+## Follow-up: shop → tutorial
+
+The original migration above covered `maintenance`/`resource`/`thermal`/`wear`/`workload-run`
+(each a one-off `Audio` call) but missed one existing direct cross-system call that fits the
+same rule: `shop.ts`'s `handleShopClick` called `tutorial.ts`'s `recordShopPurchase` directly on
+a successful buy, so `shop.ts` had to import `tutorial.ts` just to advance one tutorial step.
+That's exactly the "emitting system doesn't need to know who's listening, more than one thing
+could plausibly want to know" shape (today: the tutorial; plausibly tomorrow, a toast or an
+achievement) — so it moved too, on the Observer pattern already established here:
+
+- `game-events.ts` gained `'shop:purchased': { facility: EntityId; purchasableId: PurchasableId }`.
+- `shop.ts`'s `handleShopClick` now takes `events: EventBus<GameEvents>` and emits
+  `'shop:purchased'` in place of the direct call; it no longer imports `tutorial.ts` at all.
+- `tutorial.ts`'s `createTutorialSystem` now takes `events` and subscribes to
+  `'shop:purchased'` once at construction (same "wire it up once, outside `update()`" pattern
+  as `wireAudioEvents`/`registerModalCloser`), calling its own now-private `recordShopPurchase`.
+  That function is no longer exported — nothing outside this module calls it anymore.
+
+This is a two-way decoupling in the sense that matters here: `shop.ts` no longer imports
+`tutorial.ts`, and the *tutorial* is the one that knows it cares about shop purchases, not the
+shop. `input.ts` and `main.ts` both had to thread the existing `events` bus one parameter
+further (into `createInputSystem`'s call to `handleShopClick`, and into `createTutorialSystem`)
+— no new bus, no new wiring module, just one more subscriber on the one already running.
+
 ## Verification
 
 - `event-bus.ts` is pure and unit-tested in isolation (`event-bus.test.ts`) — subscription

@@ -201,7 +201,7 @@ async function runGame(
   //   toggles, wheel-scroll) but doesn't feed or depend on anything else this tick, so its exact
   //   position beyond "after input" isn't load-bearing — see .plans/job-panels.md.
   const updateSystems = [
-    createInputSystem(world, input, renderer, player, facility, camera, audio),
+    createInputSystem(world, input, renderer, player, facility, camera, audio, events),
     createJobPanelsSystem(world, input, renderer, player),
     createMaintenanceSystem(world, player, facility, events),
     createPathFollowSystem(world),
@@ -222,7 +222,7 @@ async function runGame(
     // Runs last: it only reads state (has a rack been placed, a machine installed, a workload
     // placed, ...) to advance the guided-tutorial step, so it needs every other system's
     // mutations for this frame to have already landed — no ordering dependency the other way.
-    createTutorialSystem(world, player, facility),
+    createTutorialSystem(world, player, facility, events),
   ];
 
   // Rendering runs on requestAnimationFrame, separate from the systems above: rAF pauses
