@@ -65,7 +65,7 @@ import { getRoomRect, getNextRoomTier } from '../room';
 import { type GridBounds } from '../pathfinding';
 import { SHOP_RECT, CORRIDOR_RECT, SHOP_DOOR } from '../world-map';
 import { countOf } from '../inventory';
-import { shopTab, shopCategories, shopCatalogForTab } from './shop';
+import { getShopTab, shopCategories, shopCatalogForTab } from './shop';
 import {
   getBuildPanelEntryRect,
   getRackPanelRect,
@@ -1287,8 +1287,9 @@ function drawShopPanel(world: World, renderer: Renderer, controlled: EntityId, f
   const ctx = renderer.context;
   const { width: canvasWidth, height: canvasHeight } = renderer;
 
+  const currentTab = getShopTab(world, controlled);
   const categories = shopCategories();
-  const rows = shopCatalogForTab(shopTab.current);
+  const rows = shopCatalogForTab(currentTab);
   const rect = getShopPanelRect(canvasWidth, canvasHeight, rows.length);
   const wallet = world.getComponent(wallets, facility);
   const money = wallet ? Math.floor(wallet.money) : 0;
@@ -1317,7 +1318,7 @@ function drawShopPanel(world: World, renderer: Renderer, controlled: EntityId, f
 
   categories.forEach((category, tabIndex) => {
     const tabRect = getShopTabRect(tabIndex, categories.length, canvasWidth, canvasHeight, rows.length);
-    const isActive = category === shopTab.current;
+    const isActive = category === currentTab;
     ctx.fillStyle = isActive ? '#2f6fb0' : '#2a2e33';
     ctx.fillRect(tabRect.x, tabRect.y, tabRect.width, tabRect.height);
     ctx.strokeStyle = isActive ? '#4dabf7' : '#3a3f47';

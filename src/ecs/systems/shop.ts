@@ -8,6 +8,7 @@ import {
   positions,
   gridToWorld,
   shopOpens,
+  shopTabs,
   wallets,
   powerCapacities,
   coolingCapacities,
@@ -38,7 +39,10 @@ const SHOP_REACH_PX = 80; // ~2 grid cells — close enough to the shop door to 
 
 // Set when the player dismisses the panel with Escape while still in range (input.ts) — without
 // this, proximity would reopen it the very next frame. Cleared once they leave range, so
-// walking away and back re-opens it normally.
+// walking away and back re-opens it normally. Left as module state deliberately (F15,
+// .plans/design-review.md) — unlike shopTab (ShopTab above), this is genuinely one-shot,
+// same-frame-scoped gesture memory with no meaningful "value" a save or a second player could
+// ever want, so a component would only add ECS ceremony without a real ownership benefit.
 let dismissedWhileInRange = false;
 
 export function dismissShop(): void {
@@ -55,10 +59,23 @@ export function closeShop(world: World, controlled: EntityId): void {
 
 registerModalCloser('shop', closeShop);
 
-// Shared UI state: which category tab is selected. Module-level (not per-entity) since there's
-// only ever one player and one shop panel — input.ts (click handling) and render.ts (drawing)
-// both need to read/write the same current tab.
-export const shopTab = { current: PURCHASABLES[0].category };
+// F15 (.plans/design-review.md): which category tab is selected, per player — a ShopTab
+// component instead of module-level state, lazily seeded on first read/write (mirrors
+// rack-panel.ts's own lazy RackScroll init). handleShopClick (this module) and render.ts's
+// drawShopPanel both read/write the same component instead of a shared module-level object.
+export function getShopTab(world: World, controlled: EntityId): string {
+  const tab = world.getComponent(shopTabs, controlled);
+  if (tab) return tab.current;
+  const initial = PURCHASABLES[0].category;
+  world.addComponent(shopTabs, controlled, { current: initial });
+  return initial;
+}
+
+export function setShopTab(world: World, controlled: EntityId, category: string): void {
+  const tab = world.getComponent(shopTabs, controlled);
+  if (tab) tab.current = category;
+  else world.addComponent(shopTabs, controlled, { current: category });
+}
 
 export function shopCategories(): string[] {
   const seen = new Set<string>();
@@ -136,7 +153,8 @@ export function handleShopClick(
   pointer: { x: number; y: number },
   audio: Audio,
 ): void {
-  const rowCount = shopCatalogForTab(shopTab.current).length;
+  const currentTab = getShopTab(world, controlled);
+  const rowCount = shopCatalogForTab(currentTab).length;
   const closeRect = getShopCloseButtonRect(renderer.width, renderer.height, rowCount);
   if (pointerInRect(pointer, closeRect)) {
     closeShop(world, controlled);
@@ -147,12 +165,12 @@ export function handleShopClick(
   for (let tabIndex = 0; tabIndex < categories.length; tabIndex++) {
     const tabRect = getShopTabRect(tabIndex, categories.length, renderer.width, renderer.height, rowCount);
     if (pointerInRect(pointer, tabRect)) {
-      shopTab.current = categories[tabIndex];
+      setShopTab(world, controlled, categories[tabIndex]);
       return;
     }
   }
 
-  const rows = shopCatalogForTab(shopTab.current);
+  const rows = shopCatalogForTab(currentTab);
   for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
     const buyRect = getShopBuyButtonRect(rowIndex, renderer.width, renderer.height, rowCount);
     if (pointerInRect(pointer, buyRect)) {

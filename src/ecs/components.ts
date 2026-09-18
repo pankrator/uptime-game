@@ -308,6 +308,15 @@ export interface ShopOpen {
   open: true;
 }
 
+// F15 (.plans/design-review.md): which shop category tab is selected, per player — used to live
+// as module-level mutable state in shop.ts, outside the ECS, in a codebase whose stated
+// architecture is "state lives in components." Persists across shop opens/closes (unlike
+// ShopOpen), same as it did as module state; only reset by a fresh World (see world.ts's
+// createWorld/resetAllComponentStores).
+export interface ShopTab {
+  current: string;
+}
+
 // A drop the player made while still walking to a dispatching-mode rack — committed on
 // arrival, in order. See OpenRackPanel.arrived and rack-panel.ts.
 export interface PendingDrop {
@@ -528,6 +537,7 @@ export const offers = createComponentStore<Offer>();
 export const openRackPanels = createComponentStore<OpenRackPanel>();
 export const rackScrolls = createComponentStore<RackScroll>();
 export const shopOpens = createComponentStore<ShopOpen>();
+export const shopTabs = createComponentStore<ShopTab>();
 export const offersPanelOpens = createComponentStore<OffersPanelOpen>();
 export const offersPanelScrolls = createComponentStore<OffersPanelScroll>();
 export const jobsPanelOpens = createComponentStore<JobsPanelOpen>();

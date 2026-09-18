@@ -35,6 +35,7 @@ import {
   openRackPanels,
   rackScrolls,
   shopOpens,
+  shopTabs,
   offersPanelOpens,
   offersPanelScrolls,
   jobsPanelOpens,
@@ -143,6 +144,9 @@ export const TRANSIENT_COMPONENTS: ComponentStore<unknown>[] = [
   openRackPanels,
   rackScrolls,
   shopOpens,
+  // F15 (.plans/design-review.md): was module-level state in shop.ts before this; same
+  // "session-local UI toggle" category as ShopOpen, so transient for the same reason.
+  shopTabs,
   // Offers/jobs panel open state and scroll — session-local UI toggles (.plans/job-panels.md),
   // same category as OpenRackPanel/RackScroll/ShopOpen above.
   offersPanelOpens,

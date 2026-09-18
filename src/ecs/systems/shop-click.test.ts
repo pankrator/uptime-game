@@ -1,7 +1,7 @@
 // F7/F16: handleShopClick was extracted from input.ts into a plain function taking a Renderer
 // (read-only, width/height) and a point, so it can be exercised headlessly.
-import { describe, it, expect, beforeEach } from 'vitest';
-import { handleShopClick, shopTab, shopCategories } from './shop';
+import { describe, it, expect } from 'vitest';
+import { handleShopClick, getShopTab, shopCategories } from './shop';
 import { shopOpens, wallets, inventories } from '../components';
 import { PURCHASABLES } from '../game-data';
 import { getShopCloseButtonRect, getShopTabRect, getShopBuyButtonRect } from '../../ui/layout';
@@ -14,19 +14,13 @@ function centerOf(rect: { x: number; y: number; width: number; height: number })
   return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
 }
 
-// shopTab is module-level mutable state (F15) shared across every test in this process — reset
-// it explicitly so one test's tab selection can't leak into the next.
-beforeEach(() => {
-  shopTab.current = PURCHASABLES[0].category;
-});
-
 describe('handleShopClick', () => {
   it('closes the shop when the close button is clicked', () => {
     const { world, facility } = createTestFacility();
     const player = world.createEntity();
     world.addComponent(shopOpens, player, { open: true });
 
-    const rowCount = PURCHASABLES.filter((p) => p.category === shopTab.current).length;
+    const rowCount = PURCHASABLES.filter((p) => p.category === getShopTab(world, player)).length;
     const closeRect = getShopCloseButtonRect(CANVAS_WIDTH, CANVAS_HEIGHT, rowCount);
     handleShopClick(
       world,
@@ -40,15 +34,16 @@ describe('handleShopClick', () => {
     expect(world.getComponent(shopOpens, player)).toBeUndefined();
   });
 
-  it('switches tabs when a category tab is clicked', () => {
+  it('switches tabs when a category tab is clicked, per player (F15)', () => {
     const { world, facility } = createTestFacility();
     const player = world.createEntity();
     world.addComponent(shopOpens, player, { open: true });
 
     const categories = shopCategories();
     expect(categories.length).toBeGreaterThan(1);
-    const targetIndex = categories.findIndex((c) => c !== shopTab.current);
-    const rowCount = PURCHASABLES.filter((p) => p.category === shopTab.current).length;
+    const currentTab = getShopTab(world, player);
+    const targetIndex = categories.findIndex((c) => c !== currentTab);
+    const rowCount = PURCHASABLES.filter((p) => p.category === currentTab).length;
     const tabRect = getShopTabRect(targetIndex, categories.length, CANVAS_WIDTH, CANVAS_HEIGHT, rowCount);
 
     handleShopClick(
@@ -60,7 +55,7 @@ describe('handleShopClick', () => {
       stubAudio(),
     );
 
-    expect(shopTab.current).toBe(categories[targetIndex]);
+    expect(getShopTab(world, player)).toBe(categories[targetIndex]);
   });
 
   it('buys a stock item and adds it to inventory when affordable', () => {
@@ -68,7 +63,7 @@ describe('handleShopClick', () => {
     const player = world.createEntity();
     world.addComponent(shopOpens, player, { open: true });
 
-    const rows = PURCHASABLES.filter((p) => p.category === shopTab.current);
+    const rows = PURCHASABLES.filter((p) => p.category === getShopTab(world, player));
     const rowIndex = rows.findIndex((p) => p.kind === 'stock');
     const purchasable = rows[rowIndex];
     const wallet = world.getComponent(wallets, facility)!;
@@ -94,7 +89,7 @@ describe('handleShopClick', () => {
     const player = world.createEntity();
     world.addComponent(shopOpens, player, { open: true });
 
-    const rows = PURCHASABLES.filter((p) => p.category === shopTab.current);
+    const rows = PURCHASABLES.filter((p) => p.category === getShopTab(world, player));
     const rowIndex = rows.findIndex((p) => p.kind === 'stock');
     const purchasable = rows[rowIndex];
     const wallet = world.getComponent(wallets, facility)!;
