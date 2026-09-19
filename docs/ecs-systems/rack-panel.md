@@ -1,7 +1,7 @@
 # rack-panel
 
-`src/ecs/systems/rack-panel.ts` — `createRackPanelSystem(world, input, renderer, controlled, camera)`,
-plus many exported pure/helper functions used by `input.ts`
+`src/ecs/systems/rack-panel.ts` — `createRackPanelSystem(world, input, inputState, renderer, controlled, camera)`,
+plus many exported pure/helper functions used by `input.ts` and `build.ts`
 
 ## Purpose
 
@@ -23,23 +23,33 @@ full-screen modal once visible.
 
 ## Gesture ownership (important — read before touching input handling)
 
-`input.ts` owns **all** left-button pointer gestures (clicks and drags) as a single
-priority chain, because a drag's `mouseup` also fires the browser's synthetic `click`
-(no built-in drag threshold) — only one place can decide "this release ended a drag,
-don't also treat it as a click." This module exposes pure functions
-(`tryStartDrag`, `updateDrag`, `resolveDrop`, `cancelDrag`) that `input.ts` calls into.
-This module's own `System.update` handles only right-click, Escape, and per-frame
-arrival/scroll/pending-drop logic — nothing that could race `input.ts` for the same
-gesture.
+`input.ts`'s click-priority chain owns ordinary clicks (`wasClicked`, via the old `input`
+tracker) — calling `handleRackPanelClick` once this panel is the active modal, same as every
+other panel. Chip/tray drag is different since `.plans/input-router-refactor.md` D4: hit-testing
+chips/tray cards is domain knowledge only this module has, so this module's own `System.update`
+owns the whole press/hold/release lifecycle directly — `tryStartDrag`/`updateDrag`/`resolveDrop`
+are called from here, reading `inputState` (`src/input-state/index.ts`, the new tracker), not
+from `input.ts`. `inputState`'s snapshot for the tick was already advanced by `input.ts`'s own
+`update()`, which runs first in `main.ts`'s `updateSystems`.
+
+This works without cross-system signaling because the rack panel is a full-screen modal that
+already absorbs every click on the old tracker while open (`input.ts` step 1.5) — a drag's
+release also firing the old tracker's paired click is harmless, not double-handled, *except* at
+this panel's own excepted buttons (close/repair/decommission/the tray card's abandon-contract
+corner). `tryStartDrag` avoids that overlap by skipping the abandon-contract rect itself (see
+below) so a press there always falls through as a plain click instead of starting a drag.
+
+This module's own `System.update` also handles right-click, Escape, and per-frame
+arrival/scroll/pending-drop logic.
 
 ## Drag and drop
 
-- `tryStartDrag` — mousedown hit-test against placed chips (checked first, top z-order)
+- `tryStartDrag` — press hit-test against placed chips (checked first, top z-order)
   then tray cards, in content space (`toContentSpace`, which accounts for scroll offset
   and clips to the visible viewport). Only live for an **arrived, dispatching-mode**
   panel. Skips a tray card's own abandon-contract button corner
-  (`getTrayCardDropButtonRect` — F3) so a press there falls through as a plain click for
-  `input.ts` to handle, rather than starting a drag.
+  (`getTrayCardDropButtonRect` — F3) so a press there falls through as a plain click
+  instead of starting a drag.
 - `resolveDrop` — mouseup resolution:
   - dropped on the tray, from a server → `unplaceWorkload` immediately (never queued —
     removing load needs no fit-check and no presence gate)

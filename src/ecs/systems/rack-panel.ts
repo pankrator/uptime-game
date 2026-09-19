@@ -1,18 +1,20 @@
 // Rack panel lifecycle: open/close (both D4 open paths), arrival detection, committing any
 // PendingDrop queued while walking, click hit-testing (F7), and (step 8) drag-and-drop.
 //
-// Gesture ownership: input.ts owns ALL left-button pointer gestures — clicks (wasClicked,
-// consumed-once) AND drags (wasPressed/wasReleased) — as a single priority chain, for the same
-// reason in both cases: only one system may react to a given mousedown/mouseup pair, so a
-// second independent handler here would race input.ts for the same gesture. A drag's mouseup
-// also fires the browser's synthetic `click` (there's no built-in drag threshold), so input.ts
-// must also be the one place that decides "this release ended a drag, don't treat it as a
-// click" — splitting that decision across two systems would need cross-system signaling for a
-// single boolean. Rack clicks and drags are therefore both handled in input.ts's chain by
-// calling this module's exported functions (handleRackPanelClick for clicks once the panel is
-// the active modal; tryStartDrag/updateDrag/resolveDrop for drags). This module's own System
-// owns only: right-click (a genuinely separate, non-conflicting event — the "view a rack"
-// affordance), Escape, and the per-frame arrival/pending-drop-commit logic.
+// Gesture ownership (.plans/input-router-refactor.md D4): input.ts's click-priority chain still
+// owns ordinary clicks (wasClicked, via the `input` tracker) — calling this module's
+// handleRackPanelClick once the panel is the active modal, same as before. Chip/tray drag is
+// different: it's a gesture this module alone understands (hit-testing chips/tray cards is
+// domain knowledge, not routing), so this module's own System now owns the whole press/hold/
+// release lifecycle directly (tryStartDrag/updateDrag/resolveDrop, called from its own update()
+// below) via the `inputState` tracker, independently of input.ts's click chain. This is safe
+// without cross-system signaling because a rack panel is a full-screen modal that already
+// absorbs every ordinary click while open (input.ts step 1.5) — a drag's release firing the
+// `input` tracker's own paired click is harmless, not double-handled, except at the panel's own
+// excepted buttons (close/repair/decommission/the tray card's abandon-contract corner), which
+// must not sit under a drag target (see tryStartDrag's own skip of the abandon-contract rect).
+// This module's own System also owns: right-click (a separate, non-conflicting event — the
+// "view a rack" affordance), Escape, and the per-frame arrival/pending-drop-commit logic.
 import { type World, type EntityId } from '../world';
 import {
   positions,
@@ -36,6 +38,7 @@ import {
   GRID_CELL_SIZE,
 } from '../components';
 import { type InputState } from '../../input';
+import { type InputStateTracker } from '../../input-state';
 import { type Camera } from '../../camera';
 import { placeWorkload, checkPlacement, unplaceWorkload, abandonWorkload } from '../dispatch';
 import { REPAIRABLE_WEAR_THRESHOLD } from '../game-data';
@@ -284,9 +287,8 @@ export function placedWorkloadIds(world: World, serverId: EntityId): EntityId[] 
     .sort((a, b) => a - b);
 }
 
-// mousedown hit-test + drag start, called from input.ts. Returns true if a drag was started
-// (a tray card or a placed chip was under the pointer), so input.ts knows to consume the press
-// rather than falling through to movement.
+// mousedown hit-test + drag start, called from this module's own System.update() (see D4).
+// Returns true if a drag was started (a tray card or a placed chip was under the pointer).
 export function tryStartDrag(
   world: World,
   renderer: Renderer,
@@ -405,8 +407,9 @@ function hitTestServerRow(
 
 const REJECTED_DROP_FLASH_MS = 900;
 
-// mouseup — called from input.ts whenever a drag was in progress (regardless of where the
-// pointer ended up), clearing DragState unconditionally. Resolves the drop:
+// mouseup — called from this module's own System.update() (see D4) whenever a drag was in
+// progress (regardless of where the pointer ended up), clearing DragState unconditionally.
+// Resolves the drop:
 //   - dropped on the tray, dragged from a server → unplaced immediately. Removing load never
 //     needs a fit-check and never depends on being physically present (the presence gate exists
 //     to stop the player placing work they can't verify fits — it has nothing to check here),
@@ -485,6 +488,7 @@ export function cancelDrag(world: World, controlled: EntityId): void {
 export function createRackPanelSystem(
   world: World,
   input: InputState,
+  inputState: InputStateTracker,
   renderer: Renderer,
   controlled: EntityId,
   camera: Camera,
@@ -504,6 +508,26 @@ export function createRackPanelSystem(
   return {
     update() {
       const panel = rackModal(world, controlled);
+
+      // --- Chip/tray drag lifecycle (moved from input.ts, .plans/input-router-refactor.md D4).
+      // Reads inputState (not the `input` tracker used elsewhere in this file for wheel/
+      // drag-to-scroll/right-click/Escape — see the plan's D1) — its snapshot for this tick was
+      // already advanced by input.ts's own update(), which runs first in main.ts's
+      // updateSystems. Left button only: this game has no other drag gesture.
+      const inputSnapshot = inputState.getState();
+      const dragPointer = { x: inputSnapshot.mouseX, y: inputSnapshot.mouseY };
+      if (inputSnapshot.mouseButtonsPressedSincePreviousFrame.has(0)) {
+        tryStartDrag(world, renderer, controlled, dragPointer);
+      }
+      const dragging = world.getComponent(dragStates, controlled) !== undefined;
+      if (dragging) {
+        updateDrag(world, controlled, dragPointer);
+        // Left button no longer down — resolve. No dedicated release-edge field needed: dragStates
+        // is itself this tick's "was a drag in progress" memory, checked fresh every frame.
+        if (!inputSnapshot.mouseButtonsDown.has(0)) {
+          resolveDrop(world, renderer, controlled, dragPointer);
+        }
+      }
 
       // Expire the rejected-drop flash once its window elapses.
       const rejection = world.getComponent(rejectedDrops, controlled);
@@ -551,11 +575,10 @@ export function createRackPanelSystem(
         }
 
         // Drag-to-scroll: a press that lands on the content viewport but didn't hit a chip or
-        // tray card (tryStartDrag, called from input.ts's wasPressed() handling earlier this
-        // same frame — input.ts runs before rack-panel.ts in updateSystems, see main.ts — would
-        // already have set DragState if it had) scrolls the panel by the drag's vertical delta
-        // instead. Eligibility is decided once per press so a drag that starts on a chip keeps
-        // dragging that chip even if it later crosses empty background.
+        // tray card (tryStartDrag, called earlier this same update() above — would already have
+        // set DragState if it had) scrolls the panel by the drag's vertical delta instead.
+        // Eligibility is decided once per press so a drag that starts on a chip keeps dragging
+        // that chip even if it later crosses empty background.
         const pointerDown = input.isPointerDown();
         if (pointerDown && pointer) {
           if (dragScrollPointer === null) {

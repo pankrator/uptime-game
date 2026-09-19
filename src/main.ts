@@ -1,5 +1,6 @@
 import { createRenderer } from './rendering';
 import { createInput } from './input';
+import { createInputStateTracker } from './input-state';
 import { createGameState } from './state';
 import { createGameLoop } from './core';
 import { createWorld, type EntityId } from './ecs/world';
@@ -104,6 +105,10 @@ async function runGame(
 ): Promise<void> {
   const renderer = createRenderer(canvas);
   const input = createInput(canvas);
+  // Drives input.ts's click/key router and rack-panel.ts's chip/tray drag — see
+  // .plans/input-router-refactor.md D1 for why this runs alongside `input` above rather than
+  // replacing it (camera pan/zoom, wheel scroll, right-click, touch still depend on `input`).
+  const inputState = createInputStateTracker(canvas);
   const state = createGameState();
   const world = createWorld();
   const camera = createCamera(input);
@@ -201,12 +206,12 @@ async function runGame(
   //   toggles, wheel-scroll) but doesn't feed or depend on anything else this tick, so its exact
   //   position beyond "after input" isn't load-bearing — see .plans/job-panels.md.
   const updateSystems = [
-    createInputSystem(world, input, renderer, player, facility, camera, audio, events),
+    createInputSystem(world, inputState, renderer, player, facility, camera, audio, events),
     createJobPanelsSystem(world, input, renderer, player),
     createMaintenanceSystem(world, player, facility, events),
     createPathFollowSystem(world),
     createMovementSystem(world),
-    createRackPanelSystem(world, input, renderer, player, camera),
+    createRackPanelSystem(world, input, inputState, renderer, player, camera),
     createShopSystem(world, player),
     createResourceSystem(world, facility, events),
     createCapacitySystem(world, facility),
