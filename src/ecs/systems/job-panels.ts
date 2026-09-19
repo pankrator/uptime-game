@@ -35,7 +35,7 @@ import {
   pointerInRect,
 } from '../../ui/layout';
 import { clampScrollOffset } from '../../ui/scroll';
-import { type InputState } from '../../input';
+import { type InputStateTracker } from '../../input-state';
 import { type Renderer } from '../../rendering';
 import { type Audio } from '../../audio';
 import { type System } from './system';
@@ -223,21 +223,31 @@ export function handleJobsModalClick(
 
 export function createJobPanelsSystem(
   world: World,
-  input: InputState,
+  inputState: InputStateTracker,
   renderer: Renderer,
   controlled: EntityId,
 ): System {
-  input.onKeyDown('o', () => toggleOffersPanel(world, controlled));
-  input.onKeyDown('j', () => toggleJobsPanel(world, controlled));
-
-  input.onKeyDown('Escape', () => {
-    if (isOffersModalOpen(world, controlled) || isJobsModalOpen(world, controlled)) {
-      closeJobPanels(world, controlled);
-    }
-  });
-
   return {
     update() {
+      // Keys polled directly (.plans/input-router-refactor.md) rather than routed through
+      // input.ts — this module already owns both panels' full lifecycle, and O/J/Escape are
+      // never ambiguous with anything input.ts's click chain handles.
+      const inputSnapshot = inputState.getState();
+      if (inputSnapshot.keysPressedSincePreviousFrame.has('o')) {
+        toggleOffersPanel(world, controlled);
+      }
+      if (inputSnapshot.keysPressedSincePreviousFrame.has('j')) {
+        toggleJobsPanel(world, controlled);
+      }
+      // Independently polled from rack-panel.ts's own Escape check — ActiveModal is a single
+      // tagged union, so at most one of the two ever actually does anything for a given press.
+      if (
+        inputSnapshot.keysPressedSincePreviousFrame.has('Escape') &&
+        (isOffersModalOpen(world, controlled) || isJobsModalOpen(world, controlled))
+      ) {
+        closeJobPanels(world, controlled);
+      }
+
       // Expire an unconfirmed accept-confirm click (F3: the confirm window, not a modal) —
       // same per-frame expiry rack-panel.ts's own System does for DecommissionConfirm. Runs
       // unconditionally (not gated on the offers modal being open) so a confirm window started
@@ -260,8 +270,8 @@ export function createJobPanelsSystem(
           world.addComponent(offersPanelScrolls, controlled, scroll);
         }
         const contentRect = getOffersModalContentRect(renderer.width, renderer.height);
-        const pointer = input.getPointerPosition();
-        const wheelDeltaY = input.consumeWheelDeltaY();
+        const pointer = inputSnapshot.mousePosition;
+        const wheelDeltaY = inputState.consumeWheelDeltaY();
         if (wheelDeltaY !== 0 && pointer && pointerInRect(pointer, contentRect)) {
           scroll.offsetPx += wheelDeltaY;
         }
@@ -278,8 +288,8 @@ export function createJobPanelsSystem(
         const { pendingCount, activeCount } = jobPanelCounts(world);
         const contentHeight = getJobsModalContentHeight(pendingCount, activeCount);
         const contentRect = getJobsModalContentRect(renderer.width, renderer.height, contentHeight);
-        const pointer = input.getPointerPosition();
-        const wheelDeltaY = input.consumeWheelDeltaY();
+        const pointer = inputSnapshot.mousePosition;
+        const wheelDeltaY = inputState.consumeWheelDeltaY();
         if (wheelDeltaY !== 0 && pointer && pointerInRect(pointer, contentRect)) {
           scroll.offsetPx += wheelDeltaY;
         }

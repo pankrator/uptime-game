@@ -1,12 +1,10 @@
 import { type Renderer } from '../rendering';
-import { type InputState } from '../input';
 import { type GameState } from '../state';
 import { type System } from '../ecs/systems/system';
 import { type FpsCounter } from '../fps';
 
 export interface GameLoopDeps {
   renderer: Renderer;
-  input: InputState;
   state: GameState;
   updateSystems: System[];
   renderSystems: System[];

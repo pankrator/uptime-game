@@ -47,12 +47,13 @@ Systems run in this order every tick; several depend on it (noted below):
 
 **`updateSystems`** (simulation, runs even off-screen):
 
-1. `input` — reads input, mutates build mode / drag state / dispatch requests
+1. `input` — click/key arbitration only; advances the shared `inputState` snapshot (must run
+   first — `rack-panel`'s drag reads the same snapshot this tick)
 2. `job-panels` — offers/jobs panel key toggles, wheel-scroll clamping (order beyond "after input" isn't load-bearing)
 3. `maintenance` — advances the player's active install/repair task
 4. `path-follow` — turns a queued path into the next `MoveTarget`
 5. `movement` — advances `Position` toward `MoveTarget`
-6. `rack-panel` — panel open/close, arrival, scroll, pending-drop commit
+6. `rack-panel` — panel open/close, arrival, scroll, pending-drop commit, chip/tray drag lifecycle
 7. `shop` — proximity-based shop panel open/close
 8. `resource` — power/cooling brownout decisions (must run before `capacity`)
 9. `capacity` — recomputes free capacity per server/rack/facility (must run after `resource`, before `workload-run`)
@@ -71,13 +72,15 @@ Systems run in this order every tick; several depend on it (noted below):
 
 ## Systems
 
-- [input](./input.md) — pointer/keyboard gesture ownership: build mode, click-priority chain, drag lifecycle entry points
+- [input](./input.md) — click/key arbitration only (a click can only mean one thing); every
+  branch delegates to the system that owns that domain, no embedded gameplay logic
+- [build](./build.md) — build mode: panel entry toggle and placing a buildable into the world
 - [job-panels](./job-panels.md) — offers/jobs panel key toggles, mutual exclusion with rack/shop, wheel-scroll clamping
 - [movement](./movement.md) — moves an entity's `Position` toward its `MoveTarget`
 - [path-follow](./path-follow.md) — feeds a queued path into `MoveTarget` one waypoint at a time
 - [camera](./camera.md) — eases the camera toward the controlled entity (render-only)
 - [install-progress](./install-progress.md) — walks-to-rack-then-installs flow for a bought machine
-- [rack-panel](./rack-panel.md) — rack panel open/close/arrival, scroll, and drag-and-drop resolution
+- [rack-panel](./rack-panel.md) — rack panel open/close/arrival, scroll, and chip/tray drag-and-drop
 - [shop](./shop.md) — proximity-based shop panel lifecycle and purchase application
 - [resource](./resource.md) — power/cooling brownout selection and facility draw totals
 - [capacity](./capacity.md) — derived per-server/per-rack/facility free-capacity cache

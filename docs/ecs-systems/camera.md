@@ -1,6 +1,6 @@
 # camera
 
-`src/ecs/systems/camera.ts` — `createCameraSystem(world, renderer, input, controlled, camera)`
+`src/ecs/systems/camera.ts` — `createCameraSystem(world, renderer, inputState, controlled, camera)`
 
 ## Purpose
 
@@ -11,7 +11,10 @@ following.
 
 ## Reads / writes
 
-- Reads: `Position` of `controlled`, WASD/space key state from `input`
+- Reads: `Position` of `controlled`, WASD/space key state and drag-to-pan pointer state from
+  `inputState` (`src/input-state/index.ts`) — this and `render.ts`'s hover are the only
+  render-loop (not simulation-tick) readers of it; see [input](./input.md)'s notes on why zoom
+  specifically uses `consumeZoomDelta()` rather than a plain snapshot field.
 - Writes: none in the ECS — mutates the external `Camera` object
 
 ## Notes

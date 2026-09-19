@@ -1,41 +1,35 @@
-// Gesture arbitration and build-mode placement. F7 (.plans/design-review.md) moved this
-// module's other two jobs out: panel hit-testing now lives next to each panel it tests
-// (rack-panel.ts's handleRackPanelClick, shop.ts's handleShopClick), and starting/cancelling a
-// maintenance task now lives in maintenance.ts (the module that finishes one). What's left here
-// is the single-consumer click/drag priority chain — see the comment on the drag lifecycle
-// below for why one system must own both wasClicked() and wasReleased() — and placing a rack/
-// CRAC/machine while in build mode.
+// Click/key arbitration only (.plans/input-router-refactor.md). A click or key can only mean one
+// thing, so deciding WHICH system it belongs to has to live in one documented, ordered place —
+// that's this file's whole job. It contains no gameplay logic of its own: every branch is either
+// a precondition check (is a panel open, is build mode active — inherently cross-system
+// knowledge, has to live somewhere neutral) or a single call into the system that owns that
+// domain (build.ts for build mode, rack-panel.ts/shop.ts/job-panels.ts for their own panels,
+// maintenance.ts for task cancel, tutorial.ts for banner actions). Panel hit-testing, maintenance
+// start/cancel, and chip/tray drag all live next to the system that owns them (see
+// docs/ecs-systems/input.md and rack-panel.ts's own header comment for the drag lifecycle).
 import { type World, type EntityId } from '../world';
 import {
-  gridPositions,
-  gridToWorld,
-  worldToGrid,
   buildModes,
   BUILDABLES,
   maintenanceTasks,
   activeModals,
-  dragStates,
   tutorialProgresses,
-  type BuildableDef,
+  gridToWorld,
+  worldToGrid,
 } from '../components';
 import { advanceTutorial, skipTutorial, isTutorialActionStep } from './tutorial';
 import { isOffersModalOpen, isJobsModalOpen, handleOffersModalClick, handleJobsModalClick } from './job-panels';
-import { cancelMaintenanceTask, startInstall } from './maintenance';
+import { cancelMaintenanceTask } from './maintenance';
 import { activeModal } from '../modal';
 import { moveControlledTo } from '../movement-commands';
-import { type MachineTierId, type PurchasableId } from '../game-data';
-import { getRoomRect } from '../room';
-import { takeFromInventory } from '../inventory';
 import { closeShop, handleShopClick } from './shop';
-import { type InputState } from '../../input';
-import { spawnRack, spawnCoolingUnit } from '../../entities';
+import { type InputStateTracker } from '../../input-state';
 import { type Renderer } from '../../rendering';
 import { type Camera } from '../../camera';
 import { type Audio } from '../../audio';
 import { type EventBus } from '../event-bus';
 import { type GameEvents } from '../game-events';
 import {
-  getBuildPanelEntryRect,
   pointerInRect,
   pointerInHud,
   getMuteButtonRect,
@@ -43,45 +37,13 @@ import {
   getTutorialActionButtonRect,
   getTutorialSkipRect,
 } from '../../ui/layout';
-import {
-  findRackAt,
-  openOrPromoteRackPanel,
-  handleRackPanelClick,
-  tryStartDrag,
-  updateDrag,
-  resolveDrop,
-} from './rack-panel';
+import { findRackAt, openOrPromoteRackPanel, handleRackPanelClick } from './rack-panel';
+import { selectBuildable, handleBuildPanelClick, handleBuildModePlacement } from './build';
 import { type System } from './system';
-
-function hitTestPanel(point: { x: number; y: number }, canvasHeight: number): number | null {
-  for (let index = 0; index < BUILDABLES.length; index++) {
-    const rect = getBuildPanelEntryRect(index, canvasHeight);
-    if (pointerInRect(point, rect)) {
-      return index;
-    }
-  }
-  return null;
-}
-
-function isGridCellOccupied(world: World, gridX: number, gridY: number): boolean {
-  return world.query(gridPositions).some((id) => {
-    const grid = world.getComponent(gridPositions, id)!;
-    return grid.gridX === gridX && grid.gridY === gridY;
-  });
-}
-
-function selectBuildable(world: World, controlled: EntityId, selected: BuildableDef): void {
-  const buildMode = world.getComponent(buildModes, controlled);
-  if (buildMode?.buildableId === selected.id) {
-    world.removeComponent(buildModes, controlled);
-  } else {
-    world.addComponent(buildModes, controlled, { buildableId: selected.id });
-  }
-}
 
 export function createInputSystem(
   world: World,
-  input: InputState,
+  inputState: InputStateTracker,
   renderer: Renderer,
   controlled: EntityId,
   facility: EntityId,
@@ -89,71 +51,33 @@ export function createInputSystem(
   audio: Audio,
   events: EventBus<GameEvents>,
 ): System {
-  input.onKeyDown('Escape', () => {
-    if (activeModal(world, controlled) === 'shop') {
-      closeShop(world, controlled);
-      return;
-    }
-    if (world.getComponent(buildModes, controlled)) {
-      world.removeComponent(buildModes, controlled);
-    }
-  });
-
-  BUILDABLES.forEach((buildable, index) => {
-    const key = String(index + 1);
-    input.onKeyDown(key, () => {
-      if (world.getComponent(maintenanceTasks, controlled)) return;
-      if (isOffersModalOpen(world, controlled) || isJobsModalOpen(world, controlled)) return;
-      selectBuildable(world, controlled, buildable);
-    });
-  });
-
   return {
     update() {
-      // --- Drag lifecycle (step 8) — runs every frame, independent of wasClicked(), since a
-      // drag spans multiple frames between mousedown and mouseup. Owned here (not in
-      // rack-panel.ts) for the same single-consumer reason as the click chain below: a drag's
-      // mouseup also fires the browser's synthetic `click` event (no built-in drag threshold),
-      // so whichever system decides "was this a drag-release or a plain click" must be the one
-      // place both wasReleased() and wasClicked() are read, or the two could disagree.
-      if (input.wasPressed()) {
-        const pressPoint = input.getPointerPosition();
-        if (pressPoint) {
-          tryStartDrag(world, renderer, controlled, pressPoint);
+      // Runs first in main.ts's updateSystems — every other system that reads inputState this
+      // tick (rack-panel.ts's chip/tray drag) sees the snapshot advanced here.
+      inputState.update();
+      const state = inputState.getState();
+
+      // Escape — closes whichever of shop/build-mode is active. Two different owners, so this
+      // stays a precondition check + delegation, not a single handler either system could own.
+      if (state.keysPressedSincePreviousFrame.has('Escape')) {
+        if (activeModal(world, controlled) === 'shop') {
+          closeShop(world, controlled);
+        } else if (world.getComponent(buildModes, controlled)) {
+          world.removeComponent(buildModes, controlled);
         }
       }
 
-      // Re-read after the press check above: a press and release can land in the same frame
-      // (a fast click), and tryStartDrag may have just created this — reading dragStates
-      // before the press check would miss that and leave the drag stuck forever (started, but
-      // never resolved since wasReleased() only fires once).
-      if (world.getComponent(dragStates, controlled)) {
-        const movePoint = input.getPointerPosition();
-        if (movePoint) updateDrag(world, controlled, movePoint);
+      // Build-mode hotkeys (1..N, one per BUILDABLES entry).
+      for (let index = 0; index < BUILDABLES.length; index++) {
+        if (!state.keysPressedSincePreviousFrame.has(String(index + 1))) continue;
+        if (world.getComponent(maintenanceTasks, controlled)) continue;
+        if (isOffersModalOpen(world, controlled) || isJobsModalOpen(world, controlled)) continue;
+        selectBuildable(world, controlled, BUILDABLES[index]);
       }
 
-      // wasReleased() fires on EVERY click, not just drags (mousedown -> mouseup -> click is
-      // the sequence for an ordinary click too). Only treat this as drag territory — and
-      // swallow the paired wasClicked() — if a drag was actually in progress; otherwise let
-      // the click fall through to the normal chain below (movement, rack-open, build, etc.).
-      const wasDragging = world.getComponent(dragStates, controlled) !== undefined;
-      if (input.wasReleased()) {
-        const releasePoint = input.getPointerPosition();
-        if (wasDragging) {
-          // Consume the paired click now so the chain below never sees it — dragging a chip a
-          // few pixels and releasing should never also walk the player to that spot.
-          input.wasClicked();
-          if (releasePoint) {
-            resolveDrop(world, renderer, controlled, releasePoint);
-          }
-          return;
-        }
-      }
-
-      if (!input.wasClicked()) return;
-
-      const pointer = input.getPointerPosition();
-      if (!pointer) return;
+      if (!state.wasClicked || !state.mousePosition) return;
+      const pointer = state.mousePosition;
 
       // -1. Mute toggle — always reachable, checked before anything else can swallow the click
       // (an install task, build mode, or a full-screen panel should never block it).
@@ -205,12 +129,8 @@ export function createInputSystem(
       // the 'o'/'j' keys (job-panels.ts) instead of docked HUD chrome. Mutually exclusive with
       // each other and with the rack/shop panels (../modal.ts's openModal — pressing O/J while a
       // rack/shop panel is open SWITCHES to the requested panel rather than being blocked), so
-      // checking them here — ahead of everything below — is safe: at most one of
-      // these five branches (offers, jobs, maintenance, rack, shop) is ever live at once. The
-      // accept-confirm gate (.plans/playtest-findings.md F3 — accepting a contract nothing can
-      // currently serve needs a second click, same shape as DecommissionConfirm) lives inside
-      // handleOffersModalClick now, since offer accept/decline buttons only exist inside this
-      // modal.
+      // checking them here — ahead of everything below — is safe: at most one of these five
+      // branches (offers, jobs, maintenance, rack, shop) is ever live at once.
       const modal = activeModal(world, controlled);
       if (modal === 'offers') {
         handleOffersModalClick(world, renderer, controlled, facility, pointer, audio);
@@ -228,12 +148,12 @@ export function createInputSystem(
         return;
       }
 
-      // 1.5. Open rack panel. A dispatching-mode panel stays hidden (and non-interactive)
-      // until the player arrives — see rack-panel.ts's arrival check and render.ts's early
-      // return — so while still walking there, a click falls through to plain movement below
-      // (redirecting the walk, same as clicking anywhere else always does) rather than being
-      // absorbed by a panel that isn't even on screen yet. activeModal() applies exactly this
-      // same visibility gate (see ../modal.ts).
+      // 1.5. Open rack panel. A dispatching-mode panel stays hidden (and non-interactive) until
+      // the player arrives — see rack-panel.ts's arrival check and render.ts's early return — so
+      // while still walking there, a click falls through to plain movement below (redirecting
+      // the walk, same as clicking anywhere else always does) rather than being absorbed by a
+      // panel that isn't even on screen yet. activeModal() applies exactly this same visibility
+      // gate (see ../modal.ts).
       const openPanel = world.getComponent(activeModals, controlled);
       if (modal === 'rack') {
         handleRackPanelClick(world, renderer, controlled, facility, pointer, audio);
@@ -249,55 +169,13 @@ export function createInputSystem(
         return;
       }
 
-      const panelIndex = hitTestPanel(pointer, renderer.height);
-      const buildMode = world.getComponent(buildModes, controlled);
-
-      // 2. Panel hit.
-      if (panelIndex !== null) {
-        selectBuildable(world, controlled, BUILDABLES[panelIndex]);
-        return;
-      }
+      // 2. Build panel entry.
+      if (handleBuildPanelClick(world, controlled, pointer, renderer.height)) return;
 
       // 3. Build mode active.
+      const buildMode = world.getComponent(buildModes, controlled);
       if (buildMode) {
-        const buildable = BUILDABLES.find((b) => b.id === buildMode.buildableId)!;
-        const worldPoint = camera.screenToWorld(pointer);
-        const { gridX, gridY } = worldToGrid(worldPoint.x, worldPoint.y);
-
-        if (buildable.placement === 'empty-cell') {
-          const room = getRoomRect(world, facility);
-          const insideRoom =
-            gridX >= room.minGridX &&
-            gridX <= room.maxGridX &&
-            gridY >= room.minGridY &&
-            gridY <= room.maxGridY;
-          if (!insideRoom) return;
-          if (isGridCellOccupied(world, gridX, gridY)) return;
-          if (!takeFromInventory(world, facility, buildable.id as PurchasableId)) return;
-
-          if (buildable.id === 'crac') {
-            spawnCoolingUnit(world, gridX, gridY);
-          } else {
-            spawnRack(world, gridX, gridY);
-          }
-          audio.play('rackPlaced');
-          // Stay in build mode so a row of the same buildable can be laid out quickly.
-          return;
-        }
-
-        if (buildable.placement === 'rack') {
-          // buildable.id is `machine-${MachineTierId}` for every rack-placement buildable —
-          // strip the prefix rather than hand-matching each tier id (see BUILDABLES in
-          // components.ts, generated from MACHINE_TIERS).
-          const tierId = buildable.id.slice('machine-'.length) as MachineTierId;
-          const rackId = findRackAt(world, gridX, gridY);
-          if (rackId !== null) {
-            startInstall(world, controlled, facility, tierId, rackId);
-          }
-          world.removeComponent(buildModes, controlled);
-          return;
-        }
-
+        handleBuildModePlacement(world, controlled, facility, camera, pointer, audio);
         return;
       }
 
