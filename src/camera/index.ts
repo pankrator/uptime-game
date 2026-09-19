@@ -6,7 +6,7 @@ import {
   CAMERA_ZOOM_MIN,
   CAMERA_ZOOM_MAX,
 } from '../ecs/game-data';
-import { type InputState } from '../input';
+import { type InputStateTracker } from '../input-state';
 import { getGameViewportRect } from '../ui/layout';
 
 export interface Point {
@@ -32,7 +32,7 @@ export interface Camera {
   screenToWorld(p: Point): Point;
   applyTransform(ctx: CanvasRenderingContext2D): void;
   resetTransform(ctx: CanvasRenderingContext2D): void;
-  update(deltaSeconds: number, target: Point, canvas: HTMLCanvasElement, input: InputState): void;
+  update(deltaSeconds: number, target: Point, canvas: HTMLCanvasElement, inputState: InputStateTracker): void;
 }
 
 const PAN_KEYS: Record<string, Point> = {
@@ -49,7 +49,7 @@ function clampAxis(value: number, viewportSize: number, worldSize: number): numb
   return Math.min(Math.max(value, 0), worldSize - viewportSize);
 }
 
-export function createCamera(input: InputState): Camera {
+export function createCamera(): Camera {
   let x = 0;
   let y = 0;
   let scale = 1;
@@ -103,17 +103,29 @@ export function createCamera(input: InputState): Camera {
     resetTransform(ctx: CanvasRenderingContext2D): void {
       ctx.restore();
     },
-    update(deltaSeconds: number, target: Point, canvas: HTMLCanvasElement, inputState: InputState): void {
-      const zoomDelta = inputState.getZoomDelta();
+    update(deltaSeconds: number, target: Point, canvas: HTMLCanvasElement, inputState: InputStateTracker): void {
+      // consumeZoomDelta, not a snapshot field: this runs from the render loop, at a different
+      // rate than the simulation tick that advances inputState's snapshot (input.ts) — see
+      // input-state/index.ts's file header for why zoom needs real drain-on-read semantics
+      // instead.
+      const zoomDelta = inputState.consumeZoomDelta();
       if (zoomDelta !== 0) {
         scale = Math.min(Math.max(scale + zoomDelta, CAMERA_ZOOM_MIN), CAMERA_ZOOM_MAX);
+      }
+
+      const state = inputState.getState();
+
+      // Space recenters — idempotent, so reading this edge more than once before input.ts's next
+      // update() (this runs at render rate, faster than the simulation tick) is harmless.
+      if (state.keysPressedSincePreviousFrame.has(' ')) {
+        detached = false;
       }
 
       let panDx = 0;
       let panDy = 0;
 
       for (const [key, dir] of Object.entries(PAN_KEYS)) {
-        if (inputState.isKeyDown(key)) {
+        if (state.keysDown.has(key)) {
           panDx += dir.x;
           panDy += dir.y;
         }
@@ -152,10 +164,6 @@ export function createCamera(input: InputState): Camera {
       y = clampAxis(y + viewportWorldY, viewportWorldHeight, WORLD_HEIGHT) - viewportWorldY;
     },
   };
-
-  input.onKeyDown(' ', () => {
-    camera.recenter();
-  });
 
   return camera;
 }

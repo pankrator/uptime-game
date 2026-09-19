@@ -76,8 +76,8 @@ export function createInputSystem(
         selectBuildable(world, controlled, BUILDABLES[index]);
       }
 
-      if (!state.wasClicked) return;
-      const pointer = { x: state.mouseX, y: state.mouseY };
+      if (!state.wasClicked || !state.mousePosition) return;
+      const pointer = state.mousePosition;
 
       // -1. Mute toggle — always reachable, checked before anything else can swallow the click
       // (an install task, build mode, or a full-screen panel should never block it).

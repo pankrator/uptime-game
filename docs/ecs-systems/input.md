@@ -14,11 +14,15 @@ for why that was rejected). Contains no gameplay logic of its own — every bran
 precondition check (is a panel open, is build mode active — inherently cross-system knowledge)
 or a single call into the system that owns that domain.
 
-Reads `src/input-state/index.ts`'s `InputStateTracker` (not `src/input/index.ts`, still used by
-`camera.ts`/`job-panels.ts`/`rack-panel.ts`/`render.ts` for gestures this router doesn't touch —
-see the plan's D1). This system runs first in `main.ts`'s `updateSystems` and calls
-`inputState.update()` as the first thing it does each tick, advancing the frame snapshot every
-other `inputState` reader (`rack-panel.ts`'s drag) sees this tick.
+Reads `src/input-state/index.ts`'s `InputStateTracker` — the sole input tracker in the game now
+(`src/input/index.ts` is gone; every consumer migrated onto `inputState`, see the plan's D1
+follow-up). This system runs first in `main.ts`'s `updateSystems` and calls `inputState.update()`
+as the first thing it does each tick, advancing the frame snapshot every other simulation-tick
+`inputState` reader (`rack-panel.ts`'s drag, `job-panels.ts`, the quicksave poll in `main.ts`)
+sees this tick. Render-loop readers (`camera.ts`, `render.ts`'s hover) read continuous fields
+(position, held buttons) or the dedicated `consumeWheelDeltaY`/`consumeZoomDelta` drain-on-read
+methods instead — see `input-state/index.ts`'s file header for why those two can't be plain
+snapshot fields.
 
 ## Keys (polled each tick via `keysPressedSincePreviousFrame`)
 
@@ -66,9 +70,10 @@ involvement.
 - The ordering above is load-bearing — e.g. rack-panel and shop are both "absorb every
   click" modals, and either being checked in the wrong order relative to build mode or
   the build panel would swallow input incorrectly.
-- Two input trackers run side by side (`.plans/input-router-refactor.md` D1): `input`
-  (`src/input/index.ts`, old) still drives `camera.ts`, `job-panels.ts`, `rack-panel.ts`'s own
-  wheel/drag-to-scroll/right-click/Escape, and `render.ts`'s hover; `inputState`
-  (`src/input-state/index.ts`, new) drives only this file and `rack-panel.ts`'s chip/tray drag.
-  Unifying onto one tracker is a separate, larger follow-up (touch/pointer-event support on
-  `inputState` is a prerequisite — not yet built).
+- `src/input-state/index.ts` is the only input tracker in the game — `src/input/index.ts` was
+  removed once every consumer (`camera.ts`, `job-panels.ts`, `rack-panel.ts`, `render.ts`,
+  `main.ts`'s quicksave) migrated onto it (`.plans/input-router-refactor.md` D1 follow-up).
+- Escape is polled independently in three places (this file, `job-panels.ts`, `rack-panel.ts`),
+  each gated on its own precondition — safe because `ActiveModal` is a single tagged union (at
+  most one of shop/offers/jobs/rack is ever open) and this file's own shop-vs-build-mode branch
+  already picks at most one action per press.

@@ -1,6 +1,6 @@
 # render
 
-`src/ecs/systems/render.ts` — `createRenderSystem(world, renderer, controlled, facility, camera, input)`
+`src/ecs/systems/render.ts` — `createRenderSystem(world, renderer, controlled, facility, camera, inputState)`
 
 ## Purpose
 

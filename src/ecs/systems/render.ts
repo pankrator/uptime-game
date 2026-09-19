@@ -59,7 +59,7 @@ import { UI, bar } from '../../ui/draw';
 import { activeModal } from '../modal';
 import { type Renderer } from '../../rendering';
 import { type Camera } from '../../camera';
-import { type InputState } from '../../input';
+import { type InputStateTracker } from '../../input-state';
 import { getRoomRect, getNextRoomTier } from '../room';
 import { type GridBounds } from '../pathfinding';
 import { SHOP_RECT, CORRIDOR_RECT, SHOP_DOOR } from '../world-map';
@@ -1381,7 +1381,7 @@ export function createRenderSystem(
   controlled: EntityId,
   facility: EntityId,
   camera: Camera,
-  input: InputState,
+  inputState: InputStateTracker,
 ): System {
   return {
     update() {
@@ -1426,7 +1426,7 @@ export function createRenderSystem(
       // drawThermalBadge is untouched — it already self-gates on tripped/throttled, the "urgent"
       // signal this declutter is meant to preserve, not hide further.
       const hoverGrid = (() => {
-        const pointer = input.getPointerPosition();
+        const pointer = inputState.getState().mousePosition;
         if (!pointer) return null;
         const worldPoint = camera.screenToWorld(pointer);
         return worldToGrid(worldPoint.x, worldPoint.y);
@@ -1546,7 +1546,7 @@ export function createRenderSystem(
           drawShopPanel(world, renderer, controlled, facility);
           break;
         default:
-          drawBuildPanel(world, renderer, controlled, facility, input.getPointerPosition());
+          drawBuildPanel(world, renderer, controlled, facility, inputState.getState().mousePosition);
       }
     },
   };

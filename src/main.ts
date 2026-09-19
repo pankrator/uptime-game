@@ -1,5 +1,4 @@
 import { createRenderer } from './rendering';
-import { createInput } from './input';
 import { createInputStateTracker } from './input-state';
 import { createGameState } from './state';
 import { createGameLoop } from './core';
@@ -104,14 +103,10 @@ async function runGame(
   loadSave: boolean,
 ): Promise<void> {
   const renderer = createRenderer(canvas);
-  const input = createInput(canvas);
-  // Drives input.ts's click/key router and rack-panel.ts's chip/tray drag — see
-  // .plans/input-router-refactor.md D1 for why this runs alongside `input` above rather than
-  // replacing it (camera pan/zoom, wheel scroll, right-click, touch still depend on `input`).
   const inputState = createInputStateTracker(canvas);
   const state = createGameState();
   const world = createWorld();
-  const camera = createCamera(input);
+  const camera = createCamera();
   const audio = createAudio();
   const events = createEventBus<GameEvents>();
   wireAudioEvents(events, audio);
@@ -156,20 +151,25 @@ async function runGame(
   // written from inside a running game, or "Continue" on that slot never has anything to load.
   // Always saves back to the SAME slot the run started in (`slot`, fixed for this runGame
   // call) — there's no in-game slot switcher, only the landing screen's picker chooses a slot.
-  // Mirrors camera.ts's own direct `input.onKeyDown(' ', ...)` — a key bound straight at the
-  // call site that owns it, not routed through ecs/systems/input.ts's click-priority chain.
-  // input.ts prevents F5's default browser refresh, so this is the only thing F5 does — the
-  // toast (effects.ts's spawnToast, already used for miss/warning banners) is the player's only
-  // feedback that the save happened, in place of the page reload they'd otherwise see.
-  input.onKeyDown('F5', () => {
-    void saveManager.save(world, slot).then(
-      () => spawnToast(world, `Game saved to ${slot}`, '#4caf50'),
-      (err: unknown) => {
-        console.error('[save] failed to save', err);
-        spawnToast(world, 'Save failed — see console', '#e53935');
-      },
-    );
-  });
+  // Polled directly rather than routed through ecs/systems/input.ts's click-priority chain, same
+  // as camera.ts's own Space handling — F5 never competes with anything that chain owns.
+  // input-state/index.ts prevents F5's default browser refresh, so this is the only thing F5
+  // does — the toast (effects.ts's spawnToast, already used for miss/warning banners) is the
+  // player's only feedback that the save happened, in place of the page reload they'd otherwise
+  // see. A plain object, not its own file — this is the only thing it does, no domain to name a
+  // system after.
+  const quicksaveSystem = {
+    update() {
+      if (!inputState.getState().keysPressedSincePreviousFrame.has('F5')) return;
+      void saveManager.save(world, slot).then(
+        () => spawnToast(world, `Game saved to ${slot}`, '#4caf50'),
+        (err: unknown) => {
+          console.error('[save] failed to save', err);
+          spawnToast(world, 'Save failed — see console', '#e53935');
+        },
+      );
+    },
+  };
 
   // ORDER IS LOAD-BEARING — see .plans/machines-and-racks.md, .plans/workload-economy.md,
   // .plans/workload-dispatch.md, and .plans/hardware-failure.md.
@@ -207,11 +207,12 @@ async function runGame(
   //   position beyond "after input" isn't load-bearing — see .plans/job-panels.md.
   const updateSystems = [
     createInputSystem(world, inputState, renderer, player, facility, camera, audio, events),
-    createJobPanelsSystem(world, input, renderer, player),
+    quicksaveSystem,
+    createJobPanelsSystem(world, inputState, renderer, player),
     createMaintenanceSystem(world, player, facility, events),
     createPathFollowSystem(world),
     createMovementSystem(world),
-    createRackPanelSystem(world, input, inputState, renderer, player, camera),
+    createRackPanelSystem(world, inputState, renderer, player, camera),
     createShopSystem(world, player),
     createResourceSystem(world, facility, events),
     createCapacitySystem(world, facility),
@@ -236,12 +237,12 @@ async function runGame(
   // pause without affecting gameplay.
   // Camera update goes first — it must update before the render systems read it this frame.
   const renderSystems = [
-    createCameraSystem(world, renderer, input, player, camera),
-    createRenderSystem(world, renderer, player, facility, camera, input),
+    createCameraSystem(world, renderer, inputState, player, camera),
+    createRenderSystem(world, renderer, player, facility, camera, inputState),
     createHudSystem(world, renderer, player, facility, audio, camera, fps),
   ];
 
-  const loop = createGameLoop({ renderer, input, state, updateSystems, renderSystems, fps });
+  const loop = createGameLoop({ renderer, state, updateSystems, renderSystems, fps });
   state.scene = 'playing';
   loop.start();
   audio.startMusic();

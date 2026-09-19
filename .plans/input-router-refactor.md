@@ -97,8 +97,52 @@ already-advanced snapshot rather than calling `update()` a second time.
   `createInputSystem` and `createRackPanelSystem`.
 - `docs/ecs-systems/input.md`, `rack-panel.md`, `README.md` — reflect the new split.
 
+**D6 follow-up files:** `src/input-state/index.ts` (wheel/zoom/right-click/Pointer Events,
+`consumeWheelDeltaY`/`consumeZoomDelta`); `src/input/index.ts` deleted; `src/camera/index.ts`
+(`createCamera()` no longer takes `input`, `Camera.update()` takes `InputStateTracker`);
+`src/ecs/systems/camera.ts`, `job-panels.ts`, `rack-panel.ts`, `render.ts` (all switched fully to
+`inputState`); `src/main.ts` (drops `input`, adds the inline quicksave poll system); `src/core/index.ts`
+(`GameLoopDeps.input` removed, was already unused); `docs/ecs-systems/camera.md`, `job-panels.md`.
+
 ## Non-goals (this pass)
 
-- Retiring `src/input/index.ts` entirely (D1).
-- Touch/pointer-event support on `input-state` (needed before rack-panel's drag works on touch —
-  flagged in the earlier chat, not required for this refactor to be correct on desktop).
+- ~~Retiring `src/input/index.ts` entirely (D1).~~ Done — see D6 below.
+- ~~Touch/pointer-event support on `input-state`.~~ Done — see D6.
+
+## D6: retiring `src/input/index.ts` (follow-up to D1)
+
+Once the router + rack-panel drag were proven on `input-state`, migrated everything else onto it
+too and deleted `src/input/index.ts`: `camera.ts`/`ecs/systems/camera.ts` (pan/zoom/drag-to-pan),
+`job-panels.ts` (O/J/Escape — now polled in its own `update()` instead of `onKeyDown` callbacks),
+`rack-panel.ts` (wheel/drag-to-scroll/right-click/Escape, same polling switch), `render.ts`
+(hover), and `main.ts`'s F5 quicksave (now a tiny inline polled system in `updateSystems`, since
+there's no per-key-binding owner to route it through).
+
+`input-state` gained wheel/pinch-zoom, right-click (mouse button + touch long-press), and moved
+its low-level plumbing from plain Mouse/Wheel events to Pointer Events (unifying mouse/touch/pen,
+porting `.plans/mobile-touch-support.md`'s primary-pointer/pinch-distance/long-press-timer logic).
+`mousePosition` also became nullable (`{x,y} | null`, not defaulting to `(0,0)`) for parity with
+`render.ts`'s hover, which must not draw before any real pointer event has happened.
+
+**Two fields deliberately stayed consume-on-read methods, not plain snapshot fields:**
+`consumeWheelDeltaY()`/`consumeZoomDelta()`. Every other field is "as of the last `update()`
+call", refreshed once per **simulation tick** by `input.ts`. But `camera.ts`'s render system reads
+`inputState` from the **render loop** (`requestAnimationFrame`, a different and generally faster
+rate than the 30Hz sim tick) — a snapshot field left un-drained between one `input.ts` `update()`
+call and the next would double-apply (or more) on every extra render frame in between, since zoom/
+wheel are additive, not idempotent. A one-shot edge like `wasClicked` or `keysPressedSincePreviousFrame`
+has no such problem: `camera.ts` reading Space's "just pressed" edge twice before the next sim
+tick just means two idempotent `recenter()` calls. `mouseButtonsDown`/`mousePosition` are safe too
+— continuous state, correct at any read rate. This is also why Escape ended up polled
+independently in three files (`input.ts`, `job-panels.ts`, `rack-panel.ts`) rather than centralized:
+each guards on its own precondition, and `ActiveModal` being a single tagged union means at most
+one of them ever does anything for a given press — decentralizing it was safe *because* of that
+existing invariant, not a general license to decentralize every key.
+
+Also fixed while touching this: a real right-mouse-button press no longer enters the primary-press/
+drag/click state machine at all (only `contextmenu` drives `wasRightClicked` now) — previously
+`pointerdown` didn't filter `event.button`, so a right-click could arguably also register as a
+left-press/click for whatever was under it. And `keydown`'s `event.repeat` (OS auto-repeat while a
+key is held) is now filtered out of `keysPressedSincePreviousFrame`, matching the field's own
+"just pressed, not held" contract — without it, holding a hotkey down would re-fire its action
+every tick.

@@ -17,8 +17,8 @@
 // well-known TS quirk. Events is used purely structurally (`keyof Events`, `Events[K]`), so no
 // constraint is needed for that to work.
 export interface EventBus<Events> {
-  // Returns an unsubscribe function — same shape as InputState.onKeyDown, for the same reason
-  // (a handler registered inside a system factory's closure may need to remove itself later).
+  // Returns an unsubscribe function — a handler registered inside a system factory's closure
+  // may need to remove itself later.
   on<K extends keyof Events>(type: K, handler: (payload: Events[K]) => void): () => void;
   emit<K extends keyof Events>(type: K, payload: Events[K]): void;
 }
