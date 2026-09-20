@@ -19,8 +19,8 @@ export interface Camera {
   y: number;
   scale: number;
   // Whether the camera is currently manually panned away from following the controlled entity
-  // (WASD, or a drag on the floor — see .plans/mobile-touch-support.md D3). Read-only from the
-  // outside; only `pan`/`recenter`/WASD panning inside `update` change it.
+  // (WASD, or a drag on the floor). Read-only from the outside; only `pan`/`recenter`/WASD
+  // panning inside `update` change it.
   readonly detached: boolean;
   // Manual pan in world units — sets `detached`, same as WASD panning. Used by
   // ecs/systems/camera.ts for drag-to-pan (the touch equivalent of WASD, since a touchscreen has
@@ -137,11 +137,11 @@ export function createCamera(): Camera {
         x += (panDx / length) * CAMERA_PAN_SPEED * deltaSeconds;
         y += (panDy / length) * CAMERA_PAN_SPEED * deltaSeconds;
       } else if (!detached) {
-        // Center the target within the HUD-safe viewport, not the raw canvas — otherwise the
-        // top bar and side panels permanently cover whatever world content falls under them
-        // (see .plans/facility-shop-inventory.md). The viewport rect is screen-space (HUD chrome
-        // doesn't scale with zoom), so its anchor is divided by `scale` to land back in world
-        // units before comparing against `target`, which is already world-space.
+        // Center the target within the HUD-safe viewport, not the raw canvas — otherwise the top
+        // bar and side panels permanently cover whatever world content falls under them. The
+        // viewport rect is screen-space (HUD chrome doesn't scale with zoom), so its anchor is
+        // divided by `scale` to land back in world units before comparing against `target`,
+        // which is already world-space.
         const viewport = getGameViewportRect(canvas.clientWidth, canvas.clientHeight);
         const desiredX = target.x - (viewport.x + viewport.width / 2) / scale;
         const desiredY = target.y - (viewport.y + viewport.height / 2) / scale;

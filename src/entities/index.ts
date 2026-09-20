@@ -62,12 +62,12 @@ export function spawnRack(world: World, gridX: number, gridY: number): EntityId 
   world.addComponent(gridPositions, id, { gridX, gridY });
   world.addComponent(renderables, id, { kind: 'rack' });
   world.addComponent(rackSlots, id, { capacity: RACK_SLOT_CAPACITY });
-  // See .plans/thermal-and-cooling.md D1/D2: starts at ambient, then owned solely by thermal.ts.
+  // Starts at ambient, then owned solely by thermal.ts.
   world.addComponent(temperatures, id, { celsius: AMBIENT_C, throttleFactor: 1 });
   return id;
 }
 
-// A placed CRAC unit — mirrors spawnRack. See .plans/thermal-and-cooling.md D4/Step 6.
+// A placed CRAC unit — mirrors spawnRack.
 export function spawnCoolingUnit(world: World, gridX: number, gridY: number): EntityId {
   const id = world.createEntity();
   world.addComponent(gridPositions, id, { gridX, gridY });
@@ -89,14 +89,13 @@ export function spawnMachine(
   world.addComponent(machines, id, { tierId });
   world.addComponent(installedIns, id, { rackId, slotIndex });
   world.addComponent(powereds, id, { online: false, offlineCooldown: 0 });
-  // See .plans/hardware-failure.md D1: starts new, then owned solely by wear.ts.
+  // Starts new, then owned solely by wear.ts.
   world.addComponent(conditions, id, { wear: 0 });
   return id;
 }
 
-// Starting stock — lets the game be playable before the shop exists (step 4) and becomes the
-// real starting state once it does (step 5): a rack and one budget box to get going, so a
-// fresh game isn't a walk to the shop before anything can happen.
+// Starting stock — a rack and one budget box to get going, so a fresh game isn't a walk to the
+// shop before anything can happen.
 const STARTING_INVENTORY: Partial<Record<PurchasableId, number>> = {
   rack: 1,
   'machine-budget': 2,
@@ -106,9 +105,9 @@ const STARTING_INVENTORY: Partial<Record<PurchasableId, number>> = {
 // save/manager.ts's post-load repair (a facility restored from a save, which never runs
 // through spawnFacility at all). Utilization is deliberately excluded from the save format —
 // it's a derived cache, fully recomputed every tick by resource.ts/capacity.ts/workload-run.ts
-// (see .plans/save-load.md D4) — but every one of those systems, plus workload-spawn.ts and
-// hud.ts/render.ts, treats the component's ABSENCE as "not initialized yet, nothing to do"
-// rather than "create it fresh." A brand-new facility never hits that gap because spawnFacility
+// — but every one of those systems, plus workload-spawn.ts and hud.ts/render.ts, treats the
+// component's ABSENCE as "not initialized yet, nothing to do" rather than "create it fresh." A
+// brand-new facility never hits that gap because spawnFacility
 // always seeds it below; a loaded facility would, forever (no HUD top bar, no brownout/online
 // resolution, no new offers), without this same seed applied once after load.
 export function defaultUtilization(): Utilization {
@@ -157,11 +156,9 @@ function lowestFreeOfferSlot(world: World): number {
 }
 
 // Spawns an Offer awaiting accept/decline — NOT a live Workload. Accepting (dispatch.ts's
-// acceptOffer) is what turns an offer into a Workload entity; see .plans/workload-dispatch.md
-// step 5.
-// F14 (.plans/design-review.md): the repeat-count roll is a parameter, defaulted to
-// Math.random(), following wear.ts's rollFailure — lets a test drive a specific repeat count
-// without stubbing a global.
+// acceptOffer) is what turns an offer into a Workload entity.
+// The repeat-count roll is a parameter, defaulted to Math.random(), following wear.ts's
+// rollFailure — lets a test drive a specific repeat count without stubbing a global.
 export function spawnOffer(
   world: World,
   archetypeId: WorkloadArchetypeId,
@@ -169,16 +166,15 @@ export function spawnOffer(
   random: number = Math.random(),
 ): EntityId {
   const archetype = WORKLOAD_ARCHETYPES[archetypeId];
-  // Two different scales past this point — see .plans/compute-scale-fix.md D2. PAY (and the
-  // miss penalty, which tracks it) keeps climbing with valueScale, uncapped by what any server
-  // can hold — late-game growth is "the same job pays more." Demand SIZE is separately clamped
-  // to whatever still fits some tier (getDemandScale), so an offer can never scale past what
-  // the catalog can serve.
+  // Two different scales past this point. PAY (and the miss penalty, which tracks it) keeps
+  // climbing with valueScale, uncapped by what any server can hold — late-game growth is "the
+  // same job pays more." Demand SIZE is separately clamped to whatever still fits some tier
+  // (getDemandScale), so an offer can never scale past what the catalog can serve.
   const appliedValueScale = archetype.scales ? valueScale : 1;
   const appliedDemandScale = archetype.scales ? getDemandScale(archetypeId, valueScale) : 1;
 
-  // D2: roll how many extra cycles this offer commits to, then apply the recurring pay
-  // discount (D2's "trading rate for certainty") only when it actually recurs.
+  // Roll how many extra cycles this offer commits to, then apply the recurring pay discount
+  // ("trading rate for certainty") only when it actually recurs.
   const [minRepeat, maxRepeat] = archetype.repeatRange;
   const repeatCount = minRepeat + Math.floor(random * (maxRepeat - minRepeat + 1));
   const payMultiplier = repeatCount > 0 ? RECURRING_PAY_MULTIPLIER : 1;
@@ -192,8 +188,8 @@ export function spawnOffer(
     payPerSecond: archetype.payPerSecond * appliedValueScale * payMultiplier,
     secondsRemaining: archetype.offerSeconds,
     slot: lowestFreeOfferSlot(world),
-    // D1: scaled the same way payPerSecond is (value, not demand) for `scales: true`
-    // archetypes, so late-game penalties don't fall behind late-game pay.
+    // Scaled the same way payPerSecond is (value, not demand) for `scales: true` archetypes,
+    // so late-game penalties don't fall behind late-game pay.
     penaltyOnMiss: archetype.penaltyOnMiss * appliedValueScale,
     repeatCount,
     repeatTotal: repeatCount + 1,

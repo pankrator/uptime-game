@@ -8,17 +8,16 @@ import { activeModal } from '../modal';
 import { type System } from './system';
 
 // Whether a press at `pointer` is allowed to pan the camera if it turns into a drag — the touch
-// equivalent of WASD panning, since a touchscreen has no keyboard (see
-// .plans/mobile-touch-support.md D3). This is a deliberately narrow subset of input.ts's full
-// click-priority chain (HUD, build mode, an active install, an open rack/shop panel, an
-// in-progress workload drag) — duplicated rather than shared, same trade-off as hud.ts's
-// anyServerFits: this only needs a yes/no "is anything else claiming this gesture" check, not
-// the full ordered chain, and it only ever affects camera framing (presentation), never game
-// state, so a stale answer for one frame has no real consequence.
+// equivalent of WASD panning, since a touchscreen has no keyboard. This is a deliberately narrow
+// subset of input.ts's full click-priority chain (HUD, build mode, an active install, an open
+// rack/shop panel, an in-progress workload drag) — duplicated rather than shared, same
+// trade-off as hud.ts's anyServerFits: this only needs a yes/no "is anything else claiming this
+// gesture" check, not the full ordered chain, and it only ever affects camera framing
+// (presentation), never game state, so a stale answer for one frame has no real consequence.
 //
-// No tutorial-banner check here: the banner isn't part of pointerInHud's blocking region (see
-// .plans/playtest-findings.md B1) — dragging over it pans the camera same as dragging any other
-// empty floor, consistent with a click there falling through to the ordinary click chain.
+// No tutorial-banner check here: the banner isn't part of pointerInHud's blocking region —
+// dragging over it pans the camera same as dragging any other empty floor, consistent with a
+// click there falling through to the ordinary click chain.
 function canPanCamera(
   world: World,
   renderer: Renderer,
@@ -38,9 +37,9 @@ function canPanCamera(
 }
 
 // Runs in renderSystems, not updateSystems — presentation only, must not affect simulation
-// when the tab is hidden (see .plans/facility-shop-inventory.md Step 1). The game loop's
-// render systems are always called with update(0) (rAF pauses in background tabs; wall-clock
-// delta is tracked here instead so the camera still eases/pans smoothly while visible).
+// when the tab is hidden. The game loop's render systems are always called with update(0)
+// (rAF pauses in background tabs; wall-clock delta is tracked here instead so the camera still
+// eases/pans smoothly while visible).
 export function createCameraSystem(
   world: World,
   renderer: Renderer,

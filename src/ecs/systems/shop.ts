@@ -1,8 +1,7 @@
 // Shop lifecycle: proximity open/close (mirrors rack-panel.ts's arrival pattern, but simpler —
-// no travel state to track, just in-range or not), buy(), which applies D6's three purchasable
-// kinds, and (F7) click hit-testing — handleShopClick, called from input.ts's click-priority
-// chain once the shop is the active modal (see ../modal.ts). See
-// .plans/facility-shop-inventory.md Step 5.
+// no travel state to track, just in-range or not), buy(), which applies the three purchasable
+// kinds, and click hit-testing — handleShopClick, called from input.ts's click-priority
+// chain once the shop is the active modal (see ../modal.ts).
 import { type World, type EntityId } from '../world';
 import {
   positions,
@@ -40,10 +39,10 @@ const SHOP_REACH_PX = 80; // ~2 grid cells — close enough to the shop door to 
 
 // Set when the player dismisses the panel with Escape while still in range (input.ts) — without
 // this, proximity would reopen it the very next frame. Cleared once they leave range, so
-// walking away and back re-opens it normally. Left as module state deliberately (F15,
-// .plans/design-review.md) — unlike shopTab (ShopTab above), this is genuinely one-shot,
-// same-frame-scoped gesture memory with no meaningful "value" a save or a second player could
-// ever want, so a component would only add ECS ceremony without a real ownership benefit.
+// walking away and back re-opens it normally. Left as module state deliberately — unlike
+// shopTab (ShopTab above), this is genuinely one-shot, same-frame-scoped gesture memory with no
+// meaningful "value" a save or a second player could ever want, so a component would only add
+// ECS ceremony without a real ownership benefit.
 let dismissedWhileInRange = false;
 
 export function dismissShop(): void {
@@ -62,8 +61,8 @@ export function closeShop(world: World, controlled: EntityId): void {
 
 registerModalCloser('shop', closeShop);
 
-// F15 (.plans/design-review.md): which category tab is selected, per player — a ShopTab
-// component instead of module-level state, lazily seeded on first read/write (mirrors
+// Which category tab is selected, per player — a ShopTab component instead of module-level
+// state, lazily seeded on first read/write (mirrors
 // rack-panel.ts's own lazy RackScroll init). handleShopClick (this module) and render.ts's
 // drawShopPanel both read/write the same component instead of a shared module-level object.
 export function getShopTab(world: World, controlled: EntityId): string {
@@ -102,7 +101,7 @@ function canAfford(world: World, facility: EntityId, cost: number): boolean {
   return Math.floor(wallet.money) >= cost;
 }
 
-// Applies a purchase's effect per its kind (D6): 'stock' → inventory +1, 'instant' → capacity
+// Applies a purchase's effect per its kind: 'stock' → inventory +1, 'instant' → capacity
 // applied now, 'room' → room tier advances now. Rejected (no-op, returns false) if the wallet
 // can't cover it. Returns true iff a purchase was actually applied — input.ts uses this to
 // tell a real buy from a rejected click (e.g. to advance the tutorial's shop step).
@@ -131,8 +130,8 @@ export function buy(world: World, facility: EntityId, purchasableId: Purchasable
   }
 
   // 'room': advance to the next tier. purchasableId is `room-${tierId}` — the shop only ever
-  // offers the immediate next tier as a catalog entry (game-data.ts's roomPurchasables), so
-  // buying it always means "advance by one."
+  // offers the immediate next tier as a catalog entry, so buying it always means "advance by
+  // one."
   const roomTier = world.getComponent(roomTiers, facility);
   if (!roomTier) return false;
   const nextIndex = roomTier.index + 1;
@@ -143,8 +142,8 @@ export function buy(world: World, facility: EntityId, purchasableId: Purchasable
   return false;
 }
 
-// F7: panel hit-testing, moved here from input.ts — this module owns the shop's tabs/buy rows
-// (it already draws against the same layout getters in render.ts), so the click targets live
+// Panel hit-testing — this module owns the shop's tabs/buy rows (it already draws against the
+// same layout getters in render.ts), so the click targets live
 // next to it. Called from input.ts's click-priority chain only once activeModal() (../modal.ts)
 // is already 'shop'; ordering there is load-bearing the same way the rack panel's is (both
 // absorb every click while open).

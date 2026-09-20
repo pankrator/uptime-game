@@ -52,8 +52,8 @@ describe('workload spawn system', () => {
   });
 });
 
-// F14 (.plans/design-review.md): pickArchetype's roll is now an injectable parameter, so these
-// cases can pin an exact outcome instead of statistically sampling Math.random().
+// pickArchetype's roll is now an injectable parameter, so these cases can pin an exact outcome
+// instead of statistically sampling Math.random().
 describe('pickArchetype', () => {
   it('always picks the only eligible archetype, whatever the roll', () => {
     // reputation 10: only web (minReputation 0) is unlocked.

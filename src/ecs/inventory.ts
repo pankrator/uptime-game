@@ -2,8 +2,8 @@ import { type World, type EntityId } from './world';
 import { inventories } from './components';
 import { type PurchasableId } from './game-data';
 
-// Pure functions over Inventory (D5) — both the systems that buy (shop.ts) and place
-// (input.ts) go through these rather than touching `counts` directly.
+// Pure functions over Inventory — both the systems that buy (shop.ts) and place (input.ts) go
+// through these rather than touching `counts` directly.
 
 export function countOf(world: World, facility: EntityId, id: PurchasableId): number {
   const inventory = world.getComponent(inventories, facility);

@@ -5,9 +5,9 @@ import { type SaveEnvelope, type SerializedEntity } from './types';
 
 // Entities are saved as an array; a component's reference to another entity (InstalledIn.rackId
 // etc.) is remapped to that entity's INDEX in the array, not its live numeric id — ids aren't
-// meaningful across a save/load boundary (see .plans/save-load.md D3). Only entities that carry
-// at least one persistent component are included, in ascending id order (arbitrary but stable,
-// which is all a round trip needs).
+// meaningful across a save/load boundary. Only entities that carry at least one persistent
+// component are included, in ascending id order (arbitrary but stable, which is all a round
+// trip needs).
 export function serializeWorld(world: World): SaveEnvelope {
   const entityIds = new Set<EntityId>();
   for (const entry of SAVE_COMPONENTS) {

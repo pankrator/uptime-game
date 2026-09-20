@@ -22,7 +22,7 @@ describe('findPath', () => {
     const world = createWorld();
     const path = findPath(world, openRegion(), { gridX: 0, gridY: 0 }, { gridX: 2, gridY: 0 });
     expect(path).not.toBeNull();
-    expect(path).toHaveLength(2); // 2 steps, start cell excluded (see findPath's path.shift())
+    expect(path).toHaveLength(2); // start cell excluded from the returned path
     expect(path![path!.length - 1]).toEqual({ gridX: 2, gridY: 0 });
   });
 

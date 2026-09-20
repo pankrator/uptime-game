@@ -1,4 +1,4 @@
-// Envelope-level schema versioning — see .plans/save-load.md D6.
+// Envelope-level schema versioning.
 //
 // Adding a component needs no migration: an old save simply lacks that key, which
 // deserialize.ts already treats as "component absent," an ordinary legal ECS state.

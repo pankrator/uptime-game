@@ -28,9 +28,8 @@ function cellKey(cell: GridCell): string {
 
 // Occupied-cell lookup, built once per findPath call and passed down rather than each
 // isWalkable call doing its own world.query scan — A* visits many cells per search, so an
-// O(cells × entities) scan per cell becomes a visible hitch on a larger world (see
-// .plans/facility-shop-inventory.md Step 3's performance note). Occupancy is only ever read,
-// never mutated, during a search.
+// O(cells × entities) scan per cell becomes a visible hitch on a larger world. Occupancy is only
+// ever read, never mutated, during a search.
 export function buildOccupiedSet(world: World): Set<string> {
   const occupied = new Set<string>();
   for (const id of world.query(gridPositions)) {

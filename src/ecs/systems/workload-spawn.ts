@@ -10,9 +10,9 @@ import {
 import { spawnOffer } from '../../entities';
 import { type System } from './system';
 
-// F14 (.plans/design-review.md): the weighting roll is a parameter, defaulted to Math.random(),
-// following wear.ts's rollFailure — exported so a test can drive a specific archetype pick
-// without stubbing a global.
+// The weighting roll is a parameter, defaulted to Math.random(), following wear.ts's
+// rollFailure — exported so a test can drive a specific archetype pick without stubbing a
+// global.
 export function pickArchetype(reputation: number, random: number = Math.random()): WorkloadArchetypeId {
   const eligible = Object.values(WORKLOAD_ARCHETYPES).filter(
     (archetype) => archetype.minReputation <= reputation,
@@ -53,9 +53,8 @@ export function createWorkloadSpawnSystem(world: World, facility: EntityId): Sys
       }
 
       const archetypeId = pickArchetype(reputation.value);
-      // Facility-wide installed/online CPU, not peakComputeServed — see
-      // .plans/compute-scale-fix.md D1. spawnOffer derives the separately-capped demand scale
-      // from this same value (D2).
+      // Facility-wide installed/online CPU, not peakComputeServed. spawnOffer derives the
+      // separately-capped demand scale from this same value.
       const valueScale = getValueScale(clock.elapsedSeconds, utilization.traitsTotal.cpu);
       spawnOffer(world, archetypeId, valueScale);
 
@@ -66,8 +65,8 @@ export function createWorkloadSpawnSystem(world: World, facility: EntityId): Sys
 
 // Ticks every open offer's countdown; at zero it auto-declines — destroyed directly, NOT via
 // dispatch.ts's declineOffer, so REPUTATION_ON_DECLINE never applies here. An ignored offer is
-// a silent decline: the player never made a choice, so per .plans/contract-variety.md D1 it
-// costs nothing, unlike an explicit decline click.
+// a silent decline: the player never made a choice, so it costs nothing, unlike an explicit
+// decline click.
 export function createOfferExpirySystem(world: World): System {
   return {
     update(deltaSeconds: number) {

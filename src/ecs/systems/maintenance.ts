@@ -1,10 +1,9 @@
-// Walk-to-rack-then-work flow, attached to the player. Renamed from install-progress.ts and
-// generalized (.plans/hardware-failure.md D5) to also handle repairing a failed machine and
-// decommissioning one entirely — all three share the identical walk/arrival/countdown shape;
-// createMaintenanceSystem only branches at completion. F7: this module also owns starting each
-// task (startInstall/startRepair/startDecommission) and cancelling one (cancelMaintenanceTask)
-// — the module that finishes a MaintenanceTask is the one that creates it, rather than that
-// split across this file and input.ts.
+// Walk-to-rack-then-work flow, attached to the player. Handles installing a bought machine,
+// repairing a failed one, and decommissioning one entirely — all three share the identical
+// walk/arrival/countdown shape; createMaintenanceSystem only branches at completion. This module
+// also owns starting each task (startInstall/startRepair/startDecommission) and cancelling one
+// (cancelMaintenanceTask) — the module that finishes a MaintenanceTask is the one that creates
+// it, rather than that split across this file and input.ts.
 import { type World, type EntityId } from '../world';
 import {
   positions,
@@ -49,7 +48,7 @@ function occupiedSlots(world: World, rackId: EntityId): Set<number> {
   return occupied;
 }
 
-// Exported for input.ts: F4, one copy instead of two byte-identical bodies.
+// Exported for input.ts, so there's one copy instead of two byte-identical bodies.
 export function findLowestFreeSlot(world: World, rackId: EntityId, capacity: number): number | null {
   const occupied = occupiedSlots(world, rackId);
   for (let slot = 0; slot < capacity; slot++) {
@@ -58,10 +57,10 @@ export function findLowestFreeSlot(world: World, rackId: EntityId, capacity: num
   return null;
 }
 
-// D7 (install)/D5 (repair): cancelling refunds whatever was taken up front — the item to
-// INVENTORY for an install (it was bought at the shop and is still owned; only the install
-// itself was abandoned) or the wear-scaled fee to the WALLET for a repair. A decommission has
-// nothing to refund: its payout only happens on completion (below), never up front.
+// Cancelling refunds whatever was taken up front — the item to INVENTORY for an install (it was
+// bought at the shop and is still owned; only the install itself was abandoned) or the
+// wear-scaled fee to the WALLET for a repair. A decommission has nothing to refund: its payout
+// only happens on completion (below), never up front.
 export function cancelMaintenanceTask(world: World, facility: EntityId, controlled: EntityId): void {
   const task = world.getComponent(maintenanceTasks, controlled);
   if (!task) return;
@@ -78,9 +77,9 @@ export function cancelMaintenanceTask(world: World, facility: EntityId, controll
   world.removeComponent(moveTargets, controlled);
 }
 
-// F7: moved here from input.ts — this is the module that finishes an install, so it's also the
-// one that starts it. Takes rackId directly (callers already resolve it via rack-panel.ts's
-// findRackAt) rather than a grid cell, so this module never needs to depend on rack-panel.ts.
+// This is the module that finishes an install, so it's also the one that starts it. Takes
+// rackId directly (callers already resolve it via rack-panel.ts's findRackAt) rather than a grid
+// cell, so this module never needs to depend on rack-panel.ts.
 export function startInstall(
   world: World,
   controlled: EntityId,
@@ -110,8 +109,7 @@ export function startInstall(
 }
 
 // Repair/decommission both queue a MaintenanceTask exactly like install does — click from
-// anywhere (viewing-mode panel included), then walk there, then the work happens. See
-// .plans/hardware-failure.md D5 ("one task at a time," attached to the player) and Step 6.
+// anywhere (viewing-mode panel included), then walk there, then the work happens.
 export function startRepair(
   world: World,
   controlled: EntityId,
@@ -200,9 +198,8 @@ export function createMaintenanceSystem(
       if (job.kind === 'install') {
         const slots = world.getComponent(rackSlots, task.rackId);
         if (!slots) {
-          // D5 fix: the rack is gone — return the item to INVENTORY, not money. Placement
-          // consumes inventory stock (.plans/facility-shop-inventory.md D5), so an abandoned
-          // install must give the stock back, not mint cash.
+          // The rack is gone — return the item to INVENTORY, not money. Placement consumes
+          // inventory stock, so an abandoned install must give the stock back, not mint cash.
           addToInventory(world, facility, `machine-${job.tierId}` as PurchasableId);
           world.removeComponent(maintenanceTasks, controlled);
           return;

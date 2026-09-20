@@ -4,10 +4,10 @@ import { getRoomRect } from './room';
 import type { GridBounds } from './pathfinding';
 
 // Shop building, placed beyond the largest room tier's footprint, reached via an outdoor
-// corridor along the room's TOP edge — the one edge that stays fixed across every tier (D4:
-// tiers grow right and down from a fixed top-left origin, so top and left never move). A
-// corridor anchored to the right or bottom edge would only reach the shop once the room was
-// fully upgraded to its largest tier; anchoring to the top keeps the shop reachable from tier 0.
+// corridor along the room's TOP edge — the one edge that stays fixed across every tier (tiers
+// grow right and down from a fixed top-left origin, so top and left never move). A corridor
+// anchored to the right or bottom edge would only reach the shop once the room was fully
+// upgraded to its largest tier; anchoring to the top keeps the shop reachable from tier 0.
 const largestTier = ROOM_TIERS[ROOM_TIERS.length - 1];
 const CORRIDOR_HEIGHT = 4; // grid cells, the strip's thickness running along the top edge
 const CORRIDOR_ROW_MIN = ROOM_ORIGIN.gridY - CORRIDOR_HEIGHT;

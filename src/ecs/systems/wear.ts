@@ -1,9 +1,8 @@
-// Accrues per-machine wear and rolls for failure. See .plans/hardware-failure.md D1-D4, D8 and
-// Step 3.
+// Accrues per-machine wear and rolls for failure.
 //
-// Runs AFTER resource.ts (needs this tick's Powered.online — wear only accrues while online,
-// D1) and AFTER thermal.ts (needs this tick's rack Temperature — heat accelerates wear, D3).
-// See the ordering comment in main.ts.
+// Runs AFTER resource.ts (needs this tick's Powered.online — wear only accrues while online)
+// and AFTER thermal.ts (needs this tick's rack Temperature — heat accelerates wear). See the
+// ordering comment in main.ts.
 import { type World, type EntityId } from '../world';
 import { machines, installedIns, powereds, conditions, faileds, temperatures, demandClocks } from '../components';
 import { heatWearMultiplier, wearGain, failureChancePerSecond, rollFailure } from '../wear';
@@ -19,9 +18,9 @@ export function createWearSystem(world: World, facility: EntityId, events: Event
 
       for (const machineId of world.query(machines, installedIns, conditions, powereds)) {
         const powered = world.getComponent(powereds, machineId)!;
-        if (!powered.online) continue; // D1: wear accrues only while online
+        if (!powered.online) continue;
 
-        if (world.getComponent(faileds, machineId)) continue; // already dead, nothing to wear
+        if (world.getComponent(faileds, machineId)) continue;
 
         const condition = world.getComponent(conditions, machineId)!;
         const rackId = world.getComponent(installedIns, machineId)!.rackId;
@@ -36,7 +35,7 @@ export function createWearSystem(world: World, facility: EntityId, events: Event
         if (rollFailure(chance, deltaSeconds, Math.random())) {
           world.addComponent(faileds, machineId, { failedAt: elapsedSeconds });
           powered.online = false;
-          powered.offlineCooldown = 0; // D4: stays dead until repaired — no cooldown-based self-recovery
+          powered.offlineCooldown = 0; // stays dead until repaired — no cooldown-based self-recovery
           unplaceAllOn(world, machineId);
           events.emit('machine:failed', { machineId });
         }
@@ -45,9 +44,9 @@ export function createWearSystem(world: World, facility: EntityId, events: Event
   };
 }
 
-// Exported for maintenance.ts (D5's repair completion) and resource.ts's Failed veto: neither
-// this module nor the world's rules need it, but a lookup helper here keeps the failure
-// vocabulary in one place next to where a machine actually breaks.
+// Exported for maintenance.ts's repair completion and resource.ts's Failed veto: neither this
+// module nor the world's rules need it, but a lookup helper here keeps the failure vocabulary in
+// one place next to where a machine actually breaks.
 export function clearFailure(world: World, machineId: EntityId): void {
   world.removeComponent(faileds, machineId);
 }

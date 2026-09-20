@@ -1,7 +1,7 @@
 // Small WebAudio-based SFX module. Systems call play(name) with a named event — never touch
 // AudioContext/oscillators directly — so gameplay code stays decoupled from how a sound is
-// synthesized. SFX are oscillator synthesis, per .plans/sound-and-juice.md; background music is
-// a loaded track (see MUSIC_TRACK_URL below) rather than generated.
+// synthesized. SFX are oscillator synthesis; background music is a loaded track (see
+// MUSIC_TRACK_URL below) rather than generated.
 const MUTE_STORAGE_KEY = 'dcmgr.audio.muted';
 const MUSIC_TRACK_URL = `${import.meta.env.BASE_URL}audio/The_Quiet_Logic.mp3`;
 const MUSIC_VOLUME = 0.35;

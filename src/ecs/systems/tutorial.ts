@@ -102,7 +102,7 @@ export function startTutorial(
 // Subscribed to the 'shop:purchased' event (createTutorialSystem, below) rather than called
 // directly — shop.ts emits it only when buy() reports the purchase actually went through, so a
 // click that gets rejected (can't afford it) never fires it and never silently advances the
-// 'visit-shop' step. See .plans/event-bus.md.
+// 'visit-shop' step.
 function recordShopPurchase(world: World, facility: EntityId): void {
   const progress = world.getComponent(tutorialProgresses, facility);
   if (!progress) return;

@@ -1,4 +1,4 @@
-// F7/F16: handleShopClick was extracted from input.ts into a plain function taking a Renderer
+// handleShopClick was extracted from input.ts into a plain function taking a Renderer
 // (read-only, width/height) and a point, so it can be exercised headlessly.
 import { describe, it, expect } from 'vitest';
 import { handleShopClick, getShopTab, shopCategories } from './shop';

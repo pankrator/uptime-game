@@ -2,8 +2,7 @@
 // finished a contract) and screen-space toast banners (e.g. a miss notice, a resource-near-limit
 // warning). Neither has any gameplay effect — this module exists so every OTHER system that
 // wants to say "something happened" has one place to call into, instead of each inventing its
-// own transient-entity bookkeeping. See .plans/playtest-findings.md F7 (and F4, which reuses the
-// toast half for its pre-brownout warning).
+// own transient-entity bookkeeping.
 //
 // Spawn functions are called from wherever the event actually happens (workload-run.ts on
 // completion/miss, resource.ts on a near-limit crossing) — this module only owns the entities'

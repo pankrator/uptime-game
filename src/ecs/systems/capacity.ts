@@ -20,8 +20,8 @@ import { type System } from './system';
 // ServerCapacity.free per machine, RackLoad (power/heat/server count) per rack, and the
 // facility's Utilization.traitsTotal/traitsFree.
 //
-// Reads placement off `PlacedOn` (on the workload — see D1, one workload per server, a server
-// can host several workloads until its traits exhaust).
+// Reads placement off `PlacedOn` (on the workload — a server can host several workloads until
+// its traits exhaust).
 //
 // Runs AFTER resource.ts (which decides Powered.online) and BEFORE workload-run.ts — running
 // workload-run against stale free-capacity would pay out for placements a brownout already
@@ -39,7 +39,7 @@ export function createCapacitySystem(world: World, facility: EntityId): System {
       let traitsFree = zeroTraits();
 
       // Sum of demands for every workload PlacedOn a given server — a server can host several
-      // workloads at once (D1), so this is a fold, not a single lookup.
+      // workloads at once, so this is a fold, not a single lookup.
       const usedByServer = new Map<EntityId, ReturnType<typeof zeroTraits>>();
       for (const workloadId of world.query(placedOns)) {
         const serverId = world.getComponent(placedOns, workloadId)!.serverId;
@@ -72,9 +72,9 @@ export function createCapacitySystem(world: World, facility: EntityId): System {
           heatKw: 0,
           serverCount: 0,
         };
-        // Same draw resource.ts bills and brownout-selects on (idle-fraction discount, F5,
-        // included) — calling its drawFor directly instead of a second, previously-duplicated
-        // calculation keeps the rack panel's readout and the actual billing from disagreeing.
+        // Same draw resource.ts bills and brownout-selects on (idle-fraction discount included)
+        // — calling its drawFor directly instead of a second, duplicated calculation keeps the
+        // rack panel's readout and the actual billing from disagreeing.
         const draw = drawFor(world, machineId);
         rackAccum.powerKw += draw.powerKw;
         // Heat === cooling draw for now; kept as a separate field on RackLoad so local heat

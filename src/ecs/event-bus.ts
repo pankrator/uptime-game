@@ -1,8 +1,6 @@
 // Generic, typed, synchronous pub/sub. Decouples the system that raises a domain event (e.g.
 // "a machine just failed") from whatever reacts to it (e.g. play a sound), without either one
-// importing the other — see game-events.ts for this game's concrete event map and
-// .plans/event-bus.md for the design rationale and what deliberately still uses a direct call
-// instead of this.
+// importing the other — see game-events.ts for this game's concrete event map.
 //
 // Deliberately synchronous, not queued/deferred: emit() runs every subscribed handler
 // immediately, in subscription order, before returning — this project's tick (main.ts's

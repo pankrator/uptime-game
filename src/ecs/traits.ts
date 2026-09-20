@@ -1,7 +1,7 @@
 // Pure trait arithmetic — no ECS dependency, no side effects. Every system that touches
 // traits goes through this module; no ad-hoc `a.cpu - b.cpu` anywhere else. Iterating
 // TRAIT_KEYS here is what makes a future trait (e.g. bandwidth) a one-line addition instead of
-// a hunt through every system. See .plans/workload-dispatch.md D5.
+// a hunt through every system.
 import { TRAIT_KEYS, type Traits, type TraitKey } from './game-data';
 
 export function zeroTraits(): Traits {

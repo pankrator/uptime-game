@@ -1,10 +1,7 @@
-// Shared canvas drawing vocabulary (F11, .plans/design-review.md). Colors that used to be
-// declared three separate times (RACK_PANEL_*, SHOP_*, hud.ts's TEXT_COLOR/DIM_COLOR/RED/
-// AMBER/GREEN) live here once, and the "grey track, colored fill, clamp the fraction" bar
-// pattern — written by hand four times across render.ts and hud.ts — is one function.
+// Shared canvas drawing vocabulary, used by render.ts and hud.ts.
 //
-// Deliberately small: no framework, no retained-mode scene graph. See the finding's own
-// trade-off note — a canvas UI library would be solving a problem this project does not have.
+// Deliberately small: no framework, no retained-mode scene graph — a canvas UI library would be
+// solving a problem this project does not have at this scale.
 export const UI = {
   text: '#e6e8eb',
   dim: '#9aa0a6',

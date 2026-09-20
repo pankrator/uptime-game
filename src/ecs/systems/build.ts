@@ -1,8 +1,8 @@
-// Build mode: the build panel entry toggle and placing a buildable into the world. Extracted
-// from input.ts's click router (.plans/input-router-refactor.md D3) — input.ts decides WHEN a
-// click reaches these, not WHAT they do, same split as rack-panel.ts's handleRackPanelClick /
-// shop.ts's handleShopClick. No System of its own: build mode has no per-frame behavior beyond
-// reacting to a click/key, same as offers/jobs' click handlers.
+// Build mode: the build panel entry toggle and placing a buildable into the world. input.ts's
+// click router decides WHEN a click reaches these, not WHAT they do, same split as
+// rack-panel.ts's handleRackPanelClick / shop.ts's handleShopClick. No System of its own: build
+// mode has no per-frame behavior beyond reacting to a click/key, same as offers/jobs' click
+// handlers.
 import { type World, type EntityId } from '../world';
 import {
   gridPositions,

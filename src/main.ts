@@ -45,8 +45,8 @@ if (!landingContainer) {
 }
 
 // One SaveManager for the page's whole lifetime — the landing screen's slot picker and
-// runGame's load/quicksave path both go through it. See .plans/save-load.md D1: swapping in a
-// backend later is replacing this one line, nothing downstream of it changes.
+// runGame's load/quicksave path both go through it. Swapping in a backend later is replacing
+// this one line, nothing downstream of it changes.
 const saveManager = createSaveManager(createLocalStorageSaveStorage());
 
 // Reads all 5 slots and renders the landing screen's slot picker. Called once at startup —
@@ -122,7 +122,7 @@ async function runGame(
       player = world.query(playerTags)[0];
     }
     if (!loaded || facility === undefined || player === undefined) {
-      // Corrupt/foreign save data (D6) — fall back to a fresh game rather than leaving the
+      // Corrupt/foreign save data — fall back to a fresh game rather than leaving the
       // player stuck on an error. The landing screen only offers "Continue" on a slot
       // describeSlots() already found occupied, so this path is only reached by a save that
       // failed to parse/hydrate.
@@ -146,8 +146,8 @@ async function runGame(
     startTutorial(world, facility, spawnPoint);
   }
 
-  // Quicksave — no in-game panel yet (see .plans/save-load.md D7/Non-goals; a Canvas-drawn
-  // pause/save panel is a follow-up), but the slot this run started from needs SOME way to be
+  // Quicksave — no in-game panel yet (a Canvas-drawn pause/save panel is a follow-up), but the
+  // slot this run started from needs SOME way to be
   // written from inside a running game, or "Continue" on that slot never has anything to load.
   // Always saves back to the SAME slot the run started in (`slot`, fixed for this runGame
   // call) — there's no in-game slot switcher, only the landing screen's picker chooses a slot.
@@ -171,10 +171,8 @@ async function runGame(
     },
   };
 
-  // ORDER IS LOAD-BEARING — see .plans/machines-and-racks.md, .plans/workload-economy.md,
-  // .plans/workload-dispatch.md, and .plans/hardware-failure.md.
-  // - maintenance (renamed from install-progress) runs before movement (detects arrival on last
-  //   frame's position).
+  // ORDER IS LOAD-BEARING.
+  // - maintenance runs before movement (detects arrival on last frame's position).
   // - resource runs before capacity/workload-run: it computes Powered.online, which both depend
   //   on. Running workload-run first would pay out for browned-out machines and the capacity
   //   wall would be cosmetic.
@@ -182,8 +180,8 @@ async function runGame(
   // - rack-panel runs after movement (arrival detection needs this frame's position) and before
   //   capacity: it commits any PendingDrop on arrival via placeWorkload, which capacity.ts must
   //   see this same frame. It's also where the player's drag-and-drop dispatch actually places
-  //   workloads (step 8 of workload-dispatch.md) — there is no auto-placer anymore; a workload
-  //   sits in the tray, unplaced, until the player drags it onto a server.
+  //   workloads — there is no auto-placer anymore; a workload sits in the tray, unplaced, until
+  //   the player drags it onto a server.
   // - capacity runs AFTER resource (needs Powered.online) and BEFORE workload-run: running
   //   workload-run against stale free-capacity would pay out for placements a brownout already
   //   invalidated this frame.
@@ -192,19 +190,18 @@ async function runGame(
   //   a machine already offline from a brownout doesn't also generate heat. resource.ts is the
   //   sole writer of Powered.online; thermal.ts may only force a rack's machines offline on trip
   //   (never force them online) and otherwise signals via the ThermalTrip marker, which
-  //   resource.ts reads as a veto on bringing a tripped rack back online — see
-  //   .plans/thermal-and-cooling.md D7.
+  //   resource.ts reads as a veto on bringing a tripped rack back online.
   // - wear runs AFTER resource (wear only accrues while Powered.online, and a failure sets it
-  //   false) and AFTER thermal (heat accelerates wear, so it needs this tick's Temperature) —
-  //   see .plans/hardware-failure.md D3/Step 3. It runs BEFORE workload-run so a machine that
-  //   fails this frame doesn't also get paid this frame. Like thermal's ThermalTrip, wear.ts is
-  //   the sole writer of the Failed marker; resource.ts only reads it, as a third veto on
-  //   Powered.online alongside brownout and thermal trip (D7 of this plan) — never force a
-  //   failed machine back online anywhere but a completed repair (maintenance.ts).
+  //   false) and AFTER thermal (heat accelerates wear, so it needs this tick's Temperature). It
+  //   runs BEFORE workload-run so a machine that fails this frame doesn't also get paid this
+  //   frame. Like thermal's ThermalTrip, wear.ts is the sole writer of the Failed marker;
+  //   resource.ts only reads it, as a third veto on Powered.online alongside brownout and
+  //   thermal trip — never force a failed machine back online anywhere but a completed repair
+  //   (maintenance.ts).
   // - spawn runs before run so a contract's offer window starts the same frame it arrives.
   // - job-panels runs right after input: it's an input-reactive system in its own right (key
   //   toggles, wheel-scroll) but doesn't feed or depend on anything else this tick, so its exact
-  //   position beyond "after input" isn't load-bearing — see .plans/job-panels.md.
+  //   position beyond "after input" isn't load-bearing.
   const updateSystems = [
     createInputSystem(world, inputState, renderer, player, facility, camera, audio, events),
     quicksaveSystem,

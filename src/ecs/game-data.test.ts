@@ -37,21 +37,21 @@ describe('getArrivalInterval', () => {
   });
 });
 
-// The .plans/playtest-findings.md B3 regression: getValueScale used to be keyed off the single
-// largest COMPLETED workload's cpu demand (peakComputeServed), which the catalog caps at 12 —
-// so capacityScale could never exceed max(1, 12/30) = 1, permanently pinning the whole function
-// at 1x regardless of how the facility played. It is now keyed off installed/online facility
-// CPU instead. This test asserts the property whose absence WAS the bug: value scale must be
-// able to climb past 1 as the facility's own installed capacity grows.
+// Regression test: getValueScale used to be keyed off the single largest COMPLETED workload's
+// cpu demand (peakComputeServed), which the catalog caps at 12 — so capacityScale could never
+// exceed max(1, 12/30) = 1, permanently pinning the whole function at 1x regardless of how the
+// facility played. It is now keyed off installed/online facility CPU instead. This test asserts
+// the property whose absence WAS the bug: value scale must be able to climb past 1 as the
+// facility's own installed capacity grows.
 describe('getValueScale (B3 regression: capacity scale must track facility capacity, not a single completed job)', () => {
   it('is pinned at 1x for a facility with no installed capacity, regardless of elapsed time', () => {
     expect(getValueScale(0, 0)).toBe(1);
     expect(getValueScale(10_000, 0)).toBe(1);
   });
 
-  // getValueScale is min(timeScale, capacityScale) — elapsed time is ALSO a ramp (see D1's
-  // "bounded by both a time ramp and the player's demonstrated capacity"), so these tests fix
-  // elapsedSeconds past the time ramp's own 10-minute ceiling to isolate capacity's effect.
+  // getValueScale is min(timeScale, capacityScale) — elapsed time is ALSO a ramp, bounded by
+  // both a time ramp and the player's demonstrated capacity, so these tests fix elapsedSeconds
+  // past the time ramp's own 10-minute ceiling to isolate capacity's effect.
   const TIME_RAMP_COMPLETE_SECONDS = 700; // >600s: 1 + min(2, elapsed/300) has reached its cap of 3
 
   it('grows past 1x as installed facility CPU grows — this is exactly what B3 could never do', () => {

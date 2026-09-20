@@ -1,9 +1,7 @@
-// The single place mapping a domain event (game-events.ts) to a sound. Before this, five
-// systems (maintenance/resource/thermal/wear/workload-run) each imported Audio directly and
-// hardcoded which SoundName their own state transition played; now they only need to know that
-// something happened, not who's listening or what it sounds like. Called once from main.ts's
-// runGame(), the same "wire it up once, outside any system's update()" treatment
-// registerModalCloser calls get in rack-panel.ts/shop.ts/job-panels.ts.
+// The single place mapping a domain event (game-events.ts) to a sound, so individual systems
+// only need to know that something happened, not who's listening or what it sounds like.
+// Called once from main.ts's runGame(), the same "wire it up once, outside any system's
+// update()" treatment registerModalCloser calls get in rack-panel.ts/shop.ts/job-panels.ts.
 import { type EventBus } from './event-bus';
 import { type GameEvents } from './game-events';
 import { type Audio } from '../audio';
@@ -15,7 +13,7 @@ export function wireAudioEvents(events: EventBus<GameEvents>, audio: Audio): voi
   events.on('machine:failed', () => audio.play('machineFailed'));
   // Same sound for both causes today (see game-events.ts's note on why they're still separate
   // event types) — may fire more than once per tick if several machines go offline together,
-  // same as the direct audio.play() calls this replaced (acceptable for a sub-300ms sound).
+  // acceptable for a sub-300ms sound.
   events.on('machine:browned-out', () => audio.play('brownout'));
   events.on('machine:thermal-tripped', () => audio.play('brownout'));
   events.on('contract:completed', () => audio.play('contractCompleted'));
