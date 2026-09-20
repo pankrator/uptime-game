@@ -104,3 +104,34 @@ default global plan location. Create the `.plans/` folder if it doesn't exist ye
 Build tool/bundler: **Vite**. Chosen over webpack/esbuild/Rollup/Parcel for fast dev-server
 startup and near-instant reload on change, minimal config, and native TypeScript support —
 all of which matter for a tight edit/see-the-change loop during game development.
+
+## Comment discipline
+
+1. **No narration comments.** Don't add comments that describe what the code does when the
+   code already makes that obvious (`// increment counter`, `// loop over racks`). Comments
+   should only explain why something non-obvious is done — a tricky workaround, a
+   non-standard choice, a constraint from an external system.
+2. **No references to planning docs, specs, or tickets in code.** Never write comments like
+   `// per the plan, this implements X` or `// as discussed in ARCHITECTURE.md, we do Y`.
+   Code should be self-contained and read correctly with zero knowledge that a plan/spec
+   file exists. If traceability to a plan matters, put that in the commit message or PR
+   description — not in the source.
+3. **No meta-commentary about the implementation process.** Avoid comments like
+   `// added this per requirements`, `// fixing bug from review`,
+   `// TODO: revisit after plan phase 2`. These describe the history of the change, not the
+   code itself.
+4. **Default to no comment.** If you're unsure whether a comment adds value, omit it. Err
+   toward clean, readable code with minimal comments rather than over-annotated code.
+5. **Docstrings/function-level comments are fine** when they explain a public API's contract
+   (inputs, outputs, side effects) — but keep them terse, no plan/spec references there
+   either.
+
+```ts
+// BAD:
+// Per .plans/thermal-tuning.md, we clamp the reading here
+const temp = clamp(rawTemp, MIN_TEMP, MAX_TEMP);
+
+// GOOD (only if genuinely non-obvious):
+// sensor firmware reports -1 during warmup; treat as room temp, not a real reading
+const temp = rawTemp < 0 ? ROOM_TEMP : rawTemp;
+```
