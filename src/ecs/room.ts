@@ -4,8 +4,7 @@ import { ROOM_ORIGIN, ROOM_TIERS } from './game-data';
 import type { GridBounds } from './pathfinding';
 
 // The current room tier's interior cell rect — the one place that answers "where is the
-// room", so pathfinding, rendering, and rack placement can't disagree (see
-// .plans/facility-shop-inventory.md Step 2).
+// room", so pathfinding, rendering, and rack placement can't disagree.
 export function getRoomRect(world: World, facility: EntityId): GridBounds {
   const tier = world.getComponent(roomTiers, facility);
   const def = ROOM_TIERS[tier?.index ?? 0];
