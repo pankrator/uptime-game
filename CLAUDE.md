@@ -40,6 +40,20 @@ a system.
   See `.plans/ecs-migration.md` for the full component/system inventory and migration steps.
 - New gameplay features are designed ECS-first: new state is a component, new behavior is a
   system, not a new entity subtype or method.
+- **Single writer per component.** For any given component type, exactly one system may write
+  to it; every other system that touches it only reads. If a change seems to need two systems
+  writing the same component, that's a signal the behavior belongs in one of them, or that the
+  component should be split so each part has a single owner.
+- **No cross-system function calls.** Components stay plain data — never attach a function to
+  one, and never have a system import and call another system's internal helper to mutate
+  shared state. Keep behavior specific to a system's own domain inside that system's file. When
+  two systems genuinely need to coordinate on the same mutation, extract the shared logic into
+  its own module that both call into (see `dispatch.ts`'s placement helpers) rather than reaching
+  into another system's file.
+- **Systems hold per-tick behavior only.** If logic isn't itself something that runs as part of
+  a system's `update` each tick — pure computation, math, formatting, data transforms — give it
+  its own module elsewhere in `src/` (e.g. `components.ts`'s grid math, `dispatch.ts`) instead of
+  folding it into a system file for convenience.
 
 ## ECS system docs
 
