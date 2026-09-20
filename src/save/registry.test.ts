@@ -3,9 +3,9 @@ import * as components from '../ecs/components';
 import { SAVE_COMPONENTS, TRANSIENT_COMPONENTS } from './registry';
 import { isComponentStore } from './test-utils';
 
-// The safety net .plans/save-load.md D2 promises: a new component that nobody classified as
-// persistent or explicitly transient fails here, at test time — not silently at save time by
-// just being missing from whoever's save file needed it.
+// A new component that nobody classified as persistent or explicitly transient fails here, at
+// test time — not silently at save time by just being missing from whoever's save file needed
+// it.
 describe('save component registry', () => {
   it('classifies every ComponentStore export of components.ts as persistent or transient', () => {
     const persistent = new Set(SAVE_COMPONENTS.map((entry) => entry.store));

@@ -1,5 +1,4 @@
-// Layer 3 (.plans/testing-strategy.md): a headless, multi-system sustained run — the automated
-// version of the manual "tuning pass" .plans/time-controls.md step 6 describes doing by eye
+// A headless, multi-system sustained run — the automated version of a manual tuning pass by eye
 // (reputation stays in range, offers stay capped, no negative free capacity). No canvas, no
 // dev server: just calling each system's update() in the same order main.ts documents as
 // load-bearing, for many simulated seconds, and asserting the invariants every tick.
@@ -55,9 +54,8 @@ describe('sustained facility simulation', () => {
       resource.update(dt);
       capacity.update(dt);
       autoDispatch(world, serverIds);
-      // Refresh free capacity to reflect this tick's own placements before checking invariants
-      // and running payouts — same reason main.ts runs capacity after resource and before
-      // workload-run: stale free capacity would let workload-run overcommit a server.
+      // Re-run so free capacity reflects this tick's own placements before payouts — stale free
+      // capacity would let workload-run overcommit a server.
       capacity.update(dt);
       spawn.update(dt);
       expiry.update(dt);

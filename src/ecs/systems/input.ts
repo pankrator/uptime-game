@@ -1,5 +1,5 @@
-// Click/key arbitration only (.plans/input-router-refactor.md). A click or key can only mean one
-// thing, so deciding WHICH system it belongs to has to live in one documented, ordered place —
+// Click/key arbitration only. A click or key can only mean one thing, so deciding WHICH system
+// it belongs to has to live in one documented, ordered place —
 // that's this file's whole job. It contains no gameplay logic of its own: every branch is either
 // a precondition check (is a panel open, is build mode active — inherently cross-system
 // knowledge, has to live somewhere neutral) or a single call into the system that owns that
@@ -86,8 +86,8 @@ export function createInputSystem(
         return;
       }
 
-      // -0.95. Recenter camera — only reachable while manually panned away (see
-      // .plans/mobile-touch-support.md D3); same always-reachable treatment as the mute button.
+      // -0.95. Recenter camera — only reachable while manually panned away; same
+      // always-reachable treatment as the mute button.
       if (camera.detached && pointerInRect(pointer, getRecenterButtonRect(renderer.width))) {
         camera.recenter();
         return;
@@ -96,8 +96,8 @@ export function createInputSystem(
       // -0.5. Tutorial banner — always reachable, checked early like the mute button, since the
       // banner sits above every other panel (see hud.ts's drawTutorialBanner). Its own hit
       // targets are checked directly here; the banner is NOT part of pointerInHud's blocking
-      // region below (see .plans/playtest-findings.md B1) — clicking anywhere else on it falls
-      // through to the ordinary click chain, same as clicking empty floor.
+      // region below — clicking anywhere else on it falls through to the ordinary click chain,
+      // same as clicking empty floor.
       const tutorialProgress = world.getComponent(tutorialProgresses, facility);
       const tutorialBannerVisible = !!tutorialProgress && !tutorialProgress.skipped;
       if (tutorialProgress && tutorialBannerVisible) {
@@ -180,7 +180,7 @@ export function createInputSystem(
       }
 
       // 4. Rack click (no build mode): dispatch — open/promote its panel and walk there. See
-      // rack-panel.ts's openOrPromoteRackPanel and D4.
+      // rack-panel.ts's openOrPromoteRackPanel.
       const worldPointer = camera.screenToWorld(pointer);
       const { gridX, gridY } = worldToGrid(worldPointer.x, worldPointer.y);
       const rackId = findRackAt(world, gridX, gridY);

@@ -8,9 +8,9 @@ import { migrateEnvelope } from './migrations';
 
 // Five user-visible save slots (the landing screen's slot picker — see src/landing/index.ts)
 // plus two reserved, non-user-visible slots: DEV_SLOT for the dev stress-preset button (so
-// testing never overwrites a real save) and AUTOSAVE_SLOT for an autosave system, still a
-// follow-up (see .plans/save-load.md Non-goals) — reserved here so callers can already ask
-// `hasSave(AUTOSAVE_SLOT)` etc. once something writes to it.
+// testing never overwrites a real save) and AUTOSAVE_SLOT for a future autosave system —
+// reserved here so callers can already ask `hasSave(AUTOSAVE_SLOT)` etc. once something writes
+// to it.
 export const SAVE_SLOT_COUNT = 5;
 export const SAVE_SLOT_IDS: readonly string[] = Array.from(
   { length: SAVE_SLOT_COUNT },
@@ -29,8 +29,8 @@ export interface SaveSlotInfo {
 export interface SaveManager {
   save(world: World, slot: string): Promise<void>;
   // Resolves false (and leaves `world` untouched) if the slot is empty or the saved data is
-  // corrupt/foreign JSON — see .plans/save-load.md D6: a bad save is "no save," never a thrown
-  // exception the caller has to guard against.
+  // corrupt/foreign JSON — a bad save is "no save," never a thrown exception the caller has to
+  // guard against.
   load(world: World, slot: string): Promise<boolean>;
   hasSave(slot: string): Promise<boolean>;
   deleteSave(slot: string): Promise<void>;
@@ -49,7 +49,7 @@ function isEnvelopeShape(value: unknown): value is SaveEnvelope {
 }
 
 export function createSaveManager(storage: SaveStorage): SaveManager {
-  // Shared by load/hasSave/describeSlots so "corrupt data reads as no save" (D6) is decided in
+  // Shared by load/hasSave/describeSlots so "corrupt data reads as no save" is decided in
   // exactly one place, rather than load() and hasSave() ever quietly disagreeing about it.
   async function readEnvelope(slot: string): Promise<SaveEnvelope | null> {
     const raw = await storage.read(slot);
@@ -82,11 +82,11 @@ export function createSaveManager(storage: SaveStorage): SaveManager {
       if (!envelope) return false;
       deserializeWorld(envelope, world);
 
-      // Utilization is deliberately transient (D4) — spawnFacility always seeds it for a
-      // fresh game, but a load bypasses spawnFacility entirely, and every system that
-      // maintains Utilization treats its absence as "not initialized" rather than "create
-      // it" (see defaultUtilization's comment in entities/index.ts). Without this, a loaded
-      // game stalls silently: no HUD top bar, no power/brownout resolution, no new offers.
+      // Utilization is deliberately transient — spawnFacility always seeds it for a fresh
+      // game, but a load bypasses spawnFacility entirely, and every system that maintains
+      // Utilization treats its absence as "not initialized" rather than "create it" (see
+      // defaultUtilization's comment in entities/index.ts). Without this, a loaded game
+      // stalls silently: no HUD top bar, no power/brownout resolution, no new offers.
       const facility = world.query(facilityTags)[0];
       if (facility !== undefined && !world.getComponent(utilizations, facility)) {
         world.addComponent(utilizations, facility, defaultUtilization());

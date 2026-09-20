@@ -1,19 +1,18 @@
-// Rack panel lifecycle: open/close (both D4 open paths), arrival detection, committing any
-// PendingDrop queued while walking, click hit-testing (F7), and (step 8) drag-and-drop.
+// Rack panel lifecycle: open/close, arrival detection, committing any PendingDrop queued while
+// walking, click hit-testing, and drag-and-drop.
 //
-// Gesture ownership (.plans/input-router-refactor.md D4): input.ts's click-priority chain still
-// owns ordinary clicks (wasClicked) — calling this module's handleRackPanelClick once the panel
-// is the active modal, same as before. Chip/tray drag is different: it's a gesture this module
-// alone understands (hit-testing chips/tray cards is domain knowledge, not routing), so this
-// module's own System owns the whole press/hold/release lifecycle directly (tryStartDrag/
-// updateDrag/resolveDrop, called from its own update() below), independently of input.ts's click
-// chain. This is safe without cross-system signaling because a rack panel is a full-screen modal
-// that already absorbs every ordinary click while open (input.ts step 1.5) — a drag's release
-// also being seen as wasClicked is harmless, not double-handled, except at the panel's own
-// excepted buttons (close/repair/decommission/the tray card's abandon-contract corner), which
-// must not sit under a drag target (see tryStartDrag's own skip of the abandon-contract rect).
-// This module's own System also owns: right-click (a separate, non-conflicting signal — the
-// "view a rack" affordance), Escape (polled independently — see the update() comment), and the
+// input.ts's click-priority chain still owns ordinary clicks (wasClicked) — calling this
+// module's handleRackPanelClick once the panel is the active modal, same as before. Chip/tray
+// drag is different: it's a gesture this module alone understands (hit-testing chips/tray cards
+// is domain knowledge, not routing), so this module's own System owns the whole press/hold/
+// release lifecycle directly (tryStartDrag/updateDrag/resolveDrop, called from its own update()
+// below), independently of input.ts's click chain. This is safe without cross-system signaling
+// because a rack panel is a full-screen modal that already absorbs every ordinary click while
+// open — a drag's release also being seen as wasClicked is harmless, not double-handled, except
+// at the panel's own excepted buttons (close/repair/decommission/the tray card's
+// abandon-contract corner), which must not sit under a drag target (see tryStartDrag's own skip
+// of the abandon-contract rect). This module's own System also owns: right-click (a separate,
+// non-conflicting signal — the "view a rack" affordance), Escape (polled independently), and the
 // per-frame arrival/pending-drop-commit/scroll logic.
 import { type World, type EntityId } from '../world';
 import {
@@ -100,8 +99,8 @@ export function serversOn(world: World, rackId: EntityId): EntityId[] {
     );
 }
 
-// Accepted-but-unplaced workload ids — the tray's contents (D3), same across every panel since
-// the tray isn't rack-scoped.
+// Accepted-but-unplaced workload ids — the tray's contents, same across every panel since the
+// tray isn't rack-scoped.
 export function trayWorkloadIds(world: World): EntityId[] {
   return world
     .query(workloads)
@@ -162,9 +161,9 @@ function toContentSpace(
 
 // Called from input.ts's click-priority chain when a rack was clicked in dispatch mode (the
 // ordinary left-click — walks the player there). Handles opening a fresh panel, re-clicking
-// the already-open one (no-op), and promoting an open viewing panel to dispatching (D4:
-// "switching from a viewing panel to dispatching the same rack... flips mode to 'dispatching'
-// and starts the walk" — the panel stays open throughout). Returns true if a walk should start.
+// the already-open one (no-op), and promoting an open viewing panel to dispatching: switching
+// from a viewing panel to dispatching the same rack flips mode to 'dispatching' and starts the
+// walk, with the panel staying open throughout. Returns true if a walk should start.
 export function openOrPromoteRackPanel(
   world: World,
   controlled: EntityId,
@@ -183,17 +182,16 @@ export function openOrPromoteRackPanel(
 
   // Only one modal at a time (see ../modal.ts) — a rack click always wins over any other open
   // panel. openModal only runs a PREVIOUS modal's closer when it's a different kind, so opening
-  // rack while a different rack's panel is already open doesn't tear it down first — same as
-  // this always did (the old closeOtherModals(..., 'rack') skipped its own kind).
+  // rack while a different rack's panel is already open doesn't tear it down first.
   openModal(world, controlled, { kind: 'rack', rackId, mode: 'dispatching', arrived: false });
   world.addComponent(rackScrolls, controlled, { offsetPx: 0 });
   return true;
 }
 
-// F7: panel hit-testing, moved here from input.ts — this module owns the rack panel's layout
-// (it already draws against the same rects in render.ts), so the click targets live next to it
-// instead of input.ts importing nine layout getters to know their geometry. Called from
-// input.ts's click-priority chain only once activeModal() (../modal.ts) is already 'rack' — the
+// Panel hit-testing — this module owns the rack panel's layout (it already draws against the
+// same rects in render.ts), so the click targets live next to it instead of input.ts importing
+// nine layout getters to know their geometry. Called from input.ts's click-priority chain only
+// once activeModal() (../modal.ts) is already 'rack' — the
 // panel is a full-screen modal, so every click while it's visible is absorbed here, not just
 // clicks landing inside its own rect, except the close button and the repair/decommission
 // buttons.
@@ -216,9 +214,9 @@ export function handleRackPanelClick(
     return;
   }
 
-  // Repair/decommission (.plans/hardware-failure.md Step 6) — reachable from a viewing panel
-  // too (no travel required to click; the resulting task does its own walk), same as clicking a
-  // rack from the build panel while remote.
+  // Repair/decommission are reachable from a viewing panel too (no travel required to click;
+  // the resulting task does its own walk), same as clicking a rack from the build panel while
+  // remote.
   for (let index = 0; index < serverIds.length; index++) {
     const serverId = serverIds[index];
 
@@ -257,9 +255,9 @@ export function handleRackPanelClick(
     }
   }
 
-  // Abandon-contract button on each tray card (.plans/playtest-findings.md F3) — immediate, no
-  // confirm: it's already strictly better than letting the same contract rot into a full miss,
-  // so there's nothing a second click needs to protect against.
+  // Abandon-contract button on each tray card — immediate, no confirm: it's already strictly
+  // better than letting the same contract rot into a full miss, so there's nothing a second
+  // click needs to protect against.
   const trayIds = trayWorkloadIds(world);
   for (let index = 0; index < trayIds.length; index++) {
     const dropRect = getTrayCardDropButtonRect(index, renderer.width, renderer.height, serverCount, trayCount);
@@ -273,8 +271,8 @@ export function handleRackPanelClick(
 
 // --- Drag and drop (step 8) ---------------------------------------------------------------
 //
-// Only meaningful while a panel is open in 'dispatching' mode (D4: viewing-mode rows and the
-// tray render but are non-interactive — see render.ts). Drops made before `arrived` are queued
+// Only meaningful while a panel is open in 'dispatching' mode (viewing-mode rows and the tray
+// render but are non-interactive — see render.ts). Drops made before `arrived` are queued
 // as PendingDrop and committed by the System below once the player reaches the rack; drops
 // made after arrival commit immediately.
 
@@ -286,7 +284,7 @@ export function placedWorkloadIds(world: World, serverId: EntityId): EntityId[] 
     .sort((a, b) => a - b);
 }
 
-// mousedown hit-test + drag start, called from this module's own System.update() (see D4).
+// mousedown hit-test + drag start, called from this module's own System.update().
 // Returns true if a drag was started (a tray card or a placed chip was under the pointer).
 export function tryStartDrag(
   world: World,
@@ -342,9 +340,9 @@ export function tryStartDrag(
       serverIds.length,
       trayIds.length,
     );
-    // The abandon-contract button (.plans/playtest-findings.md F3, handleRackPanelClick above)
-    // overlays this card's corner — a press there must fall through as a plain click, not start
-    // a drag, or its click handler never sees it.
+    // The abandon-contract button (handleRackPanelClick above) overlays this card's corner — a
+    // press there must fall through as a plain click, not start a drag, or its click handler
+    // never sees it.
     const dropButton = getTrayCardDropButtonRect(
       trayIndex,
       canvasWidth,
@@ -406,7 +404,7 @@ function hitTestServerRow(
 
 const REJECTED_DROP_FLASH_MS = 900;
 
-// mouseup — called from this module's own System.update() (see D4) whenever a drag was in
+// mouseup — called from this module's own System.update() whenever a drag was in
 // progress (regardless of where the pointer ended up), clearing DragState unconditionally.
 // Resolves the drop:
 //   - dropped on the tray, dragged from a server → unplaced immediately. Removing load never
@@ -491,9 +489,8 @@ export function createRackPanelSystem(
   controlled: EntityId,
   camera: Camera,
 ): System {
-  // Drag-to-scroll gesture tracking (touch has no wheel — see
-  // .plans/mobile-touch-support.md step 5). Presentation-only transient state, same reasoning
-  // as camera.ts's own drag-pan tracking for keeping it out of the ECS.
+  // Drag-to-scroll gesture tracking (touch has no wheel). Presentation-only transient state,
+  // same reasoning as camera.ts's own drag-pan tracking for keeping it out of the ECS.
   let dragScrollPointer: { x: number; y: number } | null = null;
   let dragScrollEligible = false;
 
@@ -501,7 +498,7 @@ export function createRackPanelSystem(
     update() {
       const panel = rackModal(world, controlled);
 
-      // --- Chip/tray drag lifecycle (moved from input.ts, .plans/input-router-refactor.md D4).
+      // --- Chip/tray drag lifecycle ---
       // inputState's snapshot for this tick was already advanced by input.ts's own update(),
       // which runs first in main.ts's updateSystems. Left button only: this game has no other
       // drag gesture.
@@ -528,13 +525,12 @@ export function createRackPanelSystem(
         closeRackPanel(world, controlled);
       }
 
-      // Expire the rejected-drop flash once its window elapses.
       const rejection = world.getComponent(rejectedDrops, controlled);
       if (rejection && performance.now() >= rejection.expiresAtMs) {
         world.removeComponent(rejectedDrops, controlled);
       }
 
-      // Expire an unconfirmed decommission click (D6: the confirm window, not a modal).
+      // Expire an unconfirmed decommission click — a confirm window, not a modal.
       const decommissionConfirm = world.getComponent(decommissionConfirms, controlled);
       if (decommissionConfirm && performance.now() >= decommissionConfirm.expiresAtMs) {
         world.removeComponent(decommissionConfirms, controlled);
@@ -598,7 +594,6 @@ export function createRackPanelSystem(
         dragScrollEligible = false;
       }
 
-      // Arrival check for an open, not-yet-arrived dispatching panel.
       if (panel && panel.mode === 'dispatching' && !panel.arrived) {
         const position = world.getComponent(positions, controlled);
         const grid = world.getComponent(gridPositions, panel.rackId);
@@ -624,8 +619,8 @@ export function createRackPanelSystem(
       }
 
       // Right-click: open (or switch to) a viewing-mode panel on the rack under the pointer.
-      // Never starts a walk — see D4, "inspecting a rack is remote". This is a separate signal
-      // from wasClicked, so it never competes with input.ts's click chain.
+      // Never starts a walk — inspecting a rack is remote. This is a separate signal from
+      // wasClicked, so it never competes with input.ts's click chain.
       if (!inputSnapshot.wasRightClicked || !inputSnapshot.mousePosition) return;
       const pointer = inputSnapshot.mousePosition;
 

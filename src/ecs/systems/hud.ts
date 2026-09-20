@@ -86,9 +86,8 @@ function drawMuteButton(renderer: Renderer, audio: Audio): void {
 }
 
 // Only drawn while the camera is manually panned away from following the player (WASD, or a
-// drag on the floor on touch — see .plans/mobile-touch-support.md D3) — the touch-reachable
-// equivalent of pressing Space. Same "always reachable" placement/hit-test treatment as the
-// mute button (see input.ts).
+// drag on the floor on touch) — the touch-reachable equivalent of pressing Space. Same "always
+// reachable" placement/hit-test treatment as the mute button (see input.ts).
 function drawRecenterButton(renderer: Renderer, camera: Camera): void {
   if (!camera.detached) return;
 
@@ -151,7 +150,7 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
   // listed most- to least-important; tryDraw skips an item (leaving x unmoved) once it no
   // longer fits before this budget, so every item after the first skip is skipped too — a
   // narrow window truncates the tail of the bar instead of overlapping the mute button or
-  // running off the canvas. See .plans/playtest-findings.md B5.
+  // running off the canvas.
   const rightLimit = getMuteButtonRect(renderer.width).x - 10;
 
   // Checks the item's full width (text plus any trailing bar/gap) against rightLimit before
@@ -164,7 +163,7 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
     x += width;
   };
 
-  // Money — red with a minus sign once negative (.plans/power-billing.md D4/D5).
+  // Money — red with a minus sign once negative.
   const negative = wallet.money < 0;
   ctx.font = 'bold 14px sans-serif';
   const moneyText = `${negative ? '-' : ''}$${Math.floor(Math.abs(wallet.money)).toLocaleString()}`;
@@ -173,8 +172,6 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
     ctx.fillText(moneyText, x, midY);
   });
 
-  // Net income rate: revenue - power/cooling cost, the whole point of D5 — makes the tier
-  // trade-off visible instead of just a slower income curve.
   const netPerSecond = utilization.revenuePerSecond - utilization.powerCostPerSecond;
   ctx.font = '12px sans-serif';
   const netText = `${netPerSecond >= 0 ? '+' : ''}${netPerSecond.toFixed(2)}/s`;
@@ -183,7 +180,6 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
     ctx.fillText(netText, x, midY);
   });
 
-  // Power
   {
     const overPower = utilization.powerDrawKw > powerCapacity.kw;
     ctx.font = '13px sans-serif';
@@ -205,8 +201,7 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
   // BUDGET — how much work the datacenter can run at once, enforced by resource.ts as a brownout
   // cap exactly like power — and it has nothing to do with how hot any rack is. Rack temperature
   // is local (flat baseline + CRACs in range + that rack's own heat) and is shown per rack on the
-  // floor in °C, so a lone snowflake here invited reading the two as the same thing. See
-  // .plans/thermal-and-cooling.md D5.
+  // floor in °C, so a lone snowflake here invited reading the two as the same thing.
   {
     const overCooling = utilization.coolingDrawKw > coolingCapacity.kw;
     const coolingText = `❄ COOLING ${utilization.coolingDrawKw.toFixed(1)} / ${coolingCapacity.kw.toFixed(1)} kW`;
@@ -223,7 +218,6 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
     });
   }
 
-  // Reputation
   {
     const repText = `★ ${Math.round(reputation.value)}`;
     tryDraw(ctx.measureText(repText).width + 20, () => {
@@ -233,8 +227,7 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
   }
 
   // Offers/Jobs hint badges — now that both live behind toggled panels instead of a
-  // permanently docked column (.plans/job-panels.md), this is the only always-visible sign
-  // they exist at all.
+  // permanently docked column, this is the only always-visible sign they exist at all.
   {
     const offerCount = world.query(offers).length;
     ctx.font = 'bold 13px sans-serif';
@@ -255,8 +248,8 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
     });
   }
 
-  // Per-trait capacity (D5: compute alone hid RAM/storage pressure that could bottleneck
-  // placement even while CPU still had headroom).
+  // Per-trait capacity — compute alone hid RAM/storage pressure that could bottleneck placement
+  // even while CPU still had headroom.
   ctx.font = '13px sans-serif';
   for (const key of TRAIT_KEYS) {
     const total = utilization.traitsTotal[key];
@@ -276,8 +269,8 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
     });
   }
 
-  // Overheat alert — reuses the brownout path's "count of racks in trouble" shape (D8 point 4):
-  // count tripped (dark) and merely throttled (slowed) racks separately so the player can tell
+  // Overheat alert — reuses the brownout path's "count of racks in trouble" shape: count
+  // tripped (dark) and merely throttled (slowed) racks separately so the player can tell
   // "losing money now" from "about to."
   let trippedCount = 0;
   let throttledCount = 0;
@@ -300,9 +293,9 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
     });
   }
 
-  // Failure alert (.plans/hardware-failure.md D7) — a failed machine never recovers on its
-  // own, so this must stay visible until the player actually walks over and repairs it, not
-  // just flash and fade like the overheat warning above.
+  // Failure alert — a failed machine never recovers on its own, so this must stay visible
+  // until the player actually walks over and repairs it, not just flash and fade like the
+  // overheat warning above.
   const failedCount = world.query(faileds).length;
   if (failedCount > 0) {
     ctx.font = 'bold 13px sans-serif';
@@ -313,7 +306,7 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
     });
   }
 
-  // Inventory summary — total owned-but-unplaced stock (D5), bought at the shop.
+  // Inventory summary — total owned-but-unplaced stock, bought at the shop.
   const inventory = world.getComponent(inventories, facility);
   if (inventory) {
     const totalStock = Object.values(inventory.counts).reduce(
@@ -346,7 +339,7 @@ interface WorkloadRow {
 // A running workload's deadline never stops ticking (workload-run.ts), independent of its
 // work-remaining countdown — a job can be provably doomed (deadline will hit zero before the
 // work finishes) while still showing a healthy green progress bar, if only work-remaining is on
-// screen. See .plans/playtest-findings.md B4.
+// screen.
 function drawActiveJobRow(
   ctx: CanvasRenderingContext2D,
   workload: Workload,
@@ -375,8 +368,6 @@ function drawActiveJobRow(
   ctx.fillStyle = doomed ? RED : DIM_COLOR;
   ctx.fillText(`${remaining}s`, rect.x + rect.width - padX, line1Y);
 
-  // Full trait breakdown, not just CPU — the jobs panel's whole point is "all available stats",
-  // where the old docked corner panel only had room for one trait.
   ctx.font = '11px sans-serif';
   ctx.textAlign = 'left';
   ctx.fillStyle = doomed ? RED : GREEN;
@@ -434,8 +425,8 @@ function drawPendingJobRow(
   }).join(' · ');
   ctx.fillText(`$${workload.payPerSecond.toFixed(2)}/s · ${shortfallText}`, rect.x + padX, line2Y);
 
-  // .plans/contract-variety.md D1: the miss penalty rides along with the shortfall — the
-  // number the "can I actually place this in time" risk assessment turns on.
+  // The miss penalty rides along with the shortfall — the number the "can I actually place
+  // this in time" risk assessment turns on.
   ctx.font = '10px sans-serif';
   ctx.textAlign = 'left';
   ctx.fillStyle = RED;
@@ -448,9 +439,7 @@ function drawPendingJobRow(
 }
 
 // Jobs modal — a scrollable, never-truncated list of every accepted job (unplaced + running)
-// with full stats, opened by the 'j' key (job-panels.ts). Replaces the old always-docked corner
-// panel, which capped/truncated the ACTIVE section against a fixed row budget — this one just
-// scrolls instead. See .plans/job-panels.md.
+// with full stats, opened by the 'j' key (job-panels.ts).
 function drawJobsModal(
   world: World,
   renderer: Renderer,
@@ -623,14 +612,14 @@ function drawOfferCard(
     textY,
   );
 
-  // .plans/contract-variety.md D1: the number the accept/decline decision actually turns on —
-  // must be at least as visible as the pay it's weighed against.
+  // The penalty is the number the accept/decline decision actually turns on — must be at
+  // least as visible as the pay it's weighed against.
   textY += 14;
   ctx.fillStyle = RED;
   ctx.font = 'bold 10px sans-serif';
   ctx.fillText(`-$${offer.penaltyOnMiss.toFixed(0)} if missed`, card.x + padX, textY);
 
-  // D2: recurring contracts commit capacity for repeatTotal cycles — flag that up front, since
+  // Recurring contracts commit capacity for repeatTotal cycles — flag that up front, since
   // it's the main thing being evaluated alongside the penalty.
   if (offer.repeatTotal > 1) {
     textY += 12;
@@ -644,7 +633,7 @@ function drawOfferCard(
     // Full opacity regardless of the card's own dimming — this is the one line that explains
     // WHY the card is dimmed, so dimming it along with the rest defeats the point. Drawn on its
     // own line (not squeezed into the 6px gap above the buttons, which is not this space) —
-    // see OFFER_CARD_HEIGHT's comment and .plans/playtest-findings.md B2.
+    // see OFFER_CARD_HEIGHT's comment.
     ctx.globalAlpha = 1;
     ctx.fillStyle = RED;
     ctx.font = 'bold 10px sans-serif';
@@ -652,9 +641,9 @@ function drawOfferCard(
     ctx.globalAlpha = cardAlpha;
   }
 
-  // .plans/playtest-findings.md F3: an unservable offer's Accept button shows a "Confirm?" state
-  // once AcceptConfirm is set for THIS offer (input.ts) — the same "second click on the same
-  // button, within a window" shape as DecommissionConfirm's own visual.
+  // An unservable offer's Accept button shows a "Confirm?" state once AcceptConfirm is set for
+  // THIS offer (input.ts) — the same "second click on the same button, within a window" shape
+  // as DecommissionConfirm's own visual.
   const acceptConfirm = world.getComponent(acceptConfirms, controlled);
   const confirmingAccept =
     !servable && acceptConfirm?.offerId === offerId && performance.now() < acceptConfirm.expiresAtMs;
@@ -694,12 +683,11 @@ function drawOfferCard(
   ctx.textAlign = 'left';
 }
 
-// Offers modal — a scrollable list of offer cards, opened by the 'o' key (job-panels.ts).
-// Replaces the old always-docked column: each card still renders at its own stable slot (see
-// the module comment above getOffersModalCardRect in ui/layout.ts and .plans/playtest-findings.md
-// F6) rather than a position in a sorted-by-id array, so a button's position can never silently
-// shift under the pointer between the frame the panel was drawn and the frame a click on it is
-// processed. See .plans/job-panels.md.
+// Offers modal — a scrollable list of offer cards, opened by the 'o' key (job-panels.ts). Each
+// card still renders at its own stable slot (see the module comment above
+// getOffersModalCardRect in ui/layout.ts) rather than a position in a sorted-by-id array, so a
+// button's position can never silently shift under the pointer between the frame the panel was
+// drawn and the frame a click on it is processed.
 function drawOffersModal(world: World, renderer: Renderer, controlled: EntityId): void {
   if (!isOffersModalOpen(world, controlled)) return;
 
@@ -769,7 +757,7 @@ function drawOffersModal(world: World, renderer: Renderer, controlled: EntityId)
   ctx.restore();
 }
 
-// Toast stack (F4/F7) — stacked in spawn order, newest at the bottom (offers/hud precedent is
+// Toast stack — stacked in spawn order, newest at the bottom (offers/hud precedent is
 // top-to-bottom for stable-slotted content; toasts have no slot, so spawn order is the only
 // stable ordering). Fades over the back half of its lifetime rather than a hard cutoff.
 function drawToasts(world: World, renderer: Renderer): void {

@@ -4,7 +4,7 @@
 // The landing module itself stays free of both env checks (the dev stress button) and save-
 // storage access (the slot list) — main.ts computes `slots` (via SaveManager.describeSlots)
 // and gates `onStartStress` (DEV-only) before calling in, so this stays usable/testable on its
-// own. See .plans/save-load.md D7 and the slot-picker follow-up.
+// own.
 
 export interface SaveSlotSummary {
   slot: string;
@@ -100,11 +100,10 @@ export function showLanding(
       newGameButton.className = 'landing-slot-button landing-slot-button--secondary';
       newGameButton.textContent = 'NEW GAME';
       newGameButton.addEventListener('click', () => {
-        // Starting fresh in an occupied slot destroys that save the next time it's written
-        // (the old data isn't cleared up front — see .plans/save-load.md's slot-picker
-        // follow-up notes — but nothing stops the running game from being saved right back
-        // over it) — a confirm before committing to that is standard save-slot UX and needs
-        // no custom modal to get right.
+        // Starting fresh in an occupied slot destroys that save the next time it's written (the
+        // old data isn't cleared up front, but nothing stops the running game from being saved
+        // right back over it) — a confirm before committing to that is standard save-slot UX
+        // and needs no custom modal to get right.
         if (
           window.confirm(
             `Start a new game in ${slot.label}? This will overwrite the existing save.`,

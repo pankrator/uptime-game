@@ -64,12 +64,11 @@ export interface Renderable {
 export type PlacementKind = 'empty-cell' | 'rack';
 
 // `machine-${MachineTierId}` so a new tier in MACHINE_TIERS (game-data.ts) automatically gets a
-// BuildableId, a build-panel entry, and a number-key hotkey with no changes here — see
-// .plans/workload-dispatch.md D6 and the BUILDABLES generalization below.
+// BuildableId, a build-panel entry, and a number-key hotkey with no changes here.
 //
-// As of .plans/facility-shop-inventory.md D6, the build panel only ever shows STOCK
-// purchasables (rack, machines, crac) — power/cooling upgrades are 'instant' kind, bought and
-// applied at the shop, never placed. BuildableId is a strict subset of PurchasableId.
+// The build panel only ever shows STOCK purchasables (rack, machines, crac) — power/cooling
+// upgrades are 'instant' kind, bought and applied at the shop, never placed. BuildableId is a
+// strict subset of PurchasableId.
 export type BuildableId = 'rack' | `machine-${MachineTierId}` | 'crac';
 
 export interface BuildableDef {
@@ -99,7 +98,7 @@ export interface RoomTier {
   index: number;
 }
 
-// Facility singleton — owned-but-unplaced stock, keyed by purchasable id (D5). A count is the
+// Facility singleton — owned-but-unplaced stock, keyed by purchasable id. A count is the
 // whole truth for an owned item: no position, no behavior, no per-item state, so no entity is
 // spawned until placement. Only 'stock'-kind purchasables (game-data.ts) ever appear here —
 // 'instant' and 'room' purchases apply immediately and never touch inventory.
@@ -124,7 +123,6 @@ export interface CoolingCapacity {
   kw: number;
 }
 
-// Racks
 export interface RackSlots {
   capacity: number;
 }
@@ -142,9 +140,8 @@ export interface RackLoad {
 // Utilization, this is NOT a derived cache recomputed from scratch each tick. Heat has history:
 // a rack that's been running hot for a minute is hot *now*, a fact not recoverable from this
 // tick's RackLoad.heatKw alone, so thermal.ts integrates it incrementally instead. Do not "fix"
-// this into a recompute — see .plans/thermal-and-cooling.md D2. throttleFactor (1 = full speed,
-// 0 = stalled) is cached here too so workload-run.ts reads one number instead of re-deriving the
-// throttle band from celsius itself.
+// this into a recompute. throttleFactor (1 = full speed, 0 = stalled) is cached here too so
+// workload-run.ts reads one number instead of re-deriving the throttle band from celsius itself.
 export interface Temperature {
   celsius: number;
   throttleFactor: number;
@@ -152,20 +149,18 @@ export interface Temperature {
 
 // Marker on RACK entities currently tripped from overheating (celsius was >= TRIP_C, hasn't
 // cooled back to TRIP_RECOVER_C yet). thermal.ts is the sole writer; resource.ts only reads it,
-// as a veto on Powered.online candidacy — see .plans/thermal-and-cooling.md D7: two systems
-// must never both write Powered.online directly, or a stuck-offline machine is a day-long bug.
+// as a veto on Powered.online candidacy — two systems must never both write Powered.online
+// directly, or a stuck-offline machine is a day-long bug.
 export interface ThermalTrip {
   trippedAt: number;
 }
 
 // A placed CRAC unit — an entity with GridPosition + Renderable('crac') like a rack, plus this.
-// See .plans/thermal-and-cooling.md D4.
 export interface CoolingUnit {
   kwOutput: number;
   radiusCells: number;
 }
 
-// Machines
 export interface Machine {
   tierId: MachineTierId;
 }
@@ -183,7 +178,7 @@ export interface Powered {
 // Mutable free capacity for a server — derived cache, recomputed every frame by capacity.ts
 // from the server's tier traits minus the demands of every workload placed on it. Never
 // hand-edited outside capacity.ts. Lives on the MACHINE entity (a "server" in dispatch
-// terminology). See .plans/workload-dispatch.md.
+// terminology).
 export interface ServerCapacity {
   total: Traits;
   free: Traits;
@@ -192,7 +187,7 @@ export interface ServerCapacity {
 // Per-machine wear, 0 (new) to 1 (worn out). Lives on MACHINE entities. OWNED SOLELY BY
 // wear.ts — like Temperature, this is integrated state, not a derived cache: wear has history
 // (how long has this box been running, hot, unrepaired) that this tick's inputs alone cannot
-// reconstruct. Never recompute it from scratch. See .plans/hardware-failure.md D1/D2.
+// reconstruct. Never recompute it from scratch.
 export interface Condition {
   wear: number;
 }
@@ -200,20 +195,18 @@ export interface Condition {
 // Marker on a MACHINE entity that has failed (a wear.ts failure roll came up positive). Sole
 // writer is wear.ts; resource.ts only reads it, as a veto on Powered.online candidacy — the
 // same one-writer-many-readers shape ThermalTrip already uses. Cleared only by a completed
-// 'repair' MaintenanceTask (maintenance.ts). See .plans/hardware-failure.md D4/D7.
+// 'repair' MaintenanceTask (maintenance.ts).
 export interface Failed {
   failedAt: number;
 }
 
-// Walk-to-rack-then-work interaction, attached to the player. Generalizes the old InstallTask
-// (D5) to cover repair and decommission too — all three share the identical walk/arrival/
-// countdown shape; only what happens on completion differs, branched in maintenance.ts (the
-// renamed install-progress.ts). See .plans/hardware-failure.md D5.
+// Walk-to-rack-then-work interaction, attached to the player. Covers install, repair, and
+// decommission, which all share the identical walk/arrival/countdown shape; only what happens
+// on completion differs, branched in maintenance.ts.
 export type MaintenanceJob =
   | { kind: 'install'; tierId: MachineTierId; slotIndex: number }
   // cost is captured at task creation (the wear-scaled price shown on the repair button) and
-  // debited up front, mirroring install's up-front inventory take — see maintenance.ts's
-  // startRepair.
+  // debited up front, mirroring install's up-front inventory take.
   | { kind: 'repair'; machineId: EntityId; cost: number }
   | { kind: 'decommission'; machineId: EntityId };
 
@@ -226,28 +219,23 @@ export interface MaintenanceTask {
 }
 
 // Facility singleton — derived cache, fully recomputed every frame. Written by three systems on
-// disjoint fields (resource.ts, capacity.ts, workload-run.ts — see .plans/power-billing.md step
-// 3) but read together as a unit by hud.ts's drawTopBar, the only place all of them matter at
-// once. .plans/design-review.md F9 considered splitting this by writer and decided against it
-// for now — see that finding's "Decision" note.
+// disjoint fields (resource.ts, capacity.ts, workload-run.ts) but read together as a unit by
+// hud.ts's drawTopBar, the only place all of them matter at once.
 export interface Utilization {
   powerDrawKw: number;
   coolingDrawKw: number;
-  // Facility-wide free capacity; capacity.ts is the sole source (see .plans/power-billing.md
-  // step 3/4).
+  // Facility-wide free capacity; capacity.ts is the sole source.
   traitsTotal: Traits;
   traitsFree: Traits;
-  // .plans/power-billing.md: derived (power + cooling) * POWER_COST_PER_KW_SECOND, written by
-  // resource.ts.
+  // Derived (power + cooling) * POWER_COST_PER_KW_SECOND, written by resource.ts.
   powerCostPerSecond: number;
-  // .plans/power-billing.md: sum of payPerSecond over running (placed + online) workloads,
-  // written by workload-run.ts.
+  // Sum of payPerSecond over running (placed + online) workloads, written by workload-run.ts.
   revenuePerSecond: number;
 }
 
 // Facility singleton — one-shot "we're near the wall" toast tracking, owned solely by
-// resource.ts (see RESOURCE_WARNING_FRACTION/RESOURCE_WARNING_CLEAR_FRACTION in game-data.ts
-// and .plans/playtest-findings.md F4). true once the warning toast has fired for that resource
+// resource.ts (see RESOURCE_WARNING_FRACTION/RESOURCE_WARNING_CLEAR_FRACTION in game-data.ts).
+// true once the warning toast has fired for that resource
 // at the current approach; resource.ts resets it back to false once draw falls back under the
 // (lower) clear threshold, so the SAME crossing never re-fires every tick but a later, separate
 // approach still gets its own warning.
@@ -263,9 +251,8 @@ export interface DemandClock {
   peakComputeServed: number; // the score
 }
 
-// Placement of a workload onto a server. Lives on the WORKLOAD entity (see D1: one workload
-// occupies exactly one server), the inverse of the old Assignment (which lived on the
-// machine). Replaces Assignment as of step 3.
+// Placement of a workload onto a server. Lives on the WORKLOAD entity — one workload occupies
+// exactly one server.
 export interface PlacedOn {
   serverId: EntityId;
 }
@@ -276,8 +263,7 @@ export interface PlacedOn {
 // re-places the workload there automatically instead of leaving it for the player to notice and
 // re-drag. One-shot: consumed (removed) the first time that server is checked, whether or not
 // the restore actually happens (already re-placed elsewhere, no longer fits, or the window
-// lapsed). See .plans/playtest-findings.md F4 and BROWNOUT_RESTORE_GRACE_SECONDS in
-// game-data.ts.
+// lapsed). See BROWNOUT_RESTORE_GRACE_SECONDS in game-data.ts.
 export interface RecentlyUnplaced {
   serverId: EntityId;
   expiresAtMs: number;
@@ -288,16 +274,10 @@ export interface RecentlyUnplaced {
 // single addComponent that REPLACES whatever was there (see ../modal.ts's openModal), so mutual
 // exclusion is structural, not a convention every opener has to remember to uphold.
 //
-// This replaces four independent components (OpenRackPanel, ShopOpen, OffersPanelOpen,
-// JobsPanelOpen) that used to each be optionally present on the player at once, with "only one
-// at a time" enforced by every opener also closing the other three by hand (modal.ts's old
-// closeOtherModals) — see .plans/design-review.md F6's own note on that shape, and the follow-up
-// that replaced it with this one.
-//
 // The rack variant carries its own extra state (which rack, viewing vs. dispatching, arrived)
 // since that's genuinely rack-specific; the other three kinds carry none. A panel can be opened
 // purely to view (mode: 'viewing', no travel) or opened to dispatch (mode: 'dispatching', which
-// kicks off a walk to the rack). Only 'dispatching' ever accepts drags — see D4.
+// kicks off a walk to the rack). Only 'dispatching' ever accepts drags.
 export type ActiveModal =
   | { kind: 'rack'; rackId: EntityId; mode: 'viewing' | 'dispatching'; arrived: boolean }
   | { kind: 'shop' }
@@ -313,11 +293,9 @@ export interface RackScroll {
   offsetPx: number;
 }
 
-// F15 (.plans/design-review.md): which shop category tab is selected, per player — used to live
-// as module-level mutable state in shop.ts, outside the ECS, in a codebase whose stated
-// architecture is "state lives in components." Persists across shop opens/closes (unlike
-// ActiveModal's 'shop' variant, which disappears when the shop closes), same as it did as module
-// state; only reset by a fresh World (see world.ts's createWorld/resetAllComponentStores).
+// Which shop category tab is selected, per player. Persists across shop opens/closes (unlike
+// ActiveModal's 'shop' variant, which disappears when the shop closes); only reset by a fresh
+// World (see world.ts's createWorld/resetAllComponentStores).
 export interface ShopTab {
   current: string;
 }
@@ -340,9 +318,8 @@ export interface JobsPanelScroll {
 }
 
 // A decommission button was clicked once — the second click on the SAME button, within the
-// window, actually destroys the machine (D6: "a second click to confirm on the same button is
-// enough; no modal"). Attached to the player; cleared on confirm, expiry, or the panel closing.
-// See .plans/hardware-failure.md Step 6.
+// window, actually destroys the machine. Attached to the player; cleared on confirm, expiry, or
+// the panel closing.
 export interface DecommissionConfirm {
   serverId: EntityId;
   expiresAtMs: number;
@@ -352,8 +329,7 @@ export interface DecommissionConfirm {
 // within the window, actually accepts it. Same "second click to confirm, no modal" shape as
 // DecommissionConfirm above; a SERVABLE offer never sets this at all, so the common case (most
 // offers, most of the time) still accepts on the first click exactly as before. Attached to the
-// player; cleared on confirm, expiry, or accepting/declining any other offer. See
-// .plans/playtest-findings.md F3.
+// player; cleared on confirm, expiry, or accepting/declining any other offer.
 export interface AcceptConfirm {
   offerId: EntityId;
   expiresAtMs: number;
@@ -368,8 +344,6 @@ export interface DragState {
 
 // A drop just got rejected (didn't fit) — attached to the player for a short window so
 // render.ts can flash the blocking trait bars red. Cleared by rack-panel.ts once it expires.
-// See .plans/workload-dispatch.md step 8: "Doesn't fit → reject, flash the blocking trait bars
-// red, card returns to origin."
 export interface RejectedDrop {
   serverId: EntityId;
   blocking: TraitKey[];
@@ -380,8 +354,7 @@ export interface RejectedDrop {
 // Explicitly declining costs a small amount of reputation (REPUTATION_ON_DECLINE, applied in
 // dispatch.ts's declineOffer) — letting the offer silently expire instead does not (see
 // createOfferExpirySystem in workload-spawn.ts). The accept/decline choice is the actual
-// difficulty dial now, not passive demand escalation. See .plans/workload-dispatch.md "New
-// loop", the Offer section under Data model changes, and .plans/contract-variety.md step 3.
+// difficulty dial now, not passive demand escalation.
 export interface Offer {
   archetypeId: WorkloadArchetypeId;
   demands: Traits;
@@ -392,10 +365,9 @@ export interface Offer {
   // Which offers-panel card (0..MAX_OFFERS-1) this offer draws/hit-tests in, assigned once at
   // spawn (entities.ts's spawnOffer) and fixed for the offer's whole lifetime. Positional
   // indexing into a sorted-by-id array used to make every later offer's card shift up — and the
-  // pointer land on the wrong one — the instant an earlier offer expired; see
-  // .plans/playtest-findings.md F6.
+  // pointer land on the wrong one — the instant an earlier offer expired.
   slot: number;
-  // See .plans/contract-variety.md D1/D2 — carried straight into the Workload on accept.
+  // Carried straight into the Workload on accept.
   penaltyOnMiss: number;
   repeatCount: number; // extra cycles after the first; 0 = one-shot
   repeatTotal: number; // repeatCount + 1, fixed at roll time, for "current/total" display
@@ -406,10 +378,10 @@ export interface Offer {
 // placed on an online server.
 export type WorkloadState = 'accepted' | 'running';
 
-// D2: a single finish deadline, not separate start/finish deadlines. deadlineRemainingSeconds
+// A single finish deadline, not separate start/finish deadlines. deadlineRemainingSeconds
 // ticks ALWAYS from acceptance (whether sitting unplaced or running); workRemainingSeconds only
 // ticks while running. Sitting unplaced burns the player's own deadline margin, with no
-// separate start-deadline penalty to track. See .plans/workload-dispatch.md D2.
+// separate start-deadline penalty to track.
 export interface Workload {
   archetypeId: WorkloadArchetypeId;
   demands: Traits;
@@ -418,17 +390,16 @@ export interface Workload {
   payPerSecond: number;
   deadlineRemainingSeconds: number;
   state: WorkloadState;
-  // See .plans/contract-variety.md D1/D2.
   penaltyOnMiss: number; // money lost, on top of the reputation hit, if this deadline is missed
   repeatCount: number; // cycles left AFTER the current one; on completion with repeatCount > 0,
-  // the workload resets and stays placed instead of being destroyed (D2/D3 — survives
-  // unplace/re-place with this intact).
+  // the workload resets and stays placed instead of being destroyed — survives unplace/re-place
+  // with this intact.
   repeatTotal: number; // fixed at accept time; current cycle = repeatTotal - repeatCount
 }
 
 // Cycle suffix for a recurring workload — '' for a one-shot, ' 3/5' once repeatTotal > 1.
 // Shared by render.ts (tray card, placed chip) and hud.ts (workload panel rows) so the
-// current/total math lives in one place. See .plans/contract-variety.md D2.
+// current/total math lives in one place.
 export function cycleLabel(workload: Workload): string {
   if (workload.repeatTotal <= 1) return '';
   return ` ${workload.repeatTotal - workload.repeatCount}/${workload.repeatTotal}`;
@@ -456,13 +427,12 @@ export interface TutorialProgress {
   // Set by tutorial.ts's own 'shop:purchased' event-bus subscription (createTutorialSystem) —
   // shop.ts emits that event only when buy() reports a purchase actually went through, so a
   // rejected click (can't afford it) never fires it and never advances the 'visit-shop' step.
-  // See .plans/event-bus.md.
   shopPurchased: boolean;
   skipped: boolean;
 }
 
 // Marker on the player entity — lets save/load (src/save/) find the player singleton after a
-// load without hardcoding an entity id in the save format. See .plans/save-load.md D5.
+// load without hardcoding an entity id in the save format.
 export type PlayerTag = Record<string, never>;
 
 // Marker on the facility entity — same reasoning as PlayerTag.
@@ -472,7 +442,7 @@ export type FacilityTag = Record<string, never>;
 // e.g. over the rack a contract just completed on. Its own entity (no Position/Renderable: it
 // needs no pathfinding/collision/z-ordering, just a world coordinate to draw at), spawned and
 // expired by effects.ts, drawn by render.ts inside the camera transform so it tracks the floor
-// like any other world object. See .plans/playtest-findings.md F7.
+// like any other world object.
 export interface FloatingText {
   text: string;
   color: string;
@@ -484,7 +454,7 @@ export interface FloatingText {
 
 // Presentation-only screen-space banner — e.g. a contract-missed notice or a resource-near-limit
 // warning. Unlike FloatingText this has no world position; drawn by hud.ts, stacked by spawn
-// order. Spawned and expired by effects.ts. See .plans/playtest-findings.md F4/F7.
+// order. Spawned and expired by effects.ts.
 export interface Toast {
   text: string;
   color: string;

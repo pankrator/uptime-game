@@ -104,11 +104,11 @@ function gridBoundsToPixelRect(bounds: GridBounds): { x: number; y: number; w: n
   return { x, y, w, h };
 }
 
-// .plans/playtest-findings.md F8: everything outside the room/corridor/shop used to be an
-// uncleared canvas — transparent over the page's #000 background, reading as a black void
-// rather than "outdoors". A flat ground fill plus a sparse dot scatter (cheap, no images) gives
-// it a texture without competing with the building art drawn on top of it. Drawn first, so
-// drawBuilding/drawShopAndCorridor paint over it exactly like before.
+// Everything outside the room/corridor/shop would otherwise be an uncleared canvas — transparent
+// over the page's #000 background, reading as a black void rather than "outdoors". A flat ground
+// fill plus a sparse dot scatter (cheap, no images) gives it a texture without competing with the
+// building art drawn on top of it. Drawn first, so drawBuilding/drawShopAndCorridor paint over
+// it.
 const OUTDOOR_DOT_SEED_COLS = 40;
 const OUTDOOR_DOT_SEED_ROWS = 27;
 
@@ -182,7 +182,7 @@ function drawBuilding(renderer: Renderer, world: World, facility: EntityId): voi
   ctx.strokeRect(x, y, w, h);
 
   // Ghost outline of the next room tier, if one exists — makes the upgrade legible without a
-  // menu (see .plans/facility-shop-inventory.md Step 2).
+  // menu.
   const nextTier = getNextRoomTier(world, facility);
   if (nextTier) {
     const nextW = nextTier.gridWidth * GRID_CELL_SIZE;
@@ -197,7 +197,7 @@ function drawBuilding(renderer: Renderer, world: World, facility: EntityId): voi
 }
 
 // Shop building and the outdoor corridor connecting it to the room — the second walkable
-// location the camera exists to make reachable (see .plans/facility-shop-inventory.md D2/D3).
+// location the camera exists to make reachable.
 function drawShopAndCorridor(renderer: Renderer): void {
   const ctx = renderer.context;
 
@@ -229,7 +229,7 @@ function drawShopAndCorridor(renderer: Renderer): void {
 }
 
 // Blue (ambient/cool) -> amber (throttle band) -> red (tripped), interpolated linearly across
-// the two sub-ranges. See .plans/thermal-and-cooling.md D8.
+// the two sub-ranges.
 const HEAT_COOL_RGB: [number, number, number] = [61, 139, 220];
 const HEAT_WARN_RGB: [number, number, number] = [247, 183, 49];
 const HEAT_HOT_RGB: [number, number, number] = [229, 72, 77];
@@ -257,8 +257,8 @@ function heatColor(celsius: number): [number, number, number] {
 const HEAT_OVERLAY_MAX_ALPHA = 0.35;
 
 // Per-cell heat wash, drawn before racks so the cabinet art sits on top of it — the interface to
-// the thermal mechanic (D8): the player must be able to read "this corner is hot" from across
-// the floor, not just from a rack's label. A soft radial glow rather than a hard-edged cell fill
+// the thermal mechanic: the player must be able to read "this corner is hot" from across the
+// floor, not just from a rack's label. A soft radial glow rather than a hard-edged cell fill
 // so racks near each other visibly blend into a hot patch. Racks at/below ambient draw nothing —
 // there's no useful signal in "this rack is exactly as cool as the room."
 function drawHeatOverlay(renderer: Renderer, world: World): void {
@@ -286,14 +286,13 @@ function drawHeatOverlay(renderer: Renderer, world: World): void {
 
 const RACK_PADDING = 4;
 
-// 'partial'/'full' replace the old 'online-busy': full means every trait in ServerCapacity.free
-// has hit zero (see capacity.ts), partial means some but not all capacity is used. A server can
-// be 'online-idle' (nothing placed), 'partial', or 'full' without any single trait telling the
-// whole story — that's the point of showing traits at all.
-// 'failed' is distinct from plain 'offline' (a brownout/thermal trip, both self-recovering) —
-// see .plans/hardware-failure.md D7: a failed machine needs to be unmistakable at a glance,
-// because unlike the other offline states it never comes back without the player walking over
-// to repair it.
+// 'partial'/'full': full means every trait in ServerCapacity.free has hit zero (see
+// capacity.ts), partial means some but not all capacity is used. A server can be 'online-idle'
+// (nothing placed), 'partial', or 'full' without any single trait telling the whole story —
+// that's the point of showing traits at all.
+// 'failed' is distinct from plain 'offline' (a brownout/thermal trip, both self-recovering) — a
+// failed machine needs to be unmistakable at a glance, because unlike the other offline states
+// it never comes back without the player walking over to repair it.
 type SlotState = 'empty' | 'online-idle' | 'partial' | 'full' | 'offline' | 'failed';
 
 const SLOT_SLAT_FILL: Record<SlotState, string> = {
@@ -314,10 +313,10 @@ const SLOT_LED_COLOR: Record<SlotState, string | null> = {
   failed: '#e5484d',
 };
 
-// .plans/playtest-findings.md F8: a built-out facility used to be visually monotonous — every
-// installed slat looked identical regardless of which tier it held. A thin left-edge accent per
-// tier is additive (drawn on top of the existing slat fill/LED, never replacing either) so the
-// carefully-tuned status visualization (SLOT_SLAT_FILL/SLOT_LED_COLOR) stays exactly as legible.
+// A thin left-edge accent per tier distinguishes installed slats that would otherwise look
+// identical regardless of which tier they held. It's additive (drawn on top of the existing slat
+// fill/LED, never replacing either) so the carefully-tuned status visualization
+// (SLOT_SLAT_FILL/SLOT_LED_COLOR) stays exactly as legible.
 const TIER_ACCENT_COLOR: Record<MachineTierId, string> = {
   budget: '#6b7280',
   basic: '#4dabf7',
@@ -372,9 +371,9 @@ function drawRack(
       ctx.fillRect(x + size - unitGap - 5, unitY + unitHeight / 2 - 1.5, 3, 3);
     }
 
-    // Failed slat gets a warning glyph too, not just the red LED (D7: "unmistakable at a
-    // glance") — a pulsing ⚠ so it reads differently from a merely-offline (brownout/thermal)
-    // slat, which shares the same red LED but never pulses.
+    // Failed slat gets a warning glyph too, not just the red LED — a pulsing ⚠ so it reads
+    // differently from a merely-offline (brownout/thermal) slat, which shares the same red LED
+    // but never pulses.
     if (state === 'failed') {
       const pulse = (Math.sin(performance.now() / 220) + 1) / 2;
       ctx.font = `${Math.max(8, unitHeight - 2)}px sans-serif`;
@@ -403,7 +402,7 @@ const RACK_LABEL_COLOR = '#9aa0a6';
 
 // Under-rack power/heat readout, read straight off RackLoad — visible from across the floor
 // without opening anything. Colored against facility headroom so an over-drawing rack stands
-// out. See .plans/workload-dispatch.md step 2.
+// out.
 function temperatureColor(celsius: number): string {
   if (celsius >= TRIP_C) return RACK_LABEL_OVER_COLOR;
   if (celsius >= THROTTLE_C) return '#f7b731';
@@ -486,7 +485,7 @@ function drawRackLoadLabel(
 
 // Throttle/trip badge, drawn above a hot rack — the trip case reuses the same red the brownout
 // path already uses elsewhere in this file, so "this rack is dark" reads the same regardless of
-// cause. See .plans/thermal-and-cooling.md D8.
+// cause.
 function drawThermalBadge(
   renderer: Renderer,
   gridX: number,
@@ -507,7 +506,7 @@ function drawThermalBadge(
   ctx.fillText(tripped ? '⛔ OVERHEATED' : '🌡 THROTTLED', centerX, badgeY);
 }
 
-// A placed CRAC unit and its coverage ring. See .plans/thermal-and-cooling.md D4/Step 7.
+// A placed CRAC unit and its coverage ring.
 function drawCoolingUnit(
   renderer: Renderer,
   gridX: number,
@@ -537,7 +536,7 @@ function drawCoolingUnit(
   ctx.fillText('❄', centerX, centerY + 1);
 
   // Faint always-on ring so coverage is legible without opening build mode; strong+solid while
-  // actively placing (D8 point 3 — coverage must be plannable before committing).
+  // actively placing — coverage must be plannable before committing.
   ctx.save();
   ctx.strokeStyle = showRing ? 'rgba(93, 179, 235, 0.85)' : 'rgba(93, 179, 235, 0.22)';
   ctx.lineWidth = showRing ? 2 : 1;
@@ -548,9 +547,9 @@ function drawCoolingUnit(
   ctx.restore();
 }
 
-// F7: rises and fades over its lifetime — position/color/text are fixed at spawn (effects.ts),
-// this only derives how far in [0,1] the animation is from spawnedAtMs/expiresAtMs, world-space
-// so it tracks the rack it was anchored over exactly like any other floor object.
+// Rises and fades over its lifetime — position/color/text are fixed at spawn (effects.ts), this
+// only derives how far in [0,1] the animation is from spawnedAtMs/expiresAtMs, world-space so it
+// tracks the rack it was anchored over exactly like any other floor object.
 function drawFloatingTexts(renderer: Renderer, world: World): void {
   const ctx = renderer.context;
   const now = performance.now();
@@ -622,8 +621,8 @@ function drawManager(renderer: Renderer, x: number, y: number): void {
 }
 
 // Points an arrow from the player toward the shop door when inventory is completely empty —
-// makes "go buy something" legible without a menu (Step 6 polish, mitigating the "walking to
-// the shop is dead time" trade-off).
+// makes "go buy something" legible without a menu, mitigating the "walking to the shop is dead
+// time" trade-off.
 function drawShopHint(renderer: Renderer, facility: EntityId, world: World, playerPosition: { x: number; y: number }): void {
   const inventory = world.getComponent(inventories, facility);
   const totalStock = inventory
@@ -664,8 +663,7 @@ function drawShopHint(renderer: Renderer, facility: EntityId, world: World, play
 
 // Points an arrow from the player toward the nearest failed machine's rack — the same "make it
 // legible without opening anything" treatment as drawShopHint, since the player is usually
-// somewhere else (possibly with the camera panned away, per .plans/thermal-and-cooling.md D8's
-// established pattern) when a machine dies. See .plans/hardware-failure.md D7.
+// somewhere else (possibly with the camera panned away) when a machine dies.
 function drawFailureHint(renderer: Renderer, world: World, playerPosition: { x: number; y: number }): void {
   let nearestDistance = Infinity;
   let nearestCenter: { x: number; y: number } | null = null;
@@ -816,8 +814,8 @@ function drawBuildPanel(
   }
 }
 
-// .plans/hardware-failure.md Step 5: the progress ring/pulse is identical across install,
-// repair, and decommission — only the label says what's happening.
+// The progress ring/pulse is identical across install, repair, and decommission — only the
+// label says what's happening.
 const MAINTENANCE_JOB_LABEL: Record<'install' | 'repair' | 'decommission', string> = {
   install: 'Installing…',
   repair: 'Repairing…',
@@ -885,11 +883,10 @@ const RACK_PANEL_GREEN = UI.ok;
 const RACK_PANEL_AMBER = UI.warn;
 const RACK_PANEL_RED = UI.bad;
 
-// Read-only as of step 7 — every server row and tray card draws but does not yet accept drops
-// or drags; that lands in step 8. Viewing-mode panels draw identically to dispatching-mode
-// ones (D4: "the panel draws every server's trait bars and placed-workload chips exactly as in
-// dispatching mode"), so this function takes no mode-dependent branch for its own drawing —
-// only the header text differs, to tell the player which mode they're in.
+// Viewing-mode panels draw identically to dispatching-mode ones — every server row and tray card
+// draws, but only dispatching mode accepts drops or drags — so this function takes no
+// mode-dependent branch for its own drawing; only the header text differs, to tell the player
+// which mode they're in.
 function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): void {
   const modal = world.getComponent(activeModals, controlled);
   if (!modal || modal.kind !== 'rack') return;
@@ -907,8 +904,8 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
   const trayIds = trayWorkloadIds(world);
   const rect = getRackPanelRect(canvasWidth, canvasHeight, serverIds.length, trayIds.length);
 
-  // Interactive == dispatching mode (D4: viewing renders identically but nothing responds to
-  // drag). Used below to skip drawing hover/drag-only chrome in viewing mode, and by the drag
+  // Interactive == dispatching mode — viewing renders identically but nothing responds to drag.
+  // Used below to skip drawing hover/drag-only chrome in viewing mode, and by the drag
   // and rejection sections at the end of this function, which are meaningless while viewing.
   const interactive = panel.mode === 'dispatching';
   const drag = interactive ? world.getComponent(dragStates, controlled) : undefined;
@@ -932,8 +929,7 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
   ctx.textBaseline = 'middle';
   ctx.fillStyle = RACK_PANEL_TEXT;
   const headerY = rect.y + RACK_PANEL_PADDING + 8;
-  // Player-facing labels, not the internal 'dispatching' state-machine name — see
-  // .plans/playtest-findings.md F9.
+  // Player-facing labels, not the internal 'dispatching' state-machine name.
   const modeLabel = panel.mode === 'viewing' ? 'VIEWING (walk there to place work)' : 'PLACING WORK';
   ctx.fillText(`Rack — ${modeLabel}`, rect.x + 14, headerY);
 
@@ -1003,8 +999,8 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = online ? RACK_PANEL_TEXT : RACK_PANEL_RED;
-    // D7: a failed machine reads differently from a merely-offline (brownout/thermal) one —
-    // it's the one offline state that never comes back on its own.
+    // A failed machine reads differently from a merely-offline (brownout/thermal) one — it's
+    // the one offline state that never comes back on its own.
     const statusLabel = online ? tier.label : failed ? `${tier.label} (FAILED)` : `${tier.label} (offline)`;
     ctx.fillText(statusLabel, row.x + 6, getServerRowLabelY(row));
 
@@ -1018,8 +1014,8 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
         sum + (WORKLOAD_ARCHETYPES[world.getComponent(workloads, workloadId)!.archetypeId].coolingBonusKw ?? 0),
       0,
     );
-    // .plans/power-billing.md step 4 (optional): per-machine draw cost, so the tier trade-off
-    // is a concrete number at the exact moment the player is deciding where to place work.
+    // Per-machine draw cost, so the tier trade-off is a concrete number at the exact moment the
+    // player is deciding where to place work.
     const rowCoolingKw = tier.coolingKw + workloadCoolingKw;
     const rowCostPerSecond = (tier.powerKw + rowCoolingKw) * POWER_COST_PER_KW_SECOND;
     ctx.font = '9px sans-serif';
@@ -1030,8 +1026,7 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
       getServerRowDrawY(row),
     );
 
-    // Pulse rejected trait bars red for a moment after a failed drop onto this server —
-    // "flash the blocking trait bars red" (step 8).
+    // Pulse rejected trait bars red for a moment after a failed drop onto this server.
     const rejectionHere = rejection?.serverId === serverId ? rejection : undefined;
     const flashPulse = rejectionHere ? (Math.sin(performance.now() / 90) + 1) / 2 : 0;
 
@@ -1060,7 +1055,7 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
 
     // Wear bar — same bar shape as the traits above, in the next slot down (traitIndex ===
     // TRAIT_KEYS.length reuses getServerTraitBarRect's layout for free). Green -> amber -> red
-    // as wear climbs (D7).
+    // as wear climbs.
     const condition = world.getComponent(conditions, serverId);
     if (condition) {
       const wearRect = getServerTraitBarRect(index, TRAIT_KEYS.length, canvasWidth, canvasHeight, serverIds.length, trayIds.length);
@@ -1073,8 +1068,8 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
       bar(ctx, wearRect, condition.wear, wearColor);
     }
 
-    // Repair/decommission buttons (Step 6). Repair only shown once there's something worth
-    // fixing; decommission is always offered (D5's "no way to get rid of a machine" gap).
+    // Repair/decommission buttons. Repair only shown once there's something worth fixing;
+    // decommission is always offered.
     if (condition && (condition.wear > REPAIRABLE_WEAR_THRESHOLD || failed)) {
       const repairRect = getServerRepairButtonRect(index, canvasWidth, canvasHeight, serverIds.length, trayIds.length);
       const cost = repairCost(tier.cost, condition.wear);
@@ -1133,8 +1128,8 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
       // Only render-farm/training archetypes carry a cooling bonus (web/batch are 0kW — see
       // WORKLOAD_ARCHETYPES); appending it lets the player see, per workload, what's adding to
       // this server's heat line above without opening a separate tooltip. cycleLabel appends
-      // "3/5" for a recurring contract (.plans/contract-variety.md D2) — without it, a
-      // workload that refuses to disappear on completion looks like a bug.
+      // "3/5" for a recurring contract — without it, a workload that refuses to disappear on
+      // completion looks like a bug.
       const chipLabel =
         archetype.label +
         cycleLabel(workload) +
@@ -1208,14 +1203,14 @@ function drawRackPanel(world: World, renderer: Renderer, controlled: EntityId): 
         card.y + card.height * 0.64,
       );
 
-      // .plans/contract-variety.md D1: the penalty is what makes leaving this in the tray a
-      // real bet, so it stays visible everywhere the deadline countdown does.
+      // The penalty is what makes leaving this in the tray a real bet, so it stays visible
+      // everywhere the deadline countdown does.
       ctx.font = '9px sans-serif';
       ctx.fillStyle = RACK_PANEL_RED;
       ctx.fillText(`-$${workload.penaltyOnMiss.toFixed(0)} if missed`, card.x + 6, card.y + card.height * 0.88);
 
-      // Abandon-contract button (F3) — overlaid in the card's corner rather than a 5th text
-      // line, matching the same button geometry input.ts hit-tests against.
+      // Abandon-contract button — overlaid in the card's corner rather than a 5th text line,
+      // matching the same button geometry input.ts hit-tests against.
       const dropButton = getTrayCardDropButtonRect(index, canvasWidth, canvasHeight, serverIds.length, trayIds.length);
       ctx.fillStyle = 'rgba(229, 72, 77, 0.18)';
       ctx.fillRect(dropButton.x, dropButton.y, dropButton.width, dropButton.height);
@@ -1390,7 +1385,7 @@ export function createRenderSystem(
       drawOutdoors(renderer);
       drawBuilding(renderer, world, facility);
       drawShopAndCorridor(renderer);
-      // Before racks, after the floor (D8) — the cabinet art draws on top of the wash.
+      // Before racks, after the floor — the cabinet art draws on top of the wash.
       drawHeatOverlay(renderer, world);
 
       const buildMode = world.getComponent(buildModes, controlled);
@@ -1419,10 +1414,10 @@ export function createRenderSystem(
         }
       }
 
-      // .plans/playtest-findings.md F8: the per-rack ⚡/🔥/°C readout used to draw unconditionally
-      // under EVERY rack, all the time — fine for a couple of racks, noise once a facility has
-      // dozens. Only draw it for the rack under the pointer, or (closet tier, the smallest room)
-      // for every rack, since a small facility has too few racks for the noise to matter yet.
+      // The per-rack ⚡/🔥/°C readout drawing unconditionally under EVERY rack all the time is
+      // fine for a couple of racks, noise once a facility has dozens. Only draw it for the rack
+      // under the pointer, or (closet tier, the smallest room) for every rack, since a small
+      // facility has too few racks for the noise to matter yet.
       // drawThermalBadge is untouched — it already self-gates on tripped/throttled, the "urgent"
       // signal this declutter is meant to preserve, not hide further.
       const hoverGrid = (() => {
@@ -1528,7 +1523,7 @@ export function createRenderSystem(
       camera.resetTransform(renderer.context);
 
       // Everything below is screen-space UI: HUD bar, build/rack panels, pending-deadline
-      // border. Drawn outside the camera transform (see .plans/facility-shop-inventory.md D1).
+      // border. Drawn outside the camera transform.
       drawPendingBorder(world, renderer);
 
       // The rack panel and shop panel are both full-screen modals that replace the build panel

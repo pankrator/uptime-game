@@ -1,6 +1,5 @@
-// Shared builders for Layer 3 (.plans/testing-strategy.md) system tests. `World` has no
-// DOM/canvas dependency (see world.ts), so every helper here runs headless in Node — no dev
-// server, no browser.
+// Shared builders for system tests. `World` has no DOM/canvas dependency (see world.ts), so
+// every helper here runs headless in Node — no dev server, no browser.
 import { createWorld, type World, type EntityId } from './world';
 import { spawnFacility, spawnRack, spawnMachine } from '../entities';
 import { powereds, serverCapacities, workloads, type Workload } from './components';
@@ -80,10 +79,10 @@ export function runTicks(system: System, deltaSeconds: number, ticks: number): v
   for (let i = 0; i < ticks; i++) system.update(deltaSeconds);
 }
 
-// F7/F16: click-handling functions extracted from input.ts (handleRackPanelClick,
-// handleShopClick) only read renderer.width/renderer.height — no canvas or drawing context —
-// so a headless test can satisfy the Renderer interface with a stub rather than a real
-// HTMLCanvasElement, which the "node" test environment (vite.config.ts) doesn't have.
+// The click-handling functions extracted from input.ts (handleRackPanelClick, handleShopClick)
+// only read renderer.width/renderer.height — no canvas or drawing context — so a headless test
+// can satisfy the Renderer interface with a stub rather than a real HTMLCanvasElement, which the
+// "node" test environment (vite.config.ts) doesn't have.
 export function stubRenderer(width: number, height: number): Renderer {
   return {
     canvas: null as unknown as HTMLCanvasElement,

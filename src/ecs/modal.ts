@@ -1,22 +1,13 @@
-// Single source of truth for "which modal is open" (F6, .plans/design-review.md, plus a
-// follow-up simplification). The rule — exactly one of {rack panel, shop, offers, jobs} is
-// visible at a time — used to be enforced by four independent components (OpenRackPanel,
-// ShopOpen, OffersPanelOpen, JobsPanelOpen), each optionally present on the player at once, with
-// mutual exclusion upheld only by every opener remembering to close the other three
-// (closeOtherModals). activeModal() had to check all four by hand to find out which one, if any,
-// was actually open.
-//
-// components.ts's ActiveModal is now a single tagged-union component, so AT MOST ONE modal can
-// ever be recorded as open — it's a type error to represent two at once — and activeModal() is
-// one read. openModal() replaces closeOtherModals(): opening a modal is a single addComponent
-// that overwrites whatever was there, after running the PREVIOUS kind's registered closer (if
-// it's actually a different kind) so it can free its own satellite state (scroll position, drag
+// Single source of truth for "which modal is open". At most one of {rack panel, shop, offers,
+// jobs} is ever open: ActiveModal is a tagged-union component, so representing two at once is a
+// type error, and activeModal() is one read. openModal() overwrites whatever was previously
+// open with a single addComponent, after running the PREVIOUS kind's registered closer (if it's
+// actually a different kind) so it can free its own satellite state (scroll position, drag
 // state, confirm windows).
 //
-// Each panel module still registers its own close function here (registerModalCloser) instead of
-// importing the other panels' close functions directly, so this module never imports any of
-// them and the import cycles F6 fixed (rack-panel.ts <-> job-panels.ts, shop.ts <->
-// job-panels.ts) stay fixed.
+// Each panel module registers its own close function here (registerModalCloser) instead of this
+// module importing the other panels' close functions directly, so this module never imports any
+// of them and no import cycle forms between rack-panel.ts, shop.ts, and job-panels.ts.
 import { type World, type EntityId } from './world';
 import { activeModals, type ActiveModal } from './components';
 
@@ -42,13 +33,10 @@ export function activeModal(world: World, player: EntityId): ModalKind | null {
   return modal.kind;
 }
 
-// Opens `modal`, replacing whatever else was open — the single place that bookkeeping lives now,
-// instead of every opener calling every other panel's close function by hand. Runs the PREVIOUS
-// modal's registered closer first (so it frees its own satellite state), but only if it's
-// actually a different kind: re-opening/promoting the same kind in place (e.g.
-// openOrPromoteRackPanel switching mode on the same or a different rack) must not tear down and
-// rebuild what's already there — that distinction used to be closeOtherModals's `keep` param,
-// skipping its own kind; here it falls out of comparing `current.kind` to `modal.kind` directly.
+// Opens `modal`, replacing whatever else was open. Runs the PREVIOUS modal's registered closer
+// first (so it frees its own satellite state), but only if it's actually a different kind:
+// re-opening/promoting the same kind in place (e.g. openOrPromoteRackPanel switching mode on the
+// same or a different rack) must not tear down and rebuild what's already there.
 export function openModal(world: World, player: EntityId, modal: ActiveModal): void {
   const current = world.getComponent(activeModals, player);
   if (current && current.kind !== modal.kind) {

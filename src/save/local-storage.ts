@@ -2,7 +2,7 @@ import { type SaveStorage } from './types';
 
 const DEFAULT_PREFIX = 'uptime-game:save:';
 
-// `write`/`read`/`remove` return Promises purely to match `SaveStorage`'s shape (D1) — the
+// `write`/`read`/`remove` return Promises purely to match `SaveStorage`'s shape — the
 // underlying localStorage calls are synchronous.
 export function createLocalStorageSaveStorage(prefix = DEFAULT_PREFIX): SaveStorage {
   const keyFor = (slot: string) => `${prefix}${slot}`;

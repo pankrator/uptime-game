@@ -51,9 +51,8 @@ import {
 
 // `T = unknown` here (rather than a precise per-entry generic) trades some compile-time
 // checking inside each entry's `remapRefs` body for being able to hold every component's entry
-// in one flat array — the same "boring, doesn't need to be clever" call the project's
-// hand-rolled ECS itself makes (see CLAUDE.md, .plans/ecs-migration.md). The round-trip test
-// (round-trip.test.ts) is what actually catches a wrong `remapRefs`, not the type checker.
+// in one flat array. The round-trip test (round-trip.test.ts) is what actually catches a wrong
+// `remapRefs`, not the type checker.
 export interface SaveComponentEntry<T = unknown> {
   // Stable id, independent of the store's TS export name — renaming `wallets` to
   // `facilityWallets` later must never change what's already sitting in someone's
@@ -62,7 +61,7 @@ export interface SaveComponentEntry<T = unknown> {
   store: ComponentStore<T>;
   // Only components holding another entity's id need this (InstalledIn.rackId,
   // PlacedOn.serverId, MaintenanceTask.rackId + its nested job.machineId). Default: no refs,
-  // value passes through unchanged. See .plans/save-load.md D3.
+  // value passes through unchanged.
   remapRefs?: (value: T, remap: (id: EntityId) => EntityId) => T;
 }
 
@@ -81,11 +80,10 @@ function entry<T>(
   return { key, store, remapRefs } as SaveComponentEntry;
 }
 
-// Every component that gets written into a save and restored on load. See
-// .plans/save-load.md D4 for why each of these is "persist" rather than "skip", and
-// TRANSIENT_COMPONENTS below for the skip side. registry.test.ts asserts every
-// ComponentStore-shaped export of components.ts appears in exactly one of the two lists —
-// keep that invariant in mind before adding a component to only one of them by hand.
+// Every component that gets written into a save and restored on load; TRANSIENT_COMPONENTS
+// below is the skip side. registry.test.ts asserts every ComponentStore-shaped export of
+// components.ts appears in exactly one of the two lists — keep that invariant in mind before
+// adding a component to only one of them by hand.
 export const SAVE_COMPONENTS: SaveComponentEntry[] = [
   entry('position', positions),
   entry('gridPosition', gridPositions),
@@ -130,7 +128,7 @@ export const SAVE_COMPONENTS: SaveComponentEntry[] = [
 
 // Components deliberately NOT saved — either a derived cache fully recomputed every tick
 // (rackLoads/serverCapacities/utilizations), or session-local UI/gesture/effect state that's
-// meaningless across a reload (everything else here). See .plans/save-load.md D4.
+// meaningless across a reload (everything else here).
 export const TRANSIENT_COMPONENTS: ComponentStore<unknown>[] = [
   moveTargets,
   pathFollows,
@@ -142,11 +140,9 @@ export const TRANSIENT_COMPONENTS: ComponentStore<unknown>[] = [
   // as every other component in this list.
   activeModals,
   rackScrolls,
-  // F15 (.plans/design-review.md): was module-level state in shop.ts before this; same
-  // "session-local UI toggle" category as activeModals, so transient for the same reason.
   shopTabs,
-  // Offers/jobs panel scroll — session-local UI state (.plans/job-panels.md), same category as
-  // activeModals/RackScroll above.
+  // Offers/jobs panel scroll — session-local UI state, same category as activeModals/RackScroll
+  // above.
   offersPanelScrolls,
   jobsPanelScrolls,
   pendingDrops,

@@ -1,6 +1,6 @@
 // Integrates per-rack Temperature from this tick's RackLoad.heatKw and delivered cooling
 // (facility baseline + placed CRAC units), derives the throttle band, and trips/recovers racks
-// that overheat. See .plans/thermal-and-cooling.md D1-D7 and Step 3.
+// that overheat.
 import { type World, type EntityId } from '../world';
 import {
   rackSlots,
@@ -34,7 +34,7 @@ import { type System } from './system';
 // Runs AFTER resource.ts and capacity.ts (needs this tick's RackLoad.heatKw, and a machine
 // already offline from a brownout must not also be generating heat) and BEFORE workload-run.ts
 // (which applies Temperature.throttleFactor to pay/progress). See the ordering comment in
-// main.ts.
+// main.ts's updateSystems.
 export function createThermalSystem(world: World, facility: EntityId, events: EventBus<GameEvents>): System {
   return {
     update(deltaSeconds: number) {
@@ -62,7 +62,7 @@ export function createThermalSystem(world: World, facility: EntityId, events: Ev
           serverCount: 0,
         };
 
-        // D5: BASELINE_COOLING_KW is building ventilation — a flat, position-independent amount
+        // BASELINE_COOLING_KW is building ventilation — a flat, position-independent amount
         // every rack gets for free. Deliberately NOT derived from the facility's CoolingCapacity:
         // that is a facility-wide budget for how much work the datacenter can run (resource.ts
         // enforces it as a brownout cap), and spreading it across racks gave every rack the whole
@@ -92,11 +92,11 @@ export function createThermalSystem(world: World, facility: EntityId, events: Ev
             events.emit('machine:thermal-tripped', { machineId, rackId });
           }
         } else if (tripped && temperature.celsius <= TRIP_RECOVER_C) {
-          // Hysteresis (D3/Step 3): clear a few degrees below THROTTLE_C, not right at TRIP_C —
-          // otherwise a rack sitting on the boundary flickers online/offline every tick.
-          // resource.ts's normal recovery path (candidateIds filter + offlineCooldown) brings
-          // the rack's machines back online on a later tick; this system only ever forces
-          // offline, never forces online (D7).
+          // Hysteresis: clear a few degrees below THROTTLE_C, not right at TRIP_C — otherwise a
+          // rack sitting on the boundary flickers online/offline every tick. resource.ts's
+          // normal recovery path (candidateIds filter + offlineCooldown) brings the rack's
+          // machines back online on a later tick; this system only ever forces offline, never
+          // forces online.
           world.removeComponent(thermalTrips, rackId);
         }
       }

@@ -1,9 +1,8 @@
-// The sole input tracker (.plans/input-router-refactor.md D1 follow-up — replaces
-// src/input/index.ts entirely). Listens for keys, pointer position/clicks/drag, wheel, and
-// pinch/ctrl-wheel zoom via Pointer Events (unifying mouse, touch, and pen — see
-// .plans/mobile-touch-support.md), and keeps a snapshot of input state between frames. Consumers
-// poll getState() and act on it directly — no callback registration, no consumer-owned gesture
-// interpretation (that's input.ts's job for clicks/keys, rack-panel.ts's for chip/tray drag).
+// The sole input tracker. Listens for keys, pointer position/clicks/drag, wheel, and
+// pinch/ctrl-wheel zoom via Pointer Events (unifying mouse, touch, and pen), and keeps a
+// snapshot of input state between frames. Consumers poll getState() and act on it directly —
+// no callback registration, no consumer-owned gesture interpretation (that's input.ts's job
+// for clicks/keys, rack-panel.ts's for chip/tray drag).
 //
 // Most fields are a plain "as of the last update() call" snapshot: safe to read from any number
 // of places at any rate. wheelDeltaY/zoomDelta are the deliberate exception — genuine

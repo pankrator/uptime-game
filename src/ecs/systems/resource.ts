@@ -64,25 +64,23 @@ export function selectMachinesToBrownOut(
   return offline;
 }
 
-// Workload ids placed on a given server. A server can host several workloads at once (D1: one
-// workload per server, not one server per workload), so this is a plural lookup — the inverse
-// of the old Assignment, which lived on the machine and was 1:1.
+// Workload ids placed on a given server. A server can host several workloads at once, so this
+// is a plural lookup.
 function workloadsOn(world: World, serverId: EntityId): EntityId[] {
   return world
     .query(placedOns)
     .filter((workloadId) => world.getComponent(placedOns, workloadId)!.serverId === serverId);
 }
 
-// Losing a server to a brownout (or, per .plans/thermal-and-cooling.md D6, a thermal trip)
-// unplaces every workload on it — they return to the tray still holding their deadline, a
-// visible/recoverable setback rather than silent progress loss (see .plans/workload-dispatch.md,
-// "Changed: resource.ts"). Exported so thermal.ts's/wear.ts's trip/failure handling reuses this
-// exactly rather than a second, likely-diverging implementation (D6: "no new failure path").
+// Losing a server to a brownout (or a thermal trip) unplaces every workload on it — they
+// return to the tray still holding their deadline, a visible/recoverable setback rather than
+// silent progress loss. Exported so thermal.ts's/wear.ts's trip/failure handling reuses this
+// exactly rather than a second, likely-diverging implementation.
 //
-// .plans/playtest-findings.md F4: also tags each unplaced workload with RecentlyUnplaced so that
-// if THIS SAME server comes back online within BROWNOUT_RESTORE_GRACE_SECONDS, the online-
-// transition branch below re-places it automatically instead of leaving the player to notice and
-// re-drag it for a squeeze that already resolved itself.
+// Also tags each unplaced workload with RecentlyUnplaced so that if THIS SAME server comes back
+// online within BROWNOUT_RESTORE_GRACE_SECONDS, the online-transition branch below re-places it
+// automatically instead of leaving the player to notice and re-drag it for a squeeze that
+// already resolved itself.
 export function unplaceAllOn(world: World, serverId: EntityId): void {
   const now = performance.now();
   for (const workloadId of workloadsOn(world, serverId)) {
@@ -95,9 +93,9 @@ export function unplaceAllOn(world: World, serverId: EntityId): void {
 }
 
 // Exported so capacity.ts's rack-panel draw readout calls this exact function instead of
-// duplicating the calculation (the two used to drift — see .plans/playtest-findings.md F5).
+// duplicating the calculation (the two used to drift).
 //
-// F5: an ONLINE machine with nothing PLACED on it draws IDLE_POWER_FRACTION of its full
+// An ONLINE machine with nothing PLACED on it draws IDLE_POWER_FRACTION of its full
 // power/cooling instead of the full amount — previously idle capacity billed exactly like busy
 // capacity, so buying ahead of demand (the fun part of a tycoon game) was strictly punished.
 export function drawFor(world: World, machineId: EntityId): MachineDraw {
@@ -117,11 +115,11 @@ export function drawFor(world: World, machineId: EntityId): MachineDraw {
   return { id: machineId, powerKw: tier.powerKw * idleFraction, coolingKw };
 }
 
-// F4's restore half: a server just came back online — re-place any workload still tagged with
-// RecentlyUnplaced for THIS server, if it hasn't expired and still fits. One-shot per tag: it's
-// removed here whether or not the restore actually happens (already re-placed elsewhere by the
-// player, no longer fits, or the grace window lapsed), so a workload is never silently retried
-// forever.
+// The restore half of unplaceAllOn's RecentlyUnplaced tag: a server just came back online —
+// re-place any workload still tagged with RecentlyUnplaced for THIS server, if it hasn't
+// expired and still fits. One-shot per tag: it's removed here whether or not the restore
+// actually happens (already re-placed elsewhere by the player, no longer fits, or the grace
+// window lapsed), so a workload is never silently retried forever.
 function restoreRecentlyUnplaced(world: World, serverId: EntityId): void {
   const now = performance.now();
   for (const workloadId of world.query(recentlyUnplaceds)) {
@@ -147,10 +145,10 @@ export function createResourceSystem(world: World, facility: EntityId, events: E
       const machineIds = world.query(machines, installedIns, powereds);
 
       // Placed CRAC units draw power unconditionally — they have no Powered component and are
-      // never brownout candidates (D4/Step 1: "cooling costs power" is meant to be a flat cost
-      // of having them placed, not something that itself flickers under a power crunch).
-      // Subtracting their draw from the power budget available to machines keeps the tension
-      // real: more CRACs placed leaves less headroom before machines start browning out.
+      // never brownout candidates ("cooling costs power" is meant to be a flat cost of having
+      // them placed, not something that itself flickers under a power crunch). Subtracting
+      // their draw from the power budget available to machines keeps the tension real: more
+      // CRACs placed leaves less headroom before machines start browning out.
       const cracPowerKw = world.query(coolingUnits).length * CRAC_UNIT.powerKw;
 
       // Tick cooldowns first so a machine can become recovery-eligible this frame.
@@ -163,11 +161,10 @@ export function createResourceSystem(world: World, facility: EntityId, events: E
 
       // Recovery: online machines plus any offline machine whose cooldown has elapsed are
       // candidates; brownout selection then decides who actually fits. A machine whose rack is
-      // thermally tripped is never a candidate — see .plans/thermal-and-cooling.md D7: thermal.ts
-      // may only force offline, never force online, so this is the one place resource.ts (the
-      // sole writer of Powered.online) reads that veto rather than thermal.ts writing the flag
-      // itself. Likewise a Failed machine (.plans/hardware-failure.md D4/D7) is never a
-      // candidate — unlike a brownout/thermal trip, failure has no cooldown-based
+      // thermally tripped is never a candidate — thermal.ts may only force offline, never force
+      // online, so this is the one place resource.ts (the sole writer of Powered.online) reads
+      // that veto rather than thermal.ts writing the flag itself. Likewise a Failed machine is
+      // never a candidate — unlike a brownout/thermal trip, failure has no cooldown-based
       // self-recovery; only a completed repair (maintenance.ts) clears Failed.
       const candidateIds = machineIds.filter((id) => {
         const powered = world.getComponent(powereds, id)!;
@@ -213,15 +210,14 @@ export function createResourceSystem(world: World, facility: EntityId, events: E
       utilization.powerDrawKw = powerDrawKw + cracPowerKw;
       utilization.coolingDrawKw = coolingDrawKw;
 
-      // .plans/power-billing.md D1/D2: billed on draw (offline machines already `continue`d
-      // above and contribute 0), power + cooling at one rate. Includes CRAC power draw
-      // (.plans/thermal-and-cooling.md Step 1) — cooling costs money to run.
+      // Billed on draw (offline machines already `continue`d above and contribute 0), power +
+      // cooling at one rate. Includes CRAC power draw — cooling costs money to run.
       utilization.powerCostPerSecond =
         (powerDrawKw + cracPowerKw + coolingDrawKw) * POWER_COST_PER_KW_SECOND;
       const wallet = world.getComponent(wallets, facility);
       if (wallet) wallet.money -= utilization.powerCostPerSecond * deltaSeconds;
 
-      // F4's warn-before-the-brownout half: fire a one-shot toast the first tick draw crosses
+      // Warn before the brownout: fire a one-shot toast the first tick draw crosses
       // RESOURCE_WARNING_FRACTION of capacity, before anything is actually taken offline.
       // RESOURCE_WARNING_CLEAR_FRACTION is the lower hysteresis line draw must fall back under
       // before the SAME warning can fire again, so hovering right at the line doesn't spam a

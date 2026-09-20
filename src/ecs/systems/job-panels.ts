@@ -1,8 +1,8 @@
 // Offers panel (the counterpart to the old always-docked column of offer cards) and the jobs
 // panel (every accepted job's full stats) — two toggled modals, opened by 'o'/'j' and mutually
-// exclusive with each other and with the rack/shop panels (see .plans/job-panels.md). Pressing
-// O/J while another modal is open SWITCHES to it — closes whichever is open (rack panel, shop,
-// or the other of these two) and opens the one just requested, rather than doing nothing. This
+// exclusive with each other and with the rack/shop panels. Pressing O/J while another modal is
+// open SWITCHES to it — closes whichever is open (rack panel, shop, or the other of these two)
+// and opens the one just requested, rather than doing nothing. This
 // module owns both panels' lifecycle: key toggles, Escape close, wheel-scroll clamping, and the
 // click hit-testing input.ts calls into while a panel is open — the same split of responsibility
 // rack-panel.ts uses (interaction here, drawing in hud.ts).
@@ -40,10 +40,10 @@ import { type Renderer } from '../../rendering';
 import { type Audio } from '../../audio';
 import { type System } from './system';
 
-// .plans/playtest-findings.md F3: accepting a contract nothing can currently serve used to be a
-// single click into a doomed deadline. A SERVABLE offer still accepts on the first click,
-// exactly as before — this only gates the unservable case, same "second click on the same
-// button, within a window, confirms" shape as rack-panel.ts's DecommissionConfirm.
+// Accepting a contract nothing can currently serve used to be a single click into a doomed
+// deadline. A SERVABLE offer still accepts on the first click, exactly as before — this only
+// gates the unservable case, same "second click on the same button, within a window, confirms"
+// shape as rack-panel.ts's DecommissionConfirm.
 const ACCEPT_CONFIRM_WINDOW_MS = 3000;
 
 // Whether ANY online, installed server currently has enough free capacity for these demands —
@@ -166,7 +166,7 @@ export function handleOffersModalClick(
       )
     ) {
       audio.play('uiClick');
-      // F3: a servable offer accepts on the first click, exactly as before. An unservable one
+      // A servable offer accepts on the first click, exactly as before. An unservable one
       // needs a second click within ACCEPT_CONFIRM_WINDOW_MS on the SAME offer's Accept button —
       // same "second click on the same button, within a window, confirms" shape as
       // DecommissionConfirm (rack-panel.ts).
@@ -229,9 +229,9 @@ export function createJobPanelsSystem(
 ): System {
   return {
     update() {
-      // Keys polled directly (.plans/input-router-refactor.md) rather than routed through
-      // input.ts — this module already owns both panels' full lifecycle, and O/J/Escape are
-      // never ambiguous with anything input.ts's click chain handles.
+      // Keys polled directly rather than routed through input.ts — this module already owns
+      // both panels' full lifecycle, and O/J/Escape are never ambiguous with anything input.ts's
+      // click chain handles.
       const inputSnapshot = inputState.getState();
       if (inputSnapshot.keysPressedSincePreviousFrame.has('o')) {
         toggleOffersPanel(world, controlled);
@@ -248,7 +248,7 @@ export function createJobPanelsSystem(
         closeJobPanels(world, controlled);
       }
 
-      // Expire an unconfirmed accept-confirm click (F3: the confirm window, not a modal) —
+      // Expire an unconfirmed accept-confirm click (the confirm window, not a modal) —
       // same per-frame expiry rack-panel.ts's own System does for DecommissionConfirm. Runs
       // unconditionally (not gated on the offers modal being open) so a confirm window started
       // just before the player closed the panel still times out on schedule.

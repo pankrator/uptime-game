@@ -1,7 +1,6 @@
-// F7/F16: startInstall/startRepair/startDecommission/cancelMaintenanceTask were extracted from
-// input.ts into maintenance.ts (the module that finishes a MaintenanceTask now also starts and
-// cancels one) — plain functions over World state, no canvas/input dependency, so they're
-// covered directly here rather than only exercised indirectly through createMaintenanceSystem.
+// startInstall/startRepair/startDecommission/cancelMaintenanceTask are plain functions over
+// World state, no canvas/input dependency, so they're covered directly here rather than only
+// exercised indirectly through createMaintenanceSystem.
 import { describe, it, expect } from 'vitest';
 import { startInstall, startRepair, startDecommission, cancelMaintenanceTask } from './maintenance';
 import { maintenanceTasks, wallets, inventories, conditions } from '../components';

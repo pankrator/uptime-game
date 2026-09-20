@@ -1,8 +1,7 @@
-// F7/F16: handleRackPanelClick was extracted from input.ts into a plain function taking a
-// Renderer (read-only, width/height) and a point, so it can be exercised headlessly — no canvas,
-// no click simulation. Only its own hit-testing/mutation is covered here; the gesture
-// arbitration that decides WHEN to call it stays in input.ts, which still has no test coverage
-// (see .plans/design-review.md F16).
+// handleRackPanelClick was extracted from input.ts into a plain function taking a Renderer
+// (read-only, width/height) and a point, so it can be exercised headlessly — no canvas, no click
+// simulation. Only its own hit-testing/mutation is covered here; the gesture arbitration that
+// decides WHEN to call it stays in input.ts, which still has no test coverage.
 import { describe, it, expect } from 'vitest';
 import { handleRackPanelClick } from './rack-panel';
 import {

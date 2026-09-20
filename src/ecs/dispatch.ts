@@ -1,6 +1,5 @@
 // The only place workload placement mutates. Systems and input both call into this module, so
-// the `Workload.state` / `PlacedOn` / `ServerCapacity.free` invariant lives in one file. See
-// .plans/workload-dispatch.md D1 and the "New module: src/ecs/dispatch.ts" section.
+// the `Workload.state` / `PlacedOn` / `ServerCapacity.free` invariant lives in one file.
 import { type World, type EntityId } from './world';
 import {
   placedOns,
@@ -67,8 +66,7 @@ export function unplaceWorkload(world: World, workloadId: EntityId): void {
 
 // Turns an Offer into a Workload entity (accepted, not yet placed) and destroys the offer.
 // Offer.secondsRemaining is NOT carried over — deadlineRemainingSeconds starts fresh from
-// deadlineSeconds the instant a contract is accepted (see .plans/workload-dispatch.md D2 and
-// the "New loop": "ACCEPT -> enters the tray. Finish deadline starts ticking NOW.").
+// deadlineSeconds the instant a contract is accepted.
 export function acceptOffer(world: World, offerId: EntityId): EntityId {
   const offer = world.getComponent(offers, offerId)!;
   const id = world.createEntity();
@@ -89,23 +87,23 @@ export function acceptOffer(world: World, offerId: EntityId): EntityId {
   return id;
 }
 
-// .plans/contract-variety.md step 3: a small, flat reputation cost (REPUTATION_ON_DECLINE) —
-// enough that cherry-picking forever isn't free, small enough that declining a genuinely bad
-// offer (no server fits it, or a recurring contract you don't have room to commit to) is still
-// clearly the right call next to accepting and eating penaltyOnMiss. facility is only needed to
-// look up Reputation — this function still owns no other state.
+// A small, flat reputation cost (REPUTATION_ON_DECLINE) — enough that cherry-picking forever
+// isn't free, small enough that declining a genuinely bad offer (no server fits it, or a
+// recurring contract you don't have room to commit to) is still clearly the right call next to
+// accepting and eating penaltyOnMiss. facility is only needed to look up Reputation — this
+// function still owns no other state.
 export function declineOffer(world: World, facility: EntityId, offerId: EntityId): void {
   const reputation = world.getComponent(reputations, facility);
   if (reputation) reputation.value = clampReputation(reputation.value + REPUTATION_ON_DECLINE);
   world.destroyEntity(offerId);
 }
 
-// .plans/playtest-findings.md F3: cutting losses on an accepted-but-doomed contract used to mean
-// either finding a server for it or letting it rot into a full miss (REPUTATION_ON_MISSED_DEADLINE
-// plus 100% of penaltyOnMiss). Costs more than a decline (already committed capacity/attention a
-// decline never spends) but strictly less than a miss, so it's always the better move once a
-// contract is clearly unservable. Works whether the workload is sitting in the tray or currently
-// placed — unplaces first so ServerCapacity.free recomputes next tick same as any other unplace.
+// Cutting losses on an accepted-but-doomed contract costs more than a decline (already
+// committed capacity/attention a decline never spends) but strictly less than letting it rot
+// into a full miss (REPUTATION_ON_MISSED_DEADLINE plus 100% of penaltyOnMiss), so it's always
+// the better move once a contract is clearly unservable. Works whether the workload is sitting
+// in the tray or currently placed — unplaces first so ServerCapacity.free recomputes next tick
+// same as any other unplace.
 export function abandonWorkload(world: World, facility: EntityId, workloadId: EntityId): void {
   const workload = world.getComponent(workloads, workloadId);
   if (!workload) return;
