@@ -1,7 +1,10 @@
 # job-panels
 
-`src/ecs/systems/job-panels.ts` — `createJobPanelsSystem(world, input, renderer, controlled)`,
-plus exported helpers used by `input.ts`, `hud.ts`, `rack-panel.ts`, and `shop.ts`
+`src/ecs/systems/job-panels.ts` — `createJobPanelsSystem(world, inputState, renderer, controlled)`,
+plus exported helpers used by `input.ts`, `hud.ts`, `rack-panel.ts`, and `shop.ts`. `O`/`J`/Escape
+are polled directly in this module's own `update()` (`inputState.getState().keysPressedSincePreviousFrame`)
+rather than registered as callbacks — see [input](./input.md)'s notes on why polling the same key
+independently from `input.ts`/`rack-panel.ts` is safe here.
 
 ## Purpose
 

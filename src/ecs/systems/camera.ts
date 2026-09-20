@@ -2,7 +2,7 @@ import { type World, type EntityId } from '../world';
 import { positions, buildModes, maintenanceTasks, dragStates } from '../components';
 import { type Renderer } from '../../rendering';
 import { type Camera } from '../../camera';
-import { type InputState } from '../../input';
+import { type InputStateTracker } from '../../input-state';
 import { pointerInHud } from '../../ui/layout';
 import { activeModal } from '../modal';
 import { type System } from './system';
@@ -44,7 +44,7 @@ function canPanCamera(
 export function createCameraSystem(
   world: World,
   renderer: Renderer,
-  input: InputState,
+  inputState: InputStateTracker,
   controlled: EntityId,
   camera: Camera,
 ): System {
@@ -68,8 +68,9 @@ export function createCameraSystem(
       // press; a real drag only actually moves the camera once movement is seen, so a
       // stationary tap (build placement, a panel button, walk-there) is never affected — those
       // still resolve entirely through input.ts's click chain, untouched by this.
-      const pointerDown = input.isPointerDown();
-      const pointer = input.getPointerPosition();
+      const state = inputState.getState();
+      const pointerDown = state.mouseButtonsDown.has(0);
+      const pointer = state.mousePosition;
       if (pointerDown && pointer) {
         if (dragPointer === null) {
           dragEligible = canPanCamera(world, renderer, controlled, pointer);
@@ -89,7 +90,7 @@ export function createCameraSystem(
         dragEligible = false;
       }
 
-      camera.update(deltaSeconds, position, renderer.canvas, input);
+      camera.update(deltaSeconds, position, renderer.canvas, inputState);
     },
   };
 }
