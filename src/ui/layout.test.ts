@@ -1,7 +1,5 @@
-// Layer 2 (.plans/testing-strategy.md): pure rect-geometry regression tests. Every function
-// under test here takes numbers in and returns a Rect out — no canvas, no DOM. Four of the
-// seven bugs in .plans/playtest-findings.md (B1, B2, B5, F6) were exactly this shape: two
-// rects overlapping, or a rect not fitting inside its container, at a real canvas size.
+// Pure rect-geometry regression tests. Every function under test here takes numbers in and
+// returns a Rect out — no canvas, no DOM.
 import { describe, it, expect } from 'vitest';
 import {
   type Rect,
@@ -32,8 +30,7 @@ import {
 import { BUILDABLES } from '../ecs/components';
 import { MAX_OFFERS } from '../ecs/game-data';
 
-// A handful of real sizes this game has actually shipped bugs at — see
-// .plans/playtest-findings.md B1 (any width) and B5 (<=~1100px wide).
+// A handful of real sizes this game has actually shipped bugs at.
 const CANVAS_SIZES: [number, number][] = [
   [820, 600],
   [1100, 700],

@@ -58,7 +58,7 @@ describe('serializeWorld / deserializeWorld round trip', () => {
     const loadedMachines = loaded.query(machines);
     expect(loadedMachines).toHaveLength(1);
     const [loadedMachine] = loadedMachines;
-    // The whole point of D3's index-based remapping: InstalledIn.rackId must point at the
+    // The whole point of the index-based remapping: InstalledIn.rackId must point at the
     // NEWLY created rack entity, not the old (and now meaningless) live id.
     expect(loaded.getComponent(installedIns, loadedMachine)).toEqual({
       rackId: loadedRack,

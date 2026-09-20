@@ -28,11 +28,11 @@ function createMemoryStorage(): SaveStorage {
 
 describe('SaveManager.load', () => {
   // Regression test for a real bug: a loaded facility never got a Utilization component
-  // (deliberately excluded from the save format as a derived cache — D4), and every system
-  // that maintains it — resource.ts, capacity.ts, workload-spawn.ts, hud.ts, render.ts —
-  // treats that absence as "not initialized yet" rather than "create it." The practical
-  // symptom: after loading a save, the HUD top bar never draws (wallet/money look gone) and
-  // no new offers ever spawn, silently, forever.
+  // (deliberately excluded from the save format as a derived cache), and every system that
+  // maintains it — resource.ts, capacity.ts, workload-spawn.ts, hud.ts, render.ts — treats
+  // that absence as "not initialized yet" rather than "create it." The practical symptom:
+  // after loading a save, the HUD top bar never draws (wallet/money look gone) and no new
+  // offers ever spawn, silently, forever.
   it('leaves the loaded facility with a fresh Utilization component so dependent systems can tick', async () => {
     const manager = createSaveManager(createMemoryStorage());
 

@@ -3,15 +3,15 @@ export interface Renderer {
   readonly context: CanvasRenderingContext2D;
   // Logical (CSS-pixel) canvas size — what every layout/hit-test function in ui/layout.ts
   // expects, and NOT the same as canvas.width/height once devicePixelRatio scaling is applied
-  // below (see .plans/mobile-touch-support.md D5). Always mirrors canvas.clientWidth/Height.
+  // below. Always mirrors canvas.clientWidth/Height.
   readonly width: number;
   readonly height: number;
   clear(): void;
-  // F17 (.plans/design-review.md): removes the window listeners registered below. Harmless
-  // while runGame runs once per page load (nothing calls this today); exists so a future "quit
-  // to menu" feature — createGameLoop already has the matching stop() — has a matching one here
-  // to pair with a fresh createRenderer() on restart, instead of a second 'resize' listener
-  // stacking on top of the first.
+  // Removes the window listeners registered below. Harmless while runGame runs once per page
+  // load (nothing calls this today); exists so a future "quit to menu" feature —
+  // createGameLoop already has the matching stop() — has a matching one here to pair with a
+  // fresh createRenderer() on restart, instead of a second 'resize' listener stacking on top
+  // of the first.
   dispose(): void;
 }
 
@@ -29,9 +29,9 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
 
   // Backing-buffer resolution matches devicePixelRatio (capped) so text/lines stay sharp on
   // high-DPI screens — every current phone/tablet — instead of being upscaled blurry by the
-  // browser (see .plans/mobile-touch-support.md D5). setTransform (not scale) so a resize later
-  // in the session never compounds the dpr factor onto itself. Every drawing call elsewhere
-  // keeps working in CSS-pixel coordinates — this is the one place that changes.
+  // browser. setTransform (not scale) so a resize later in the session never compounds the dpr
+  // factor onto itself. Every drawing call elsewhere keeps working in CSS-pixel coordinates —
+  // this is the one place that changes.
   function resize(): void {
     const dpr = Math.min(window.devicePixelRatio || 1, MAX_DEVICE_PIXEL_RATIO);
     canvas.width = canvas.clientWidth * dpr;
