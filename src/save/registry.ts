@@ -37,7 +37,6 @@ import {
   shopTabs,
   offersPanelScrolls,
   jobsPanelScrolls,
-  pendingDrops,
   dragStates,
   decommissionConfirms,
   acceptConfirms,
@@ -145,7 +144,6 @@ export const TRANSIENT_COMPONENTS: ComponentStore<unknown>[] = [
   // above.
   offersPanelScrolls,
   jobsPanelScrolls,
-  pendingDrops,
   dragStates,
   decommissionConfirms,
   acceptConfirms,

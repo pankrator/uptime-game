@@ -48,10 +48,10 @@ export interface SimulationSystemDeps {
  *   wall would be cosmetic.
  * - resource runs after movement so a machine installed this frame is budgeted the same frame.
  * - rack-panel runs after movement (arrival detection needs this frame's position) and before
- *   capacity: it commits any PendingDrop on arrival via placeWorkload, which capacity.ts must
- *   see this same frame. It's also where the player's drag-and-drop dispatch actually places
- *   workloads — there is no auto-placer anymore; a workload sits in the tray, unplaced, until
- *   the player drags it onto a server.
+ *   capacity: resolving a drop places a workload, which capacity.ts must see this same frame.
+ *   It's also where the player's drag-and-drop dispatch actually places workloads — there is no
+ *   auto-placer; a workload sits in the tray, unplaced, until the player drags it onto a
+ *   server.
  * - capacity runs AFTER resource (needs Powered.online) and BEFORE workload-run: running
  *   workload-run against stale free-capacity would pay out for placements a brownout already
  *   invalidated this frame.

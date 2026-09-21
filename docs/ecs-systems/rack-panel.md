@@ -40,7 +40,7 @@ through as a plain click instead of starting a drag.
 
 This module's own `System.update` also handles right-click, Escape (polled independently — see
 [input](./input.md)'s notes on why that's safe), wheel-scroll, drag-to-scroll, and per-frame
-arrival/pending-drop logic — all off `inputState` now (`src/input/index.ts` is gone).
+arrival detection — all off `inputState` now (`src/input/index.ts` is gone).
 
 ## Drag and drop
 
@@ -51,17 +51,19 @@ arrival/pending-drop logic — all off `inputState` now (`src/input/index.ts` is
   (`getTrayCardDropButtonRect` — F3) so a press there falls through as a plain click
   instead of starting a drag.
 - `resolveDrop` — mouseup resolution:
-  - dropped on the tray, from a server → `unplaceWorkload` immediately (never queued —
-    removing load needs no fit-check and no presence gate)
+  - dropped on the tray, from a server → `unplaceWorkload` immediately (removing load needs
+    no fit-check)
   - dropped outside any row/tray → cancelled, no-op
   - dropped back on its own current server → no-op
-  - dropped on a server that fits (`checkPlacement` from `dispatch.ts`) → commits
-    immediately if arrived, else queued as `PendingDrop`
+  - dropped on a server that fits (`checkPlacement` from `dispatch.ts`) → placed
   - dropped on a server that doesn't fit → `RejectedDrop` set (drives a red flash on the
     blocking trait bars in `render.ts` for `REJECTED_DROP_FLASH_MS`)
-- `PendingDrop`s made while still walking are committed in arrival order once
-  `System.update` detects arrival, skipping any that no longer fit (capacity may have
-  shifted en route).
+
+There is no queue-a-drop-while-walking path. A dispatching panel is not drawn until the
+player arrives (`render.ts` early-returns), so there is no geometry to press against and
+`tryStartDrag` refuses; a drag can only exist after arrival, and every drop commits
+immediately. Making drops possible en route means drawing and hit-testing the panel while
+walking — a UI feature, not a wiring change; see `.plans/ideas-backlog.md`.
 
 ## Other responsibilities
 
@@ -69,8 +71,7 @@ arrival/pending-drop logic — all off `inputState` now (`src/input/index.ts` is
   re-export of `ui/scroll.ts`'s shared `maxScrollOffset` — see [job-panels](./job-panels.md),
   which reuses the same formula for its own offers/jobs modals), since content height changes
   underneath the panel (a workload finishing removes a tray card).
-- `closeRackPanel` clears `ActiveModal`, `RackScroll`, `DragState`, `RejectedDrop`, and
-  any leftover `PendingDrop`s.
+- `closeRackPanel` clears `ActiveModal`, `RackScroll`, `DragState` and `RejectedDrop`.
 - Only one modal (rack, shop, offers, jobs) can ever be recorded as open at once — `ActiveModal`
   (`components.ts`) is a single tagged-union component, not four independent ones, so mutual
   exclusion is structural rather than every opener remembering to close the other three (see

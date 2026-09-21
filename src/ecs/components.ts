@@ -317,13 +317,6 @@ export interface ShopTab {
   current: string;
 }
 
-// A drop the player made while still walking to a dispatching-mode rack — committed on
-// arrival, in order. See ActiveModal's 'rack' variant (`arrived`) and rack-panel.ts.
-export interface PendingDrop {
-  workloadId: EntityId;
-  serverId: EntityId;
-}
-
 // How far the offers panel's list has scrolled, in pixels. Attached to the player alongside
 // ActiveModal's 'offers' variant; reset to 0 whenever the panel opens.
 export interface OffersPanelScroll {
@@ -518,7 +511,6 @@ export const rackScrolls = createComponentStore<RackScroll>();
 export const shopTabs = createComponentStore<ShopTab>();
 export const offersPanelScrolls = createComponentStore<OffersPanelScroll>();
 export const jobsPanelScrolls = createComponentStore<JobsPanelScroll>();
-export const pendingDrops = createComponentStore<PendingDrop>();
 export const dragStates = createComponentStore<DragState>();
 export const decommissionConfirms = createComponentStore<DecommissionConfirm>();
 export const acceptConfirms = createComponentStore<AcceptConfirm>();

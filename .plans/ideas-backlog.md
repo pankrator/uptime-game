@@ -64,6 +64,30 @@ worth plotting.
 
 ---
 
+### Queue a dispatch while walking to the rack
+
+**Why:** clicking a rack opens its panel in `'dispatching'` mode and starts a walk, but the
+panel stays hidden until the player arrives, so the walk is dead time. Letting them line up
+drops en route would make the trip part of the decision rather than a toll paid before it.
+
+**Shape:** draw the dispatching panel before arrival in a visibly pending state (dimmed rows,
+a "walking here" header), let `tryStartDrag` run against it, and hold each resolved drop until
+`System.update` detects arrival, committing in order and re-running `checkPlacement` on each
+since capacity may have shifted en route.
+
+**Cost:** small-medium, and it is mostly UI. The ECS half of this previously existed as a
+`PendingDrop` component plus a commit loop in `rack-panel.ts`, but nothing could ever reach it
+(`tryStartDrag` refuses a panel that has not arrived, because `render.ts` draws no geometry to
+press against), so it was removed rather than left looking implemented. Restoring it is easy;
+the real work is deciding what a not-yet-arrived panel looks like and whether a drop onto a
+server that later fills up should fail loudly or quietly.
+
+**Note:** worth weighing against simply showing the panel immediately and dropping the walk
+gate entirely — the presence requirement exists so the player cannot place work they cannot
+verify fits, and that argument is weaker now that the rack panel shows live free capacity.
+
+---
+
 ## Needs a dependency first
 
 ### Hired staff (technicians)

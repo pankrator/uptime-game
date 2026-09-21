@@ -1,5 +1,4 @@
-// Rack panel lifecycle: open/close, arrival detection, committing any PendingDrop queued while
-// walking, click hit-testing, and drag-and-drop.
+// Rack panel lifecycle: open/close, arrival detection, click hit-testing, and drag-and-drop.
 //
 // input.ts's click-priority chain still owns ordinary clicks (wasClicked) — calling this
 // module's handleRackPanelClick once the panel is the active modal, same as before. Chip/tray
@@ -26,7 +25,6 @@ import {
   activeModals,
   type ActiveModal,
   rackScrolls,
-  pendingDrops,
   dragStates,
   rejectedDrops,
   decommissionConfirms,
@@ -118,9 +116,6 @@ export function closeRackPanel(world: World, controlled: EntityId): void {
   world.removeComponent(dragStates, controlled);
   world.removeComponent(rejectedDrops, controlled);
   world.removeComponent(decommissionConfirms, controlled);
-  for (const workloadId of world.query(pendingDrops)) {
-    world.removeComponent(pendingDrops, workloadId);
-  }
 }
 
 registerModalCloser('rack', closeRackPanel);
@@ -207,7 +202,12 @@ export function handleRackPanelClick(
   const serverIds = serversOn(world, panel.rackId);
   const serverCount = serverIds.length;
   const trayCount = trayWorkloadIds(world).length;
-  const closeRect = getRackPanelCloseButtonRect(renderer.width, renderer.height, serverCount, trayCount);
+  const closeRect = getRackPanelCloseButtonRect(
+    renderer.width,
+    renderer.height,
+    serverCount,
+    trayCount,
+  );
 
   if (pointerInRect(pointer, closeRect)) {
     closeRackPanel(world, controlled);
@@ -222,9 +222,16 @@ export function handleRackPanelClick(
 
     const condition = world.getComponent(conditions, serverId);
     const repairable =
-      condition && (condition.wear > REPAIRABLE_WEAR_THRESHOLD || world.getComponent(faileds, serverId));
+      condition &&
+      (condition.wear > REPAIRABLE_WEAR_THRESHOLD || world.getComponent(faileds, serverId));
     if (repairable) {
-      const repairRect = getServerRepairButtonRect(index, renderer.width, renderer.height, serverCount, trayCount);
+      const repairRect = getServerRepairButtonRect(
+        index,
+        renderer.width,
+        renderer.height,
+        serverCount,
+        trayCount,
+      );
       if (pointerInRect(pointer, repairRect)) {
         audio.play('uiClick');
         startRepair(world, controlled, facility, serverId);
@@ -260,7 +267,13 @@ export function handleRackPanelClick(
   // click needs to protect against.
   const trayIds = trayWorkloadIds(world);
   for (let index = 0; index < trayIds.length; index++) {
-    const dropRect = getTrayCardDropButtonRect(index, renderer.width, renderer.height, serverCount, trayCount);
+    const dropRect = getTrayCardDropButtonRect(
+      index,
+      renderer.width,
+      renderer.height,
+      serverCount,
+      trayCount,
+    );
     if (pointerInRect(pointer, dropRect)) {
       audio.play('uiClick');
       abandonWorkload(world, facility, trayIds[index]);
@@ -271,10 +284,9 @@ export function handleRackPanelClick(
 
 // --- Drag and drop (step 8) ---------------------------------------------------------------
 //
-// Only meaningful while a panel is open in 'dispatching' mode (viewing-mode rows and the tray
-// render but are non-interactive — see render.ts). Drops made before `arrived` are queued
-// as PendingDrop and committed by the System below once the player reaches the rack; drops
-// made after arrival commit immediately.
+// Only meaningful while a panel is open in 'dispatching' mode AND the player has arrived:
+// render.ts draws nothing for a dispatching panel before arrival, so there is no geometry to
+// press against, and viewing-mode rows render but are non-interactive.
 
 // Workload ids placed on a given server, in the same order render.ts draws their chips.
 export function placedWorkloadIds(world: World, serverId: EntityId): EntityId[] {
@@ -412,7 +424,7 @@ const REJECTED_DROP_FLASH_MS = 900;
 //     to stop the player placing work they can't verify fits — it has nothing to check here),
 //     so this is the one drop outcome that's never queued as a PendingDrop.
 //   - not over any server row or the tray → cancelled, workload stays exactly where it was.
-//   - over a server row that fits → commits immediately if arrived, else queues a PendingDrop.
+//   - over a server row that fits → placed.
 //   - over a server row that doesn't fit → rejected; sets RejectedDrop so render.ts flashes the
 //     blocking trait bars red for a moment, and the workload stays at its origin.
 export function resolveDrop(
@@ -427,6 +439,9 @@ export function resolveDrop(
 
   const panel = rackModal(world, controlled);
   if (!panel) return; // panel closed mid-drag — nothing to resolve against
+  // tryStartDrag only starts a drag against an arrived dispatching panel, but the panel is
+  // re-read here, so state it rather than assume it.
+  if (panel.mode !== 'dispatching' || !panel.arrived) return;
 
   // Dropped outside the visible content viewport (including scrolled-off content) — same as
   // dropping outside any row or the tray: cancelled, workload stays at its origin.
@@ -462,19 +477,7 @@ export function resolveDrop(
     return;
   }
 
-  if (panel.mode === 'dispatching' && panel.arrived) {
-    placeWorkload(world, drag.workloadId, targetServerId);
-  } else {
-    // Not yet arrived: queue it. Replaces any earlier pending drop for the same workload
-    // (dragging it again before arrival should move the queued destination, not stack drops).
-    for (const workloadId of world.query(pendingDrops)) {
-      if (workloadId === drag.workloadId) world.removeComponent(pendingDrops, workloadId);
-    }
-    world.addComponent(pendingDrops, drag.workloadId, {
-      workloadId: drag.workloadId,
-      serverId: targetServerId,
-    });
-  }
+  placeWorkload(world, drag.workloadId, targetServerId);
 }
 
 // Cancels an in-progress drag without resolving a drop — used when the panel closes mid-drag.
@@ -521,7 +524,10 @@ export function createRackPanelSystem(
       // input.ts (job-panels.ts does the same for its own two panels): ActiveModal is a single
       // tagged union, so at most one of these Escape checks across the three files ever actually
       // does anything for a given press.
-      if (inputSnapshot.keysPressedSincePreviousFrame.has('Escape') && rackModal(world, controlled)) {
+      if (
+        inputSnapshot.keysPressedSincePreviousFrame.has('Escape') &&
+        rackModal(world, controlled)
+      ) {
         closeRackPanel(world, controlled);
       }
 
@@ -602,18 +608,6 @@ export function createRackPanelSystem(
           const distance = Math.hypot(rackCenter.x - position.x, rackCenter.y - position.y);
           if (distance <= DISPATCH_REACH_PX) {
             panel.arrived = true;
-
-            // Commit every PendingDrop queued while walking, in order, skipping any that no
-            // longer fit (capacity may have shifted — a brownout, another placement — while
-            // the player was en route).
-            const drops = world.query(pendingDrops).sort((a, b) => a - b);
-            for (const workloadId of drops) {
-              const drop = world.getComponent(pendingDrops, workloadId)!;
-              world.removeComponent(pendingDrops, workloadId);
-              if (checkPlacement(world, workloadId, drop.serverId) === null) {
-                placeWorkload(world, workloadId, drop.serverId);
-              }
-            }
           }
         }
       }
