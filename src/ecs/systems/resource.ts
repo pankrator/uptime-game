@@ -15,6 +15,7 @@ import {
   faileds,
   recentlyUnplaceds,
   temperatures,
+  demandClocks,
 } from '../components';
 import {
   MACHINE_TIERS,
@@ -74,12 +75,11 @@ export function selectMachinesToBrownOut(
 //
 // Not for a server that is going away for good — a decommission calls dispatch.ts's
 // unplaceAllOn directly, since a restore tag naming a destroyed server can never be redeemed.
-export function evacuateForOutage(world: World, serverId: EntityId): void {
-  const now = performance.now();
+export function evacuateForOutage(world: World, serverId: EntityId, nowSeconds: number): void {
   for (const workloadId of unplaceAllOn(world, serverId)) {
     world.addComponent(recentlyUnplaceds, workloadId, {
       serverId,
-      expiresAtMs: now + BROWNOUT_RESTORE_GRACE_SECONDS * 1000,
+      expiresAtSeconds: nowSeconds + BROWNOUT_RESTORE_GRACE_SECONDS,
     });
   }
 }
@@ -132,13 +132,12 @@ export function drawFor(world: World, machineId: EntityId): MachineDraw {
 // expired and still fits. One-shot per tag: it's removed here whether or not the restore
 // actually happens (already re-placed elsewhere by the player, no longer fits, or the grace
 // window lapsed), so a workload is never silently retried forever.
-function restoreRecentlyUnplaced(world: World, serverId: EntityId): void {
-  const now = performance.now();
+function restoreRecentlyUnplaced(world: World, serverId: EntityId, nowSeconds: number): void {
   for (const workloadId of world.query(recentlyUnplaceds)) {
     const tag = world.getComponent(recentlyUnplaceds, workloadId)!;
     if (tag.serverId !== serverId) continue;
     world.removeComponent(recentlyUnplaceds, workloadId);
-    if (now >= tag.expiresAtMs) continue;
+    if (nowSeconds >= tag.expiresAtSeconds) continue;
     if (world.getComponent(placedOns, workloadId)) continue; // already placed elsewhere
     if (checkPlacement(world, workloadId, serverId) === null) {
       placeWorkload(world, workloadId, serverId);
@@ -153,6 +152,7 @@ export function createResourceSystem(
 ): System {
   return {
     update(deltaSeconds: number) {
+      const nowSeconds = world.getComponent(demandClocks, facility)?.elapsedSeconds ?? 0;
       const powerCapacity = world.getComponent(powerCapacities, facility);
       const coolingCapacity = world.getComponent(coolingCapacities, facility);
       const utilization = world.getComponent(utilizations, facility);
@@ -208,11 +208,11 @@ export function createResourceSystem(
         if (shouldBeOnline && !powered.online) {
           powered.online = true;
           powered.offlineCooldown = 0;
-          restoreRecentlyUnplaced(world, id);
+          restoreRecentlyUnplaced(world, id, nowSeconds);
         } else if (!shouldBeOnline && powered.online) {
           powered.online = false;
           powered.offlineCooldown = BROWNOUT_COOLDOWN_SECONDS;
-          evacuateForOutage(world, id);
+          evacuateForOutage(world, id, nowSeconds);
           events.emit('machine:browned-out', { machineId: id });
         }
 

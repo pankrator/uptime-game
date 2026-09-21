@@ -1,9 +1,32 @@
 import { describe, it, expect } from 'vitest';
 import { createResourceSystem, selectMachinesToBrownOut } from './resource';
 import { placeWorkload } from '../dispatch';
-import { placedOns, powereds, thermalTrips, faileds, wallets, powerCapacities } from '../components';
-import { BROWNOUT_COOLDOWN_SECONDS, IDLE_POWER_FRACTION, MACHINE_TIERS } from '../game-data';
-import { createTestFacility, spawnOnlineServer, spawnRack, makeWorkload, stubEventBus, runTicks } from '../test-helpers';
+import {
+  placedOns,
+  powereds,
+  thermalTrips,
+  faileds,
+  wallets,
+  powerCapacities,
+  coolingCapacities,
+  demandClocks,
+} from '../components';
+import {
+  BROWNOUT_COOLDOWN_SECONDS,
+  BROWNOUT_RESTORE_GRACE_SECONDS,
+  IDLE_POWER_FRACTION,
+  MACHINE_TIERS,
+} from '../game-data';
+import {
+  createTestFacility,
+  spawnOnlineServer,
+  spawnRack,
+  makeWorkload,
+  stubEventBus,
+  runTicks,
+} from '../test-helpers';
+import { createCapacitySystem } from './capacity';
+import { spawnMachine } from '../../entities';
 
 describe('selectMachinesToBrownOut (pure ordering)', () => {
   it('offlines nothing when draw is already within budget', () => {
@@ -95,5 +118,88 @@ describe('resource system', () => {
     runTicks(createResourceSystem(world, facility, stubEventBus()), 1, 1);
 
     expect(world.getComponent(wallets, facility)!.money).toBeLessThan(startingMoney);
+  });
+});
+
+describe('brownout restore grace window', () => {
+  it('is measured in simulation seconds, so it expires on the simulation clock', () => {
+    const { world, facility } = createTestFacility();
+    const events = stubEventBus();
+    const resource = createResourceSystem(world, facility, events);
+    const capacity = createCapacitySystem(world, facility);
+
+    world.addComponent(powerCapacities, facility, { kw: 10 });
+    world.addComponent(coolingCapacities, facility, { kw: 10 });
+    const rackId = spawnRack(world, 3, 8);
+    const serverId = spawnMachine(world, rackId, 'basic', 0);
+
+    const dt = 1 / 30;
+    resource.update(dt);
+    capacity.update(dt);
+
+    const workloadId = makeWorkload(world, { demands: { cpu: 2, ramGb: 8, storageGb: 100 } });
+    placeWorkload(world, workloadId, serverId);
+    capacity.update(dt);
+
+    // Brown it out, then hold the outage well past the grace window in SIMULATION time. The
+    // wall clock barely moves while this loop runs, which is exactly the discrepancy that made
+    // a performance.now() deadline wrong here.
+    world.getComponent(powerCapacities, facility)!.kw = 0.01;
+    const clock = world.getComponent(demandClocks, facility)!;
+    resource.update(dt);
+    capacity.update(dt);
+    expect(world.getComponent(placedOns, workloadId)).toBeUndefined();
+
+    const elapseSeconds = BROWNOUT_RESTORE_GRACE_SECONDS + 2;
+    for (let i = 0; i < elapseSeconds * 30; i++) {
+      clock.elapsedSeconds += dt;
+      resource.update(dt);
+      capacity.update(dt);
+    }
+
+    world.getComponent(powerCapacities, facility)!.kw = 10;
+    for (let i = 0; i < 60; i++) {
+      clock.elapsedSeconds += dt;
+      resource.update(dt);
+      capacity.update(dt);
+    }
+
+    expect(world.getComponent(powereds, serverId)!.online).toBe(true);
+    expect(world.getComponent(placedOns, workloadId), 'grace window had lapsed').toBeUndefined();
+  });
+
+  it('restores work when the server returns inside the window', () => {
+    const { world, facility } = createTestFacility();
+    const events = stubEventBus();
+    const resource = createResourceSystem(world, facility, events);
+    const capacity = createCapacitySystem(world, facility);
+
+    world.addComponent(powerCapacities, facility, { kw: 10 });
+    world.addComponent(coolingCapacities, facility, { kw: 10 });
+    const rackId = spawnRack(world, 3, 8);
+    const serverId = spawnMachine(world, rackId, 'basic', 0);
+
+    const dt = 1 / 30;
+    resource.update(dt);
+    capacity.update(dt);
+
+    const workloadId = makeWorkload(world, { demands: { cpu: 2, ramGb: 8, storageGb: 100 } });
+    placeWorkload(world, workloadId, serverId);
+    capacity.update(dt);
+
+    world.getComponent(powerCapacities, facility)!.kw = 0.01;
+    resource.update(dt);
+    capacity.update(dt);
+    expect(world.getComponent(placedOns, workloadId)).toBeUndefined();
+
+    world.getComponent(powerCapacities, facility)!.kw = 10;
+    const clock = world.getComponent(demandClocks, facility)!;
+    for (let i = 0; i < 60; i++) {
+      clock.elapsedSeconds += dt;
+      resource.update(dt);
+      capacity.update(dt);
+    }
+
+    expect(world.getComponent(placedOns, workloadId)?.serverId).toBe(serverId);
   });
 });

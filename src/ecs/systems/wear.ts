@@ -4,14 +4,26 @@
 // and AFTER thermal.ts (needs this tick's rack Temperature — heat accelerates wear). See the
 // ordering comment in main.ts.
 import { type World, type EntityId } from '../world';
-import { machines, installedIns, powereds, conditions, faileds, temperatures, demandClocks } from '../components';
+import {
+  machines,
+  installedIns,
+  powereds,
+  conditions,
+  faileds,
+  temperatures,
+  demandClocks,
+} from '../components';
 import { heatWearMultiplier, wearGain, failureChancePerSecond, rollFailure } from '../wear';
 import { evacuateForOutage } from './resource';
 import { type EventBus } from '../event-bus';
 import { type GameEvents } from '../game-events';
 import { type System } from './system';
 
-export function createWearSystem(world: World, facility: EntityId, events: EventBus<GameEvents>): System {
+export function createWearSystem(
+  world: World,
+  facility: EntityId,
+  events: EventBus<GameEvents>,
+): System {
   return {
     update(deltaSeconds: number) {
       const elapsedSeconds = world.getComponent(demandClocks, facility)?.elapsedSeconds ?? 0;
@@ -36,7 +48,7 @@ export function createWearSystem(world: World, facility: EntityId, events: Event
           world.addComponent(faileds, machineId, { failedAt: elapsedSeconds });
           powered.online = false;
           powered.offlineCooldown = 0; // stays dead until repaired — no cooldown-based self-recovery
-          evacuateForOutage(world, machineId);
+          evacuateForOutage(world, machineId, elapsedSeconds);
           events.emit('machine:failed', { machineId });
         }
       }

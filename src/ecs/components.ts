@@ -244,6 +244,21 @@ export interface ResourceWarning {
   coolingNearLimit: boolean;
 }
 
+// Facility singleton. elapsedSeconds doubles as THE simulation clock: it is the only monotonic
+// count of simulated time in the world, and thermal.ts (ThermalTrip.trippedAt), wear.ts
+// (Failed.failedAt) and resource.ts (RecentlyUnplaced) all timestamp against it.
+//
+// Which clock a new timer belongs on:
+//   - simulation time (here) for anything that changes what happens — a grace window, a
+//     cooldown, an age. These must scale with the simulation, not with the wall, or a future
+//     fast-forward silently changes the rules.
+//   - wall clock (performance.now) for anything measuring a PERSON or a picture: the
+//     click-twice-to-confirm windows (DecommissionConfirm, AcceptConfirm), the rejected-drop
+//     flash, Toast and FloatingText lifetimes. Three seconds of human reaction time is three
+//     seconds however fast the game is running.
+//
+// Written by workload-spawn.ts, which runs after resource/thermal/wear in the pipeline, so
+// those three read the previous tick's value — 1/30s stale against windows measured in seconds.
 export interface DemandClock {
   elapsedSeconds: number;
   nextArrivalInSeconds: number;
@@ -266,7 +281,9 @@ export interface PlacedOn {
 // lapsed). See BROWNOUT_RESTORE_GRACE_SECONDS in game-data.ts.
 export interface RecentlyUnplaced {
   serverId: EntityId;
-  expiresAtMs: number;
+  // Simulation seconds (DemandClock.elapsedSeconds), not wall clock: this window decides
+  // whether work comes back, so it has to be measured in the same time the outage was.
+  expiresAtSeconds: number;
 }
 
 // Which modal is open, if any — a tagged union, so AT MOST ONE modal can ever be recorded as
