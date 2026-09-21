@@ -197,14 +197,15 @@ function drawTopBar(world: World, renderer: Renderer, facility: EntityId): void 
     });
   }
 
-  // Cooling. Spelled out rather than left as a bare ❄ figure: this is the facility's cooling
-  // BUDGET — how much work the datacenter can run at once, enforced by resource.ts as a brownout
-  // cap exactly like power — and it has nothing to do with how hot any rack is. Rack temperature
-  // is local (flat baseline + CRACs in range + that rack's own heat) and is shown per rack on the
-  // floor in °C, so a lone snowflake here invited reading the two as the same thing.
+  // Chiller plant: the facility's cooling BUDGET — how much work the datacenter can run at once,
+  // enforced by resource.ts as a brownout cap exactly like power. It has nothing to do with how
+  // hot any rack is; that is local (flat baseline + CRACs in range + the rack's own heat) and is
+  // shown per rack on the floor in °C. Named "CHILLER" rather than "COOLING" for exactly that
+  // reason — sharing the word with the CRAC units the shop sells under Rack Cooling sent players
+  // who were overheating to buy the one upgrade that cannot possibly help.
   {
     const overCooling = utilization.coolingDrawKw > coolingCapacity.kw;
-    const coolingText = `❄ COOLING ${utilization.coolingDrawKw.toFixed(1)} / ${coolingCapacity.kw.toFixed(1)} kW`;
+    const coolingText = `❄ CHILLER ${utilization.coolingDrawKw.toFixed(1)} / ${coolingCapacity.kw.toFixed(1)} kW`;
     const textWidth = ctx.measureText(coolingText).width;
     tryDraw(textWidth + 6 + 36 + 20, () => {
       ctx.fillStyle = overCooling ? RED : TEXT_COLOR;
@@ -363,7 +364,12 @@ function drawActiveJobRow(
 
   const barWidth = 70;
   const barX = rect.x + rect.width - padX - barWidth - 34;
-  drawBar(ctx, { x: barX, y: line1Y - 4, width: barWidth, height: 8 }, fraction, doomed ? RED : GREEN);
+  drawBar(
+    ctx,
+    { x: barX, y: line1Y - 4, width: barWidth, height: 8 },
+    fraction,
+    doomed ? RED : GREEN,
+  );
   ctx.textAlign = 'right';
   ctx.fillStyle = doomed ? RED : DIM_COLOR;
   ctx.fillText(`${remaining}s`, rect.x + rect.width - padX, line1Y);
@@ -646,9 +652,16 @@ function drawOfferCard(
   // as DecommissionConfirm's own visual.
   const acceptConfirm = world.getComponent(acceptConfirms, controlled);
   const confirmingAccept =
-    !servable && acceptConfirm?.offerId === offerId && performance.now() < acceptConfirm.expiresAtMs;
+    !servable &&
+    acceptConfirm?.offerId === offerId &&
+    performance.now() < acceptConfirm.expiresAtMs;
 
-  const acceptRect = getOffersModalButtonRect(offer.slot, 'accept', renderer.width, renderer.height);
+  const acceptRect = getOffersModalButtonRect(
+    offer.slot,
+    'accept',
+    renderer.width,
+    renderer.height,
+  );
   ctx.fillStyle = confirmingAccept ? '#6f3a2f' : '#2f6f4f';
   ctx.fillRect(acceptRect.x, acceptRect.y, acceptRect.width, acceptRect.height);
   ctx.strokeStyle = confirmingAccept ? AMBER : GREEN;

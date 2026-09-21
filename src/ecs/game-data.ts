@@ -133,6 +133,12 @@ export const POWER_COST_PER_KW_SECOND = 0.2;
 
 export const POWER_UPGRADE_COST = 400;
 export const POWER_UPGRADE_KW = 5;
+// Chiller plant, NOT rack cooling — two separate systems that both used to be called "cooling"
+// to the player. This one is a facility-wide BUDGET: resource.ts brownouts machines whose summed
+// cooling draw exceeds it, exactly as it does for power. It has no bearing on how hot any rack
+// runs; that is thermal.ts, and it comes from BASELINE_COOLING_KW plus the CRAC units placed in
+// range (CRAC_UNIT below). Buying chiller capacity will never cool an overheating rack, so the
+// two must not share a word anywhere the player reads.
 export const COOLING_UPGRADE_COST = 350;
 export const COOLING_UPGRADE_KW = 5;
 
@@ -227,7 +233,13 @@ const roomPurchasables: PurchasableDef[] = ROOM_TIERS.slice(1).map((tier) => ({
 export const PURCHASABLES: PurchasableDef[] = [
   { id: 'rack', label: 'Rack', kind: 'stock', cost: RACK_COST, category: 'Racks' },
   ...machinePurchasables,
-  { id: 'crac', label: CRAC_UNIT.label, kind: 'stock', cost: CRAC_UNIT.cost, category: 'Cooling' },
+  {
+    id: 'crac',
+    label: CRAC_UNIT.label,
+    kind: 'stock',
+    cost: CRAC_UNIT.cost,
+    category: 'Rack Cooling',
+  },
   {
     id: 'power-upgrade',
     label: '+5kW Power',
@@ -237,7 +249,7 @@ export const PURCHASABLES: PurchasableDef[] = [
   },
   {
     id: 'cooling-upgrade',
-    label: '+5kW Cooling',
+    label: '+5kW Chiller',
     kind: 'instant',
     cost: COOLING_UPGRADE_COST,
     category: 'Utilities',
