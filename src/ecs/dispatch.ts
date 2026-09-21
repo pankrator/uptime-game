@@ -53,6 +53,26 @@ export function placeWorkload(world: World, workloadId: EntityId, serverId: Enti
   return true;
 }
 
+// Every workload currently placed on `serverId` — a server hosts as many as its traits allow,
+// so this is a plural lookup.
+export function workloadsOn(world: World, serverId: EntityId): EntityId[] {
+  return world
+    .query(placedOns)
+    .filter((workloadId) => world.getComponent(placedOns, workloadId)!.serverId === serverId);
+}
+
+// Unplace everything on `serverId`, returning what was moved. The workloads go back to the tray
+// still holding their deadlines — a visible, recoverable setback rather than silent progress
+// loss — and, critically, nothing is left pointing at a server that may be about to be
+// destroyed. Callers layer their own follow-up on the returned ids (resource.ts tags them for
+// its restore grace window; a decommission wants no such tag, since that server is not coming
+// back).
+export function unplaceAllOn(world: World, serverId: EntityId): EntityId[] {
+  const workloadIds = workloadsOn(world, serverId);
+  for (const workloadId of workloadIds) unplaceWorkload(world, workloadId);
+  return workloadIds;
+}
+
 // Remove from its server; the workload returns to the tray still holding its deadline. No-op
 // if it wasn't placed. Capacity.ts recomputes ServerCapacity.free next tick — this function
 // does not touch it directly, keeping "who's placed where" and "how much room is left" apart.

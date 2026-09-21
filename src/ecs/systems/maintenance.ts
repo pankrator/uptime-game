@@ -30,6 +30,7 @@ import { applyRepair, repairCost, repairSeconds } from '../wear';
 import { clearFailure } from './wear';
 import { spawnMachine } from '../../entities';
 import { addToInventory, takeFromInventory } from '../inventory';
+import { unplaceAllOn } from '../dispatch';
 import { moveControlledTo } from '../movement-commands';
 import { type EventBus } from '../event-bus';
 import { type GameEvents } from '../game-events';
@@ -49,7 +50,11 @@ function occupiedSlots(world: World, rackId: EntityId): Set<number> {
 }
 
 // Exported for input.ts, so there's one copy instead of two byte-identical bodies.
-export function findLowestFreeSlot(world: World, rackId: EntityId, capacity: number): number | null {
+export function findLowestFreeSlot(
+  world: World,
+  rackId: EntityId,
+  capacity: number,
+): number | null {
   const occupied = occupiedSlots(world, rackId);
   for (let slot = 0; slot < capacity; slot++) {
     if (!occupied.has(slot)) return slot;
@@ -61,7 +66,11 @@ export function findLowestFreeSlot(world: World, rackId: EntityId, capacity: num
 // bought at the shop and is still owned; only the install itself was abandoned) or the
 // wear-scaled fee to the WALLET for a repair. A decommission has nothing to refund: its payout
 // only happens on completion (below), never up front.
-export function cancelMaintenanceTask(world: World, facility: EntityId, controlled: EntityId): void {
+export function cancelMaintenanceTask(
+  world: World,
+  facility: EntityId,
+  controlled: EntityId,
+): void {
   const task = world.getComponent(maintenanceTasks, controlled);
   if (!task) return;
 
@@ -241,6 +250,11 @@ export function createMaintenanceSystem(
         const tier = MACHINE_TIERS[machine.tierId];
         const wallet = world.getComponent(wallets, facility);
         if (wallet) wallet.money += Math.round(tier.cost * DECOMMISSION_REFUND_FRACTION);
+        // PlacedOn lives on the WORKLOAD, so destroying the machine would not clear it:
+        // anything still placed here would keep a serverId nobody can resolve, freezing the
+        // contract (no progress, no pay, not in the tray to re-drag) until its deadline ran
+        // out. No restore tag — this server is not coming back.
+        unplaceAllOn(world, job.machineId);
         world.destroyEntity(job.machineId);
       }
       events.emit('machine:decommissioned', { machineId: job.machineId });

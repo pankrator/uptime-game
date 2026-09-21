@@ -26,7 +26,7 @@ import {
   approachTemperature,
   throttleFactorFor,
 } from '../thermal';
-import { unplaceAllOn } from './resource';
+import { evacuateForOutage } from './resource';
 import { type EventBus } from '../event-bus';
 import { type GameEvents } from '../game-events';
 import { type System } from './system';
@@ -88,7 +88,7 @@ export function createThermalSystem(world: World, facility: EntityId, events: Ev
             if (!powered.online) continue;
             powered.online = false;
             powered.offlineCooldown = BROWNOUT_COOLDOWN_SECONDS;
-            unplaceAllOn(world, machineId);
+            evacuateForOutage(world, machineId);
             events.emit('machine:thermal-tripped', { machineId, rackId });
           }
         } else if (tripped && temperature.celsius <= TRIP_RECOVER_C) {

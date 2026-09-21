@@ -6,7 +6,7 @@
 import { type World, type EntityId } from '../world';
 import { machines, installedIns, powereds, conditions, faileds, temperatures, demandClocks } from '../components';
 import { heatWearMultiplier, wearGain, failureChancePerSecond, rollFailure } from '../wear';
-import { unplaceAllOn } from './resource';
+import { evacuateForOutage } from './resource';
 import { type EventBus } from '../event-bus';
 import { type GameEvents } from '../game-events';
 import { type System } from './system';
@@ -36,7 +36,7 @@ export function createWearSystem(world: World, facility: EntityId, events: Event
           world.addComponent(faileds, machineId, { failedAt: elapsedSeconds });
           powered.online = false;
           powered.offlineCooldown = 0; // stays dead until repaired — no cooldown-based self-recovery
-          unplaceAllOn(world, machineId);
+          evacuateForOutage(world, machineId);
           events.emit('machine:failed', { machineId });
         }
       }

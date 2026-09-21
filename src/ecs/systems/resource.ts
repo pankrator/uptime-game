@@ -26,7 +26,7 @@ import {
   POWER_COST_PER_KW_SECOND,
   CRAC_UNIT,
 } from '../game-data';
-import { unplaceWorkload, checkPlacement, placeWorkload } from '../dispatch';
+import { checkPlacement, placeWorkload, unplaceAllOn, workloadsOn } from '../dispatch';
 import { spawnToast } from './effects';
 import { type EventBus } from '../event-bus';
 import { type GameEvents } from '../game-events';
@@ -64,27 +64,18 @@ export function selectMachinesToBrownOut(
   return offline;
 }
 
-// Workload ids placed on a given server. A server can host several workloads at once, so this
-// is a plural lookup.
-function workloadsOn(world: World, serverId: EntityId): EntityId[] {
-  return world
-    .query(placedOns)
-    .filter((workloadId) => world.getComponent(placedOns, workloadId)!.serverId === serverId);
-}
-
-// Losing a server to a brownout (or a thermal trip) unplaces every workload on it — they
-// return to the tray still holding their deadline, a visible/recoverable setback rather than
-// silent progress loss. Exported so thermal.ts's/wear.ts's trip/failure handling reuses this
-// exactly rather than a second, likely-diverging implementation.
+// Losing a server to a TEMPORARY outage — a brownout, a thermal trip, a hardware failure.
+// Everything on it goes back to the tray (dispatch.ts's unplaceAllOn), and each workload is
+// tagged with RecentlyUnplaced so that if THIS SAME server comes back within
+// BROWNOUT_RESTORE_GRACE_SECONDS, the online-transition branch below re-places it automatically
+// instead of leaving the player to notice and re-drag it for a squeeze that already resolved
+// itself. Exported so thermal.ts's and wear.ts's trip/failure handling reuse it exactly.
 //
-// Also tags each unplaced workload with RecentlyUnplaced so that if THIS SAME server comes back
-// online within BROWNOUT_RESTORE_GRACE_SECONDS, the online-transition branch below re-places it
-// automatically instead of leaving the player to notice and re-drag it for a squeeze that
-// already resolved itself.
-export function unplaceAllOn(world: World, serverId: EntityId): void {
+// Not for a server that is going away for good — a decommission calls dispatch.ts's
+// unplaceAllOn directly, since a restore tag naming a destroyed server can never be redeemed.
+export function evacuateForOutage(world: World, serverId: EntityId): void {
   const now = performance.now();
-  for (const workloadId of workloadsOn(world, serverId)) {
-    unplaceWorkload(world, workloadId);
+  for (const workloadId of unplaceAllOn(world, serverId)) {
     world.addComponent(recentlyUnplaceds, workloadId, {
       serverId,
       expiresAtMs: now + BROWNOUT_RESTORE_GRACE_SECONDS * 1000,
@@ -115,7 +106,7 @@ export function drawFor(world: World, machineId: EntityId): MachineDraw {
   return { id: machineId, powerKw: tier.powerKw * idleFraction, coolingKw };
 }
 
-// The restore half of unplaceAllOn's RecentlyUnplaced tag: a server just came back online —
+// The restore half of evacuateForOutage's RecentlyUnplaced tag: a server just came back online —
 // re-place any workload still tagged with RecentlyUnplaced for THIS server, if it hasn't
 // expired and still fits. One-shot per tag: it's removed here whether or not the restore
 // actually happens (already re-placed elsewhere by the player, no longer fits, or the grace
@@ -134,7 +125,11 @@ function restoreRecentlyUnplaced(world: World, serverId: EntityId): void {
   }
 }
 
-export function createResourceSystem(world: World, facility: EntityId, events: EventBus<GameEvents>): System {
+export function createResourceSystem(
+  world: World,
+  facility: EntityId,
+  events: EventBus<GameEvents>,
+): System {
   return {
     update(deltaSeconds: number) {
       const powerCapacity = world.getComponent(powerCapacities, facility);
@@ -196,7 +191,7 @@ export function createResourceSystem(world: World, facility: EntityId, events: E
         } else if (!shouldBeOnline && powered.online) {
           powered.online = false;
           powered.offlineCooldown = BROWNOUT_COOLDOWN_SECONDS;
-          unplaceAllOn(world, id);
+          evacuateForOutage(world, id);
           events.emit('machine:browned-out', { machineId: id });
         }
 
@@ -225,7 +220,8 @@ export function createResourceSystem(world: World, facility: EntityId, events: E
       const resourceWarning = world.getComponent(resourceWarnings, facility);
       if (resourceWarning) {
         const powerAvailableKw = Math.max(0, powerCapacity.kw - cracPowerKw);
-        const powerRatio = powerAvailableKw > 0 ? (powerDrawKw + cracPowerKw) / powerCapacity.kw : 1;
+        const powerRatio =
+          powerAvailableKw > 0 ? (powerDrawKw + cracPowerKw) / powerCapacity.kw : 1;
         const coolingRatio = coolingCapacity.kw > 0 ? coolingDrawKw / coolingCapacity.kw : 1;
 
         if (!resourceWarning.powerNearLimit && powerRatio >= RESOURCE_WARNING_FRACTION) {
