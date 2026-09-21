@@ -13,13 +13,35 @@ import {
 } from './components';
 import {
   type TraitKey,
+  type Traits,
   TRAIT_KEYS,
   REPUTATION_ON_DECLINE,
   ABANDON_REPUTATION_COST,
   ABANDON_PENALTY_FRACTION,
   clampReputation,
 } from './game-data';
-import { fits, shortfall } from './traits';
+import { fits, shortfall, zeroTraits, addTraits, subtractTraits } from './traits';
+
+// What is actually free on a server right now, derived from what is placed on it rather than
+// read off ServerCapacity.free.
+//
+// ServerCapacity is a cache capacity.ts recomputes once per tick and is its sole writer, so
+// within a tick it reflects the state at the START of the tick. Any code placing more than one
+// workload between recomputes — resource.ts's restore loop, a future batch dispatch — would
+// validate every one of them against the same pre-placement figure and happily oversubscribe
+// the box. Deriving here costs one pass over placed workloads and is correct whenever it is
+// called; the cache stays what it is for, which is being read cheaply by the UI.
+function freeCapacityOf(world: World, serverId: EntityId): Traits | null {
+  const capacity = world.getComponent(serverCapacities, serverId);
+  if (!capacity) return null;
+
+  let used = zeroTraits();
+  for (const workloadId of workloadsOn(world, serverId)) {
+    const placed = world.getComponent(workloads, workloadId);
+    if (placed) used = addTraits(used, placed.demands);
+  }
+  return subtractTraits(capacity.total, used);
+}
 
 // Validity check, no mutation. Returns null if the workload fits on the server (which must
 // also be online — a browned-out box cannot take work), or the blocking trait keys otherwise.
@@ -29,13 +51,13 @@ export function checkPlacement(
   serverId: EntityId,
 ): TraitKey[] | null {
   const workload = world.getComponent(workloads, workloadId);
-  const capacity = world.getComponent(serverCapacities, serverId);
+  const free = freeCapacityOf(world, serverId);
   const powered = world.getComponent(powereds, serverId);
-  if (!workload || !capacity) return null;
+  if (!workload || !free) return null;
   if (!powered?.online) return [...TRAIT_KEYS]; // offline: nothing fits
 
-  if (fits(workload.demands, capacity.free)) return null;
-  return shortfall(workload.demands, capacity.free);
+  if (fits(workload.demands, free)) return null;
+  return shortfall(workload.demands, free);
 }
 
 // Place (or move). Asserts checkPlacement passed — callers must check first; this function
@@ -134,8 +156,6 @@ export function abandonWorkload(world: World, facility: EntityId, workloadId: En
   const wallet = world.getComponent(wallets, facility);
   if (wallet) wallet.money -= workload.penaltyOnMiss * ABANDON_PENALTY_FRACTION;
 
-  if (world.getComponent(placedOns, workloadId)) {
-    world.removeComponent(placedOns, workloadId);
-  }
+  unplaceWorkload(world, workloadId);
   world.destroyEntity(workloadId);
 }

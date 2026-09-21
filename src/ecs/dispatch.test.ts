@@ -1,6 +1,20 @@
 import { describe, it, expect } from 'vitest';
-import { checkPlacement, placeWorkload, unplaceWorkload, acceptOffer, declineOffer } from './dispatch';
-import { offers, placedOns, powereds, reputations, workloads, type Offer } from './components';
+import {
+  checkPlacement,
+  placeWorkload,
+  unplaceWorkload,
+  acceptOffer,
+  declineOffer,
+} from './dispatch';
+import {
+  offers,
+  placedOns,
+  powereds,
+  reputations,
+  serverCapacities,
+  workloads,
+  type Offer,
+} from './components';
 import { REPUTATION_ON_DECLINE } from './game-data';
 import { createTestFacility, spawnOnlineServer, spawnRack, makeWorkload } from './test-helpers';
 import type { World } from './world';
@@ -139,7 +153,9 @@ describe('declineOffer', () => {
     declineOffer(world, facility, offerId);
 
     expect(world.getComponent(offers, offerId)).toBeUndefined();
-    expect(world.getComponent(reputations, facility)!.value).toBe(startingRep + REPUTATION_ON_DECLINE);
+    expect(world.getComponent(reputations, facility)!.value).toBe(
+      startingRep + REPUTATION_ON_DECLINE,
+    );
   });
 
   it('clamps reputation at 0 rather than going negative', () => {
@@ -162,5 +178,37 @@ describe('declineOffer', () => {
     declineOffer(world, facility, offerId);
 
     expect(world.getComponent(reputations, facility)!.value).toBe(0);
+  });
+});
+
+describe('checkPlacement within a single tick', () => {
+  it('accounts for a placement made since the last capacity recompute', () => {
+    const { world } = createTestFacility();
+    const rackId = spawnRack(world, 0, 0);
+    // 8 CPU / 32 GB / 1000 GB, and ServerCapacity seeded as capacity.ts would leave it.
+    const serverId = spawnOnlineServer(world, rackId, 'basic');
+
+    const first = makeWorkload(world, { demands: { cpu: 8, ramGb: 32, storageGb: 1000 } });
+    const second = makeWorkload(world, { demands: { cpu: 8, ramGb: 32, storageGb: 1000 } });
+
+    expect(checkPlacement(world, first, serverId)).toBeNull();
+    placeWorkload(world, first, serverId);
+
+    // No capacity.ts tick in between — the cached ServerCapacity.free still reads full.
+    expect(world.getComponent(serverCapacities, serverId)!.free.cpu).toBe(8);
+    expect(checkPlacement(world, second, serverId)).not.toBeNull();
+  });
+
+  it('frees the space again when the first workload is unplaced', () => {
+    const { world } = createTestFacility();
+    const rackId = spawnRack(world, 0, 0);
+    const serverId = spawnOnlineServer(world, rackId, 'basic');
+
+    const first = makeWorkload(world, { demands: { cpu: 8, ramGb: 32, storageGb: 1000 } });
+    const second = makeWorkload(world, { demands: { cpu: 8, ramGb: 32, storageGb: 1000 } });
+
+    placeWorkload(world, first, serverId);
+    unplaceWorkload(world, first);
+    expect(checkPlacement(world, second, serverId)).toBeNull();
   });
 });
