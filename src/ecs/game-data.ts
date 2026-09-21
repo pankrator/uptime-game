@@ -89,7 +89,15 @@ export const MACHINE_TIERS: Record<MachineTierId, MachineTierDef> = {
   },
 };
 
-export const RACK_COST = 120;
+// Priced so that spreading hardware thinly is a real expense, not the free answer to heat. A
+// rack has six slots but only enough thermal headroom for two of the hottest tier (see
+// THROTTLE_C below), so the cheap fix for an overheating rack is always "buy another rack and
+// split the load". At a token price that fix dominated everything, and CRAC units — the
+// mechanic that exists to make heat a question about the floor plan — could never compete with
+// it. At this price a shared CRAC serving several racks at once wins on capital, on floor
+// space and on throughput per cell, while splitting across racks stays within about 1% of it:
+// two strategies rather than one obvious one.
+export const RACK_COST = 300;
 export const RACK_SLOT_CAPACITY = 6;
 
 // World is a fixed-size rect, not tied to window size — sized to comfortably hold the largest

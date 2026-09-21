@@ -399,6 +399,10 @@ Left in place rather than silently rewritten, since the reasoning is the useful 
 - **S4 was sized as small; it is not.** Implementing the queue-a-drop path means drawing and
   hit-testing a panel that is currently not rendered at all before arrival. It was removed and
   written up in `ideas-backlog.md` instead.
+- **S13's "CRACs are strictly dominated" was measured wrong.** The layout used put a ring of
+  CRACs around one rack, which is the worst possible use of a unit with a 3-cell radius. Shared
+  between racks, a single CRAC cools four of them and was competitive even before the price
+  change. The finding that spreading was the safe default held; the reason given for it did not.
 
 ---
 
@@ -422,7 +426,7 @@ re-measuring rather than tuned directly.
 
 ## 5. Status
 
-Fixed on `claude/simulation-playtest-fixes`: S1, S2, S3, S4, S5, S6, S7, S10, S12.
+Fixed on `claude/simulation-playtest-fixes`: S1, S2, S3, S4, S5, S6, S7, S10, S12, S13.
 
 **S9 needed no change.** It was a consequence of S10, not an independent problem. With demand
 size clamped to the player's own fleet, average revenue per second by reputation band is now
@@ -438,21 +442,31 @@ buy-nothing baseline of $1.9k, so building now returns roughly six times doing n
 runaway in S11 is no longer reachable from one unstated trick, because the trick is no longer
 required.
 
-**S13 is open and is a tuning decision, not a defect.** S2 removed the cliff it described: a
+**S13 fixed, and its original measurement was wrong.** S2 removed the cliff it described: a
 rack now degrades smoothly (2 Blade Chassis at full speed, 3 at x0.78, 6 at x0.38) instead of
-tripping. What remains is that `RACK_SLOT_CAPACITY` is 6 while the economic optimum for the top
-tier is 2, and that CRAC units are strictly dominated by simply buying another $120 rack — on
-capex *and* on floor space:
+tripping. The claim that CRAC units were "strictly dominated" was an artefact of the layout it
+was measured with — a ring of CRACs around a single rack, the worst possible use of a unit with
+a 3-cell radius. A CRAC placed BETWEEN racks cools all of them, and that layout was never
+dominated:
 
-| 6 Blade Chassis running Render Farm | racks | CRACs | cells | capex | throttle | net $/s per $1k |
-| --- | --- | --- | --- | --- | --- | --- |
-| 1 per rack, no CRAC | 6 | 0 | 6 | $6,120 | 1.00 | 4.35 |
-| **2 per rack, no CRAC** | 3 | 0 | **3** | **$5,760** | **1.00** | **4.63** |
-| 3 per rack, no CRAC | 2 | 0 | 2 | $5,640 | 0.78 | 3.65 |
-| 6 per rack, no CRAC | 1 | 0 | 1 | $5,520 | 0.38 | 1.69 |
-| 6 per rack, 4 CRACs | 1 | 4 | 5 | $7,320 | 0.97 | 3.43 |
-| 3 per rack, 2 CRACs | 2 | 4 | 6 | $7,440 | 1.00 | 3.49 |
+| 12 Blade Chassis on Render Farm | racks | CRACs | cells | capex @ $120 | throttle | per $1k | per cell |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 per rack, no CRAC | 12 | 0 | 12 | $12,240 | 1.00 | 4.35 | 4.44 |
+| 2 per rack, no CRAC | 6 | 0 | 6 | $11,520 | 1.00 | **4.63** | 8.88 |
+| 6 per rack, no CRAC | 2 | 0 | 2 | $11,040 | 0.38 | 1.69 | 9.33 |
+| 4 racks around 1 shared CRAC | 4 | 1 | **5** | $11,730 | 1.00 | 4.53 | **10.62** |
 
-Every CRAC layout is beaten by spreading out, so the mechanic meant to make heat a spatial
-problem currently has no use case. Fixing that means choosing what the rack is for — see the
-options discussed with the change author before picking one.
+What was true is that spreading out was the safe default, because a rack at $120 against a $900
+Blade Chassis made splitting a load almost free. `RACK_COST` is now $300, which moves the
+crossover: the shared-CRAC layout wins on floor space, on capital and on throughput per cell,
+while splitting across racks stays within about 1% of it. Two viable strategies with different
+constraints, rather than one obvious one. `src/sim/layout.test.ts` locks the relationship
+structurally, so a later tuning pass on either price fails loudly instead of quietly collapsing
+the choice again.
+
+Economy at the new price, 30 simulated minutes: a buying player finishes $16.6k-$20.1k (three
+seeds) against the $1.9k buy-nothing baseline; the first eight minutes are a genuine squeeze,
+ending around $110-$260 with four or five racks placed.
+
+`RACK_SLOT_CAPACITY` stays at 6. It is not dead space — six Servers run at x0.80, and the six
+slots are what make a shared CRAC worth placing rather than just adding racks.
