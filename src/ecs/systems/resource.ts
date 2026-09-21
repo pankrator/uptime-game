@@ -14,6 +14,7 @@ import {
   coolingUnits,
   faileds,
   recentlyUnplaceds,
+  temperatures,
 } from '../components';
 import {
   MACHINE_TIERS,
@@ -83,27 +84,47 @@ export function evacuateForOutage(world: World, serverId: EntityId): void {
   }
 }
 
-// Exported so capacity.ts's rack-panel draw readout calls this exact function instead of
-// duplicating the calculation (the two used to drift).
+// How hard a machine is working right now, as power and cooling draw. The single load model:
+// resource.ts bills and brownout-selects on it, and capacity.ts reads the same numbers for the
+// rack panel's readout and for RackLoad.heatKw, so the two can never disagree.
 //
-// An ONLINE machine with nothing PLACED on it draws IDLE_POWER_FRACTION of its full
-// power/cooling instead of the full amount — previously idle capacity billed exactly like busy
-// capacity, so buying ahead of demand (the fun part of a tycoon game) was strictly punished.
+// Three things scale it, all on the same load-dependent portion, with IDLE_POWER_FRACTION as
+// the floor a powered-on box draws whatever it is (or isn't) doing:
+//   - nothing placed: the floor alone. Buying capacity ahead of demand shouldn't be billed as
+//     if it were busy.
+//   - throttling: a box slowed by heat is doing proportionally less work, so it draws — and
+//     therefore sheds — proportionally less. This is what makes the throttle band a governor
+//     rather than only a pay cut; without it a rack climbs straight through the band to a trip,
+//     and heat (being independent of throttle) has nothing to bring it back down.
+//   - per-workload coolingBonusKw, scaled the same way for the same reason.
+//
+// Reads the rack's throttleFactor from LAST tick: thermal.ts writes it after resource.ts and
+// capacity.ts have run. The thermal response closes ~0.8% of the gap to target per tick, so a
+// one-tick lag is far below the resolution of the model it feeds.
 export function drawFor(world: World, machineId: EntityId): MachineDraw {
   const machine = world.getComponent(machines, machineId)!;
   const tier = MACHINE_TIERS[machine.tierId];
   const placedWorkloadIds = workloadsOn(world, machineId);
-  const idleFraction = placedWorkloadIds.length === 0 ? IDLE_POWER_FRACTION : 1;
-  let coolingKw = tier.coolingKw * idleFraction;
 
+  const rackId = world.getComponent(installedIns, machineId)?.rackId;
+  const throttleFactor =
+    (rackId !== undefined ? world.getComponent(temperatures, rackId)?.throttleFactor : undefined) ??
+    1;
+
+  const loadFraction =
+    placedWorkloadIds.length === 0
+      ? IDLE_POWER_FRACTION
+      : IDLE_POWER_FRACTION + (1 - IDLE_POWER_FRACTION) * throttleFactor;
+
+  let coolingKw = tier.coolingKw * loadFraction;
   for (const workloadId of placedWorkloadIds) {
     const workload = world.getComponent(workloads, workloadId);
     if (workload) {
-      coolingKw += WORKLOAD_ARCHETYPES[workload.archetypeId].coolingBonusKw;
+      coolingKw += WORKLOAD_ARCHETYPES[workload.archetypeId].coolingBonusKw * throttleFactor;
     }
   }
 
-  return { id: machineId, powerKw: tier.powerKw * idleFraction, coolingKw };
+  return { id: machineId, powerKw: tier.powerKw * loadFraction, coolingKw };
 }
 
 // The restore half of evacuateForOutage's RecentlyUnplaced tag: a server just came back online —
