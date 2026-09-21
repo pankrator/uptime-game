@@ -16,11 +16,18 @@ export interface GameLoop {
   stop(): void;
 }
 
-const UPDATE_HZ = 30;
+// Fixed simulation rate. Exported so anything that advances the world by hand (src/sim/) uses
+// the same tick length the live loop does, rather than a second number that can drift from it.
+export const UPDATE_HZ = 30;
 const UPDATE_INTERVAL_MS = 1000 / UPDATE_HZ;
 const MAX_DELTA_SECONDS = 0.1;
 
-export function createGameLoop({ renderer, updateSystems, renderSystems, fps }: GameLoopDeps): GameLoop {
+export function createGameLoop({
+  renderer,
+  updateSystems,
+  renderSystems,
+  fps,
+}: GameLoopDeps): GameLoop {
   let running = false;
   let lastUpdateTime = 0;
   let updateHandle: ReturnType<typeof setInterval> | undefined;

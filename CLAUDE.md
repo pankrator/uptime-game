@@ -4,6 +4,13 @@
 
 Do not use Playwright or any browser-automation tool to validate the game after changes. Do not use any other CLI or tool to start the project and validate it. Let me validate it manually later.
 
+For anything that can be checked without seeing the screen — game logic, state consistency over
+a long session, economy balance — use the headless simulation harness in `src/sim/` instead of
+guessing from the constants. It runs the real system pipeline with a scripted player and checks
+the world's invariants every tick. See [docs/simulation.md](docs/simulation.md); run it with
+`npx vitest run src/sim`, or `VERBOSE_SIM=1 npx vitest run src/sim --disable-console-intercept`
+for a per-minute timeline. It is not a substitute for my manual pass — it cannot see anything.
+
 ## Current phase: implementation
 
 ## Role
@@ -60,7 +67,8 @@ a system.
 Before adding or extending a system, check the relevant doc below — it may already cover
 the behavior, an ordering dependency, or a shared helper to reuse. See
 [docs/ecs-systems/README.md](docs/ecs-systems/README.md) for the update order and core
-ECS files.
+ECS files. The update order itself lives in `src/ecs/pipeline.ts` — one list, shared by
+`main.ts` and the simulation harness; add a new system there, not in either caller.
 
 - [input](docs/ecs-systems/input.md) — pointer/keyboard gesture ownership: build mode, click-priority chain, drag lifecycle entry points
 - [movement](docs/ecs-systems/movement.md) — moves an entity's `Position` toward its `MoveTarget`

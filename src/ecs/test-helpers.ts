@@ -4,11 +4,13 @@ import { createWorld, type World, type EntityId } from './world';
 import { spawnFacility, spawnRack, spawnMachine } from '../entities';
 import { powereds, serverCapacities, workloads, type Workload } from './components';
 import { MACHINE_TIERS, type MachineTierId } from './game-data';
-import { type Audio } from '../audio';
-import { type Renderer } from '../rendering';
 import { createEventBus, type EventBus } from './event-bus';
 import { type GameEvents } from './game-events';
 import { type System } from './systems/system';
+
+// The headless Renderer/Audio doubles live with the rest of the simulation harness (src/sim/),
+// which needs the same ones; re-exported here under the names the existing tests already use.
+export { headlessRenderer as stubRenderer, headlessAudio as stubAudio } from '../sim/headless';
 
 export function createTestFacility(): { world: World; facility: EntityId } {
   const world = createWorld();
@@ -51,20 +53,6 @@ export function makeWorkload(world: World, overrides: Partial<Workload> = {}): E
   return id;
 }
 
-// No-op Audio — systems under test take `audio: Audio` and call `.play(name)` on state
-// transitions; tests assert on component state, not on sound, so this just satisfies the type.
-export function stubAudio(): Audio {
-  return {
-    play() {},
-    setMuted() {},
-    isMuted() {
-      return false;
-    },
-    startMusic() {},
-    stopMusic() {},
-  };
-}
-
 // A fresh, unwired GameEvents bus — systems under test take `events: EventBus<GameEvents>` and
 // emit on a state transition instead of calling audio.play() directly (see game-events.ts);
 // tests either ignore it (nothing subscribed, emit() is a no-op) or subscribe their own
@@ -77,19 +65,4 @@ export function stubEventBus(): EventBus<GameEvents> {
 
 export function runTicks(system: System, deltaSeconds: number, ticks: number): void {
   for (let i = 0; i < ticks; i++) system.update(deltaSeconds);
-}
-
-// The click-handling functions extracted from input.ts (handleRackPanelClick, handleShopClick)
-// only read renderer.width/renderer.height — no canvas or drawing context — so a headless test
-// can satisfy the Renderer interface with a stub rather than a real HTMLCanvasElement, which the
-// "node" test environment (vite.config.ts) doesn't have.
-export function stubRenderer(width: number, height: number): Renderer {
-  return {
-    canvas: null as unknown as HTMLCanvasElement,
-    context: null as unknown as CanvasRenderingContext2D,
-    width,
-    height,
-    clear() {},
-    dispose() {},
-  };
 }

@@ -35,15 +35,21 @@ exists and to find the right place in the update order for new logic.
   pattern as `audio`/`camera`/`input`. See `.plans/event-bus.md` for the design rationale and,
   importantly, what's deliberately still a direct call instead — this is not a blanket
   replacement for calling another module's exported function.
+- **Pipeline** (`src/ecs/pipeline.ts`) — `createSimulationSystems(deps)`, the single ordered
+  list of per-tick simulation systems. Not a system itself; it only composes them. Both
+  `main.ts` and `src/sim/`'s harness build from it, so the load-bearing order has one copy.
 - **Save/load** (`src/save/`) — not a system (nothing here runs every tick); `main.ts` calls
   into it directly. `registry.ts` is the extension point: every new persistent component gets
   one line there (`SAVE_COMPONENTS` or `TRANSIENT_COMPONENTS`, enforced by
   `registry.test.ts`'s exhaustiveness check) before it needs a save-format decision made for
   it elsewhere. See `.plans/save-load.md`.
 
-## Update order (see `src/main.ts`)
+## Update order (see `src/ecs/pipeline.ts`)
 
-Systems run in this order every tick; several depend on it (noted below):
+Systems run in this order every tick; several depend on it (noted below). The list lives in
+`createSimulationSystems` (`src/ecs/pipeline.ts`), built by both `main.ts` and the headless
+harness (`src/sim/`, see [docs/simulation.md](../simulation.md)) — add a new system there, not
+in either caller. `main.ts` appends its own quicksave system and assembles `renderSystems`.
 
 **`updateSystems`** (simulation, runs even off-screen):
 

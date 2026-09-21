@@ -1,11 +1,17 @@
 # Simulation playtest: logic bugs and design issues
 
 > **Not a feature plan — a findings report.** Written from a headless simulation, not from a
-> browser: a harness built the same `updateSystems` pipeline `main.ts` builds (minus
-> `input`/`render`), and a scripted player drove it through the real gameplay entry points
-> (`handleBuildModePlacement`, `startInstall`, `startRepair`, `startDecommission`, `buy`,
-> `acceptOffer`, `checkPlacement`/`placeWorkload`). No dev server, no browser automation —
-> consistent with CLAUDE.md's manual-validation rule and `testing-strategy.md`'s headless layer.
+> browser: a harness built the same system pipeline `main.ts` builds, and a scripted player
+> drove it through the real gameplay entry points (`handleBuildModePlacement`, `startInstall`,
+> `startRepair`, `startDecommission`, `buy`, `acceptOffer`, `checkPlacement`/`placeWorkload`).
+> No dev server, no browser automation — consistent with CLAUDE.md's manual-validation rule and
+> `testing-strategy.md`'s headless layer.
+>
+> That harness now lives in `src/sim/` (see [docs/simulation.md](../docs/simulation.md)), so
+> every measurement below can be re-run: `VERBOSE_SIM=1 npx vitest run src/sim
+> --disable-console-intercept`. Its committed scenarios are shorter than the runs quoted here
+> and use the same strategies under their shipped names — `none`, `biggest-affordable`,
+> `unlocked-mix`, `blade-only`.
 >
 > Entries are numbered `S1`–`S13` to avoid colliding with `playtest-findings.md`'s `B*`/`F*`
 > and `design-review.md`'s `F*`. Severity order within each section. Every entry has a
@@ -23,12 +29,12 @@ Player strategies simulated:
 
 | Strategy | What it does |
 | --- | --- |
-| `hoarder` | Buys nothing. Runs the two starting Budget Boxes, accepts only offers that fit. |
-| `greedy-cpu` | Buys the highest-CPU tier it can afford; accepts only offers that fit. |
-| `smart` | Buys tiers matched to whatever reputation has unlocked. |
-| `dense-rush` | Saves for Blade Chassis only. |
-| `accept-everything` | Accepts every offer regardless of fit. |
-| `thermal-aware` | `dense-rush` + buys/places CRACs, caps servers at 2 per rack. |
+| `none` | Buys nothing. Runs the two starting Budget Boxes, accepts only offers that fit. |
+| `biggest-affordable` | Buys the highest-CPU tier it can afford; accepts only offers that fit. |
+| `unlocked-mix` | Buys tiers matched to whatever reputation has unlocked. |
+| `blade-only` | Saves for Blade Chassis only. |
+| `acceptUnservable` | Accepts every offer regardless of fit. |
+| `blade-only` + `manageThermals` | Buys/places CRACs, caps servers at 2 per rack. |
 
 The existing suite is green throughout (176/176 on `ae57114`) — none of this is caught today.
 
@@ -193,19 +199,19 @@ time base for anything gameplay-affecting. Presentation-only fades can keep wall
 
 ### S8 — Doing nothing beats playing
 
-Six 30-minute runs with an active player (`greedy-cpu` and `smart`, three seeds each). In every
+Six 30-minute runs with an active player (`biggest-affordable` and `unlocked-mix`, three seeds each). In every
 single one, **peak wallet balance was the starting balance**:
 
 | Strategy | seed | final $ | min $ | max $ | contracts served |
 | --- | --- | --- | --- | --- | --- |
-| greedy-cpu | 12345 | -9 | -23 | **750** | 32 |
-| greedy-cpu | 999 | 16 | 0 | **750** | 38 |
-| greedy-cpu | 4242 | 77 | 0 | **750** | 24 |
-| smart | 12345 | 77 | -13 | **750** | 35 |
-| smart | 999 | 70 | 0 | **750** | 37 |
-| smart | 4242 | 52 | 0 | **750** | 37 |
+| biggest-affordable | 12345 | -9 | -23 | **750** | 32 |
+| biggest-affordable | 999 | 16 | 0 | **750** | 38 |
+| biggest-affordable | 4242 | 77 | 0 | **750** | 24 |
+| unlocked-mix | 12345 | 77 | -13 | **750** | 35 |
+| unlocked-mix | 999 | 70 | 0 | **750** | 37 |
+| unlocked-mix | 4242 | 52 | 0 | **750** | 37 |
 
-The `hoarder` — which buys *nothing*, runs the two starting Budget Boxes, and accepts only what
+The `none` buyer — which buys *nothing*, runs the two starting Budget Boxes, and accepts only what
 fits — finished the same 30 minutes at **$2,467**, monotonically increasing, never once dipping.
 
 Every purchase in the mid-game has negative ROI, because (S9) income is capped by contract
@@ -231,7 +237,7 @@ roughly 6 contracts/minute in the opening, that is **five minutes**. After that 
 permanently in the bottom row.
 
 Measured share of offers the player could never accept (no online server fit), 30 min,
-`greedy-cpu`, seed 12345:
+`biggest-affordable`, seed 12345:
 
 ```
 offered:         web 31, batch 54, render 78, training 100   (263 total)
@@ -239,7 +245,7 @@ accepted:        web 31, batch 1                             (32 total)
 never servable:  batch 53, render 78, training 100           (88% of all offers)
 ```
 
-The perverse proof: the `accept-everything` player, who missed 62 deadlines and drove
+The perverse proof: the `acceptUnservable` player, who missed 62 deadlines and drove
 reputation down to 39, ran at **$14.83/s revenue** — higher than any careful player in any run
 (0.00–3.06/s at reputation 100). Deliberately failing produces a better offer mix than
 succeeding.
@@ -273,7 +279,7 @@ is the quantity the fit check actually tests.
 
 ### S11 — There is a cliff, and crossing it ends the game in the other direction
 
-The `thermal-aware` player (Blade Chassis only, ≤2 per rack, CRACs next to hot racks) hits the
+The `blade-only` + `manageThermals` player (Blade Chassis only, ≤2 per rack, CRACs next to hot racks) hits the
 same wall as everyone else for 12 minutes — and then:
 
 ```
