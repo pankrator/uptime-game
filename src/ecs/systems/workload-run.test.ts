@@ -1,16 +1,27 @@
 import { describe, it, expect } from 'vitest';
 import { createWorkloadRunSystem } from './workload-run';
 import { placeWorkload } from '../dispatch';
-import { placedOns, reputations, temperatures, wallets, workloads } from '../components';
+import { placedOns, reputations, temperatures, toasts, wallets, workloads } from '../components';
 import { REPUTATION_ON_COMPLETION, REPUTATION_ON_MISSED_DEADLINE } from '../game-data';
-import { createTestFacility, spawnOnlineServer, spawnRack, makeWorkload, stubEventBus, runTicks } from '../test-helpers';
+import {
+  createTestFacility,
+  spawnOnlineServer,
+  spawnRack,
+  makeWorkload,
+  stubEventBus,
+  runTicks,
+} from '../test-helpers';
 
 describe('workload-run system', () => {
   it('pays out payPerSecond while placed on an online server', () => {
     const { world, facility } = createTestFacility();
     const rackId = spawnRack(world, 0, 0);
     const serverId = spawnOnlineServer(world, rackId, 'basic');
-    const workloadId = makeWorkload(world, { payPerSecond: 2, workRemainingSeconds: 100, deadlineRemainingSeconds: 100 });
+    const workloadId = makeWorkload(world, {
+      payPerSecond: 2,
+      workRemainingSeconds: 100,
+      deadlineRemainingSeconds: 100,
+    });
     placeWorkload(world, workloadId, serverId);
     const startingMoney = world.getComponent(wallets, facility)!.money;
 
@@ -47,14 +58,19 @@ describe('workload-run system', () => {
     runTicks(createWorkloadRunSystem(world, facility, stubEventBus()), 1, 1);
 
     expect(world.getComponent(wallets, facility)!.money).toBeCloseTo(startingMoney + 2 * 0.5);
-    expect(world.getComponent(workloads, workloadId)!.workRemainingSeconds).toBeCloseTo(100 - 1 * 0.5);
+    expect(world.getComponent(workloads, workloadId)!.workRemainingSeconds).toBeCloseTo(
+      100 - 1 * 0.5,
+    );
   });
 
   it('completion pays the reputation bonus and destroys a one-shot workload', () => {
     const { world, facility } = createTestFacility();
     const rackId = spawnRack(world, 0, 0);
     const serverId = spawnOnlineServer(world, rackId, 'basic');
-    const workloadId = makeWorkload(world, { workRemainingSeconds: 0.5, deadlineRemainingSeconds: 100 });
+    const workloadId = makeWorkload(world, {
+      workRemainingSeconds: 0.5,
+      deadlineRemainingSeconds: 100,
+    });
     placeWorkload(world, workloadId, serverId);
     const startingRep = world.getComponent(reputations, facility)!.value;
     const events = stubEventBus();
@@ -63,7 +79,9 @@ describe('workload-run system', () => {
 
     runTicks(createWorkloadRunSystem(world, facility, events), 1, 1);
 
-    expect(world.getComponent(reputations, facility)!.value).toBe(startingRep + REPUTATION_ON_COMPLETION);
+    expect(world.getComponent(reputations, facility)!.value).toBe(
+      startingRep + REPUTATION_ON_COMPLETION,
+    );
     expect(world.getComponent(workloads, workloadId)).toBeUndefined();
     expect(world.getComponent(placedOns, workloadId)).toBeUndefined();
     expect(completed).toEqual([workloadId]);
@@ -102,7 +120,9 @@ describe('workload-run system', () => {
 
     runTicks(createWorkloadRunSystem(world, facility, events), 1, 1);
 
-    expect(world.getComponent(reputations, facility)!.value).toBe(startingRep + REPUTATION_ON_MISSED_DEADLINE);
+    expect(world.getComponent(reputations, facility)!.value).toBe(
+      startingRep + REPUTATION_ON_MISSED_DEADLINE,
+    );
     expect(world.getComponent(wallets, facility)!.money).toBeCloseTo(startingMoney - 40);
     expect(world.getComponent(workloads, workloadId)).toBeUndefined();
     expect(missed).toEqual([workloadId]);
@@ -112,12 +132,37 @@ describe('workload-run system', () => {
     const { world, facility } = createTestFacility();
     const rackId = spawnRack(world, 0, 0);
     const serverId = spawnOnlineServer(world, rackId, 'basic');
-    const workloadId = makeWorkload(world, { workRemainingSeconds: 0.5, deadlineRemainingSeconds: 0.5 });
+    const workloadId = makeWorkload(world, {
+      workRemainingSeconds: 0.5,
+      deadlineRemainingSeconds: 0.5,
+    });
     placeWorkload(world, workloadId, serverId);
     const startingRep = world.getComponent(reputations, facility)!.value;
 
     runTicks(createWorkloadRunSystem(world, facility, stubEventBus()), 1, 1);
 
-    expect(world.getComponent(reputations, facility)!.value).toBe(startingRep + REPUTATION_ON_COMPLETION);
+    expect(world.getComponent(reputations, facility)!.value).toBe(
+      startingRep + REPUTATION_ON_COMPLETION,
+    );
+  });
+});
+
+describe('missed-deadline toast', () => {
+  it('rounds the penalty, which spawnOffer scales to a non-integer mid-session', () => {
+    const { world, facility } = createTestFacility();
+    const system = createWorkloadRunSystem(world, facility, stubEventBus());
+
+    const workloadId = makeWorkload(world, {
+      archetypeId: 'batch',
+      deadlineRemainingSeconds: 0.001,
+      penaltyOnMiss: 109.33333333333334,
+    });
+    expect(world.getComponent(workloads, workloadId)).toBeDefined();
+
+    system.update(1 / 30);
+
+    const text = world.query(toasts).map((id) => world.getComponent(toasts, id)!.text)[0];
+    expect(text).toContain('-$109');
+    expect(text).not.toMatch(/\$\d+\.\d/);
   });
 });

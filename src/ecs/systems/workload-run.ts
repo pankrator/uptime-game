@@ -29,7 +29,11 @@ import { type System } from './system';
 //   3. Completion checked BEFORE deadline, so a job finishing the same tick its deadline
 //      expires counts as a success.
 //   4. Deadline miss: reputation penalty, unplace, destroy.
-export function createWorkloadRunSystem(world: World, facility: EntityId, events: EventBus<GameEvents>): System {
+export function createWorkloadRunSystem(
+  world: World,
+  facility: EntityId,
+  events: EventBus<GameEvents>,
+): System {
   return {
     update(deltaSeconds: number) {
       const wallet = world.getComponent(wallets, facility);
@@ -77,7 +81,8 @@ export function createWorkloadRunSystem(world: World, facility: EntityId, events
           // separate Position component on a machine).
           if (placement) {
             const rackId = world.getComponent(installedIns, placement.serverId)?.rackId;
-            const gridPos = rackId !== undefined ? world.getComponent(gridPositions, rackId) : undefined;
+            const gridPos =
+              rackId !== undefined ? world.getComponent(gridPositions, rackId) : undefined;
             if (gridPos) {
               const worldPos = gridToWorld(gridPos.gridX, gridPos.gridY);
               const earned = Math.round(workload.payPerSecond * workload.workSeconds);
@@ -91,7 +96,8 @@ export function createWorkloadRunSystem(world: World, facility: EntityId, events
           if (workload.repeatCount > 0) {
             workload.repeatCount -= 1;
             workload.workRemainingSeconds = workload.workSeconds;
-            workload.deadlineRemainingSeconds = WORKLOAD_ARCHETYPES[workload.archetypeId].deadlineSeconds;
+            workload.deadlineRemainingSeconds =
+              WORKLOAD_ARCHETYPES[workload.archetypeId].deadlineSeconds;
             continue;
           }
 
@@ -114,7 +120,7 @@ export function createWorkloadRunSystem(world: World, facility: EntityId, events
           const label = WORKLOAD_ARCHETYPES[workload.archetypeId].label;
           spawnToast(
             world,
-            `Missed deadline: ${label} — -$${workload.penaltyOnMiss}, ${REPUTATION_ON_MISSED_DEADLINE}★`,
+            `Missed deadline: ${label} — -$${workload.penaltyOnMiss.toFixed(0)}, ${REPUTATION_ON_MISSED_DEADLINE}★`,
             '#e53935',
           );
         }
