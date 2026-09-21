@@ -37,6 +37,9 @@ import {
   AMBIENT_C,
   CRAC_UNIT,
   getDemandScale,
+  maxDemandScaleFor,
+  MACHINE_TIERS,
+  type Traits,
   type MachineTierId,
   type WorkloadArchetypeId,
   type PurchasableId,
@@ -155,6 +158,21 @@ function lowestFreeOfferSlot(world: World): number {
   return 0; // unreachable given the caller's cap check; a safe fallback rather than a throw
 }
 
+// The largest demand multiplier the best single ONLINE server could hold, or 0 when the player
+// has none. A workload occupies exactly one server, so this — not the facility's summed traits
+// — is what decides whether a scaled offer is serviceable at all. Reads tier traits rather than
+// ServerCapacity.free: an offer is sized against what a box can hold, not against what happens
+// to be free on it this instant, which the player can change by moving work around.
+function fleetDemandScale(world: World, demands: Traits): number {
+  let best = 0;
+  for (const machineId of world.query(machines, installedIns, powereds)) {
+    if (!world.getComponent(powereds, machineId)!.online) continue;
+    const tier = MACHINE_TIERS[world.getComponent(machines, machineId)!.tierId];
+    best = Math.max(best, maxDemandScaleFor(demands, tier.traits));
+  }
+  return best;
+}
+
 // Spawns an Offer awaiting accept/decline — NOT a live Workload. Accepting (dispatch.ts's
 // acceptOffer) is what turns an offer into a Workload entity.
 // The repeat-count roll is a parameter, defaulted to Math.random(), following wear.ts's
@@ -168,10 +186,12 @@ export function spawnOffer(
   const archetype = WORKLOAD_ARCHETYPES[archetypeId];
   // Two different scales past this point. PAY (and the miss penalty, which tracks it) keeps
   // climbing with valueScale, uncapped by what any server can hold — late-game growth is "the
-  // same job pays more." Demand SIZE is separately clamped to whatever still fits some tier
-  // (getDemandScale), so an offer can never scale past what the catalog can serve.
+  // same job pays more." Demand SIZE is separately clamped by getDemandScale, to the catalog's
+  // ceiling and to what the player's own best server can actually hold.
   const appliedValueScale = archetype.scales ? valueScale : 1;
-  const appliedDemandScale = archetype.scales ? getDemandScale(archetypeId, valueScale) : 1;
+  const appliedDemandScale = archetype.scales
+    ? getDemandScale(archetypeId, valueScale, fleetDemandScale(world, archetype.demands))
+    : 1;
 
   // Roll how many extra cycles this offer commits to, then apply the recurring pay discount
   // ("trading rate for certainty") only when it actually recurs.

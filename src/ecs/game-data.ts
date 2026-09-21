@@ -354,19 +354,22 @@ export const WORKLOAD_ARCHETYPES: Record<WorkloadArchetypeId, WorkloadArchetypeD
   },
 };
 
-// Largest factor `demands` can be multiplied by and still fit SOME machine tier on every trait
-// (same check traits.ts's `fits` does, solved for the multiplier instead of a yes/no). Computed
-// from the catalog itself — not hand-typed — so a future tier or archetype change can't
-// silently reintroduce a scaled offer that nothing can serve.
+// Largest factor `demands` can be multiplied by and still fit `serverTraits` on every trait —
+// the same check traits.ts's `fits` does, solved for the multiplier instead of a yes/no.
+export function maxDemandScaleFor(demands: Traits, serverTraits: Traits): number {
+  return Math.min(
+    ...TRAIT_KEYS.map((key) => (demands[key] > 0 ? serverTraits[key] / demands[key] : Infinity)),
+  );
+}
+
+// The same figure against the best tier the CATALOG offers. Computed from the catalog itself —
+// not hand-typed — so a future tier or archetype change can't silently reintroduce a scaled
+// offer nothing could ever serve.
 function computeMaxDemandScale(demands: Traits): number {
-  let best = 0;
-  for (const tier of Object.values(MACHINE_TIERS)) {
-    const fitRatio = Math.min(
-      ...TRAIT_KEYS.map((key) => (demands[key] > 0 ? tier.traits[key] / demands[key] : Infinity)),
-    );
-    best = Math.max(best, fitRatio);
-  }
-  return best;
+  return Math.max(
+    0,
+    ...Object.values(MACHINE_TIERS).map((tier) => maxDemandScaleFor(demands, tier.traits)),
+  );
 }
 
 // Precomputed once — MACHINE_TIERS and WORKLOAD_ARCHETYPES are both static. Irrelevant for
@@ -379,12 +382,27 @@ export const MAX_DEMAND_SCALE: Record<WorkloadArchetypeId, number> = Object.from
   ]),
 ) as Record<WorkloadArchetypeId, number>;
 
-// The DEMAND scale — how big a scaled offer's `demands` actually grow to, clamped to whatever
-// still fits some tier (MAX_DEMAND_SCALE) regardless of how high valueScale (pay) has climbed.
-// Once an archetype's demand scale hits this ceiling, its size stops growing but valueScale
-// keeps driving its pay up — "the same job pays more," not "an unfittable job."
-export function getDemandScale(archetypeId: WorkloadArchetypeId, valueScale: number): number {
-  return Math.min(valueScale, MAX_DEMAND_SCALE[archetypeId]);
+// The DEMAND scale — how big a scaled offer's `demands` actually grow to. Bounded three ways:
+//
+//   - valueScale, the session's overall ramp;
+//   - MAX_DEMAND_SCALE, what the best tier in the catalog could ever hold;
+//   - fleetDemandScale, what the best single server the player ACTUALLY has online can hold.
+//
+// The fleet bound is the one that keeps growth honest. A workload occupies exactly one server,
+// but valueScale climbs with facility-wide CPU, so without it a player who scaled out — nine
+// Servers, say — would size every offer for hardware they don't own and couldn't serve a single
+// one. Floored at 1 so a fleet of Budget Boxes still gets offers at their base size rather than
+// shrinking the catalog to fit whatever is lying around: needing better hardware is the point,
+// being unable to use the hardware you bought is not.
+//
+// Once an archetype hits any of these ceilings its size stops growing while valueScale keeps
+// driving pay up — "the same job pays more," not "an unfittable job."
+export function getDemandScale(
+  archetypeId: WorkloadArchetypeId,
+  valueScale: number,
+  fleetDemandScale: number,
+): number {
+  return Math.min(valueScale, MAX_DEMAND_SCALE[archetypeId], Math.max(1, fleetDemandScale));
 }
 
 // Wear only accrues while a machine is online; failure is a per-second probabilistic roll

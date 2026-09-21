@@ -5,6 +5,7 @@ import {
   getValueScale,
   getDemandScale,
   MAX_DEMAND_SCALE,
+  maxDemandScaleFor,
   MACHINE_TIERS,
   WORKLOAD_ARCHETYPES,
   CAPACITY_SCALE_CPU_DIVISOR,
@@ -62,12 +63,18 @@ describe('getValueScale (B3 regression: capacity scale must track facility capac
   });
 
   it('reaches its 3x ceiling once facility CPU clears the divisor 3x over', () => {
-    expect(getValueScale(TIME_RAMP_COMPLETE_SECONDS, CAPACITY_SCALE_CPU_DIVISOR * 3)).toBeCloseTo(3);
-    expect(getValueScale(TIME_RAMP_COMPLETE_SECONDS, CAPACITY_SCALE_CPU_DIVISOR * 100)).toBeCloseTo(3); // still capped
+    expect(getValueScale(TIME_RAMP_COMPLETE_SECONDS, CAPACITY_SCALE_CPU_DIVISOR * 3)).toBeCloseTo(
+      3,
+    );
+    expect(getValueScale(TIME_RAMP_COMPLETE_SECONDS, CAPACITY_SCALE_CPU_DIVISOR * 100)).toBeCloseTo(
+      3,
+    ); // still capped
   });
 
   it('is capped by the time ramp too — capacity alone cannot exceed the 3x ceiling', () => {
-    expect(getValueScale(TIME_RAMP_COMPLETE_SECONDS, CAPACITY_SCALE_CPU_DIVISOR * 100)).toBeLessThanOrEqual(3);
+    expect(
+      getValueScale(TIME_RAMP_COMPLETE_SECONDS, CAPACITY_SCALE_CPU_DIVISOR * 100),
+    ).toBeLessThanOrEqual(3);
   });
 
   it('at elapsedSeconds=0, time itself caps scale at 1x regardless of installed capacity', () => {
@@ -76,16 +83,42 @@ describe('getValueScale (B3 regression: capacity scale must track facility capac
 });
 
 describe('getDemandScale', () => {
+  // A fleet bound high enough never to be the binding constraint, for the cases about the
+  // other two ceilings.
+  const UNBOUNDED_FLEET = Infinity;
+
   it('tracks valueScale below the catalog fit ceiling', () => {
     const archetypeId = 'web';
-    expect(getDemandScale(archetypeId, 1)).toBe(1);
+    expect(getDemandScale(archetypeId, 1, UNBOUNDED_FLEET)).toBe(1);
   });
 
   it('clamps to MAX_DEMAND_SCALE once valueScale exceeds what any tier can fit (compute-scale-fix D2)', () => {
     const archetypeId = 'training'; // the tightest-fitting archetype, most likely to hit its ceiling
-    const scale = getDemandScale(archetypeId, 1000);
+    const scale = getDemandScale(archetypeId, 1000, UNBOUNDED_FLEET);
     expect(scale).toBe(MAX_DEMAND_SCALE[archetypeId]);
     expect(scale).toBeLessThan(1000);
+  });
+
+  it('clamps to what the player actually owns, so scaling out never outgrows their own servers', () => {
+    // A fleet of Servers (8 CPU) against batch's 8 CPU base demand: exactly 1x, no headroom.
+    const fleetScale = maxDemandScaleFor(
+      WORKLOAD_ARCHETYPES.batch.demands,
+      MACHINE_TIERS.basic.traits,
+    );
+    expect(getDemandScale('batch', 3, fleetScale)).toBe(1);
+    // The same session with one Blade Chassis on the floor unlocks the bigger contract.
+    const withBlade = maxDemandScaleFor(
+      WORKLOAD_ARCHETYPES.batch.demands,
+      MACHINE_TIERS.dense.traits,
+    );
+    expect(getDemandScale('batch', 3, withBlade)).toBe(3);
+  });
+
+  it('never shrinks an archetype below its base size, however weak the fleet', () => {
+    const noFleet = 0;
+    for (const archetype of Object.values(WORKLOAD_ARCHETYPES)) {
+      expect(getDemandScale(archetype.id, 3, noFleet)).toBe(1);
+    }
   });
 
   it('MAX_DEMAND_SCALE is computed such that every archetype fits at least one tier at that scale', () => {
