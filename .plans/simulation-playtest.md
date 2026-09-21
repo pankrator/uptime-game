@@ -375,6 +375,33 @@ lower `RACK_SLOT_CAPACITY` to what the model supports and let racks be cheap and
 
 ---
 
+## 3b. Corrections made while fixing these
+
+Two entries above were wrong in ways that only showed up once someone tried to implement them.
+Left in place rather than silently rewritten, since the reasoning is the useful part.
+
+- **S10's proposed fix was wrong.** "Base `capacityScale` on the largest single server's CPU"
+  pins `getValueScale` at 1.07 forever — the biggest tier is 32 CPU against a divisor of 30 —
+  which would have re-broken the B3 deadlock `compute-scale-fix.md` fixed, and which
+  `game-data.test.ts`'s own B3 regression test catches. The diagnosis (demand size scaled off a
+  quantity no single server has to match) was right; the remedy was not. What shipped clamps the
+  DEMAND scale to what the player's best online server can hold and leaves the VALUE scale alone.
+- **S12 claimed the chiller upgrade sat in the CRAC's shop category.** It did not — it was
+  already under Utilities while the CRAC was under Cooling. The shared *name* was the whole trap;
+  the category adjacency was not real.
+- **S5's proposed fix would have broken a stated rule.** Having `placeWorkload` decrement
+  `ServerCapacity.free` gives that component two writers, which CLAUDE.md forbids and which would
+  let the deltas and capacity.ts's recompute drift. What shipped makes `checkPlacement` derive
+  free capacity from the placements themselves, so the cache keeps one writer.
+- **S7's scope was smaller than stated.** Only `RecentlyUnplaced` was on the wrong clock. The
+  confirm windows and toast/flash lifetimes measure human reaction time and presentation, where
+  wall clock is correct; none of them is persisted, so none carried the save/load hazard.
+- **S4 was sized as small; it is not.** Implementing the queue-a-drop path means drawing and
+  hit-testing a panel that is currently not rendered at all before arrival. It was removed and
+  written up in `ideas-backlog.md` instead.
+
+---
+
 ## 4. Suggested order
 
 | # | Finding | Why first | Cost |
@@ -392,3 +419,40 @@ lower `RACK_SLOT_CAPACITY` to what the model supports and let racks be cheap and
 
 S8 and S11 are the symptoms; they should resolve once S9, S10 and S2 are fixed, and are worth
 re-measuring rather than tuned directly.
+
+## 5. Status
+
+Fixed on `claude/simulation-playtest-fixes`: S1, S2, S3, S4, S5, S6, S7, S10, S12.
+
+**S9 needed no change.** It was a consequence of S10, not an independent problem. With demand
+size clamped to the player's own fleet, average revenue per second by reputation band is now
+monotonically increasing (8.12 at 0-19, 18.21 at 20-39, 19.85, 19.98, 22.25 at 80-99), and a
+player who accepts everything and tanks their reputation finishes 30 minutes at -$8,693 against
+a careful player's +$11,352 on the same seed — the reverse of the measurement that produced S9.
+`pickArchetype`'s 1..n weighting is left alone: the displacement it causes is progression now
+that the archetypes it unlocks are actually servable.
+
+**S8 and S11 resolved with it.** Share of offers the player's own hardware can serve went 12% ->
+73-79%; a buying player's 30-minute balance went -$9..$77 -> $9.2k..$12.0k against a
+buy-nothing baseline of $1.9k, so building now returns roughly six times doing nothing. The
+runaway in S11 is no longer reachable from one unstated trick, because the trick is no longer
+required.
+
+**S13 is open and is a tuning decision, not a defect.** S2 removed the cliff it described: a
+rack now degrades smoothly (2 Blade Chassis at full speed, 3 at x0.78, 6 at x0.38) instead of
+tripping. What remains is that `RACK_SLOT_CAPACITY` is 6 while the economic optimum for the top
+tier is 2, and that CRAC units are strictly dominated by simply buying another $120 rack — on
+capex *and* on floor space:
+
+| 6 Blade Chassis running Render Farm | racks | CRACs | cells | capex | throttle | net $/s per $1k |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 per rack, no CRAC | 6 | 0 | 6 | $6,120 | 1.00 | 4.35 |
+| **2 per rack, no CRAC** | 3 | 0 | **3** | **$5,760** | **1.00** | **4.63** |
+| 3 per rack, no CRAC | 2 | 0 | 2 | $5,640 | 0.78 | 3.65 |
+| 6 per rack, no CRAC | 1 | 0 | 1 | $5,520 | 0.38 | 1.69 |
+| 6 per rack, 4 CRACs | 1 | 4 | 5 | $7,320 | 0.97 | 3.43 |
+| 3 per rack, 2 CRACs | 2 | 4 | 6 | $7,440 | 1.00 | 3.49 |
+
+Every CRAC layout is beaten by spreading out, so the mechanic meant to make heat a spatial
+problem currently has no use case. Fixing that means choosing what the rack is for — see the
+options discussed with the change author before picking one.
